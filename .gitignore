@@ -21,7 +21,6 @@ out/
 !thirdparty/**/*.dll
 
 # Standalone Export Templates (Binaries are generated locally)
-templates/**/*.x86_64
 templates/**/*.exe
 !templates/**/.gitkeep
 

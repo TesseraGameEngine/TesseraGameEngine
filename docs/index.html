@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+  <meta charset="UTF-8">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Engine Overview & Quickstart - Tessera Engine Documentation</title>
+
+  <link rel="stylesheet" href="style.css">
+
+  <script src="nav.js" defer></script>
+
+</head>
+
+<body>
+
+  <aside id="sidebar">
+
+    <div class="sidebar-header">
+
+      <h2>&#9881; Tessera Engine</h2>
+
+      <p>Official Developer Documentation</p>
+
+    </div>
+
+    <div class="search-box">
+
+      <input type="text" id="doc-search" placeholder="Filter documentation..." autocomplete="off">
+
+    </div>
+
+    <div class="sidebar-nav">
+  <div class="nav-group">
+    <div class="nav-group-title">Engine Internals & Architecture</div>
+    <a class="nav-item" href="engine-architecture.html">Engine Architecture & Contributor Guide</a>
+    <a class="nav-item" href="linux-guide.html">Linux Build & Standalone Export</a>
+  </div>
+
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Getting Started</div>
+
+    <a class="nav-item active" href="index.html">Overview & Quickstart</a>
+
+  </div>
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Node Reference</div>
+
+    <a class="nav-item" href="nodes-3d.html">3D Nodes & Entities</a>
+
+    <a class="nav-item" href="nodes-ui.html">2D UI Component Nodes</a>
+
+  </div>
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Core Systems</div>
+
+    <a class="nav-item" href="systems-rendering.html">Rendering, PBR & LOD</a>
+
+    <a class="nav-item" href="systems-animation.html">Animation, Armatures & IK</a>
+
+    <a class="nav-item" href="systems-physics.html">Physics & Ragdolls</a>
+
+    <a class="nav-item" href="systems-audio.html">Audio Engine & Mixer</a>
+
+    <a class="nav-item" href="systems-navigation.html">Navigation & AI Patrol</a>
+
+    <a class="nav-item" href="systems-networking.html">Multiplayer & Authority</a>
+
+    <a class="nav-item" href="systems-scripting.html">Lua Scripting API</a>
+
+  </div>
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Editor Reference</div>
+
+    <a class="nav-item" href="editor-menus.html">Main Menus & Shortcuts</a>
+
+    <a class="nav-item" href="editor-windows.html">Windows, Inspector & Modals</a>
+
+  </div>
+
+</div>
+
+
+
+  </aside>
+
+
+
+  <main id="main-content">
+
+    <div class="breadcrumbs">
+
+      <a href="index.html">Docs</a> &gt; <span>Getting Started</span> &gt; <span>Engine Overview & Quickstart</span>
+
+    </div>
+
+
+
+    
+
+    <h1>Tessera Game Engine Documentation</h1>
+
+    <p class="lead">Welcome to the complete, definitive technical reference manual and user guide for the <strong>Tessera Game Engine</strong>. Tessera is a modern, high-performance, multi-threaded 3D and 2D game engine built from the ground up in C++20 with a Vulkan 1.2 rendering backend, integrated JoltPhysics, FBX / glTF skeletal animation with GPU skinning, spatial audio, A* NavMesh pathfinding, Godot-style authoritative multiplayer networking, and an embedded Lua 5.4 scripting environment.</p>
+
+
+
+    <div class="callout callout-info">
+
+      <div class="callout-title">&#8505; Engine Philosophy: Modern, Modular & Authoritative</div>
+
+      <p>Tessera is designed around unified scene graphs, data-oriented memory buffers, and clear authority models. Whether developing an open-world action RPG, an indie platformer, or a multiplayer cooperative experience, every subsystem—from rendering and decimation to physics and replication—is cleanly decoupled and exposed via both an intuitive ImGui editor and an expressive Lua API.</p>
+
+    </div>
+
+
+
+    <h2>1. High-Level Engine Architecture</h2>
+
+    <p>The engine architecture is divided into decoupled core modules, orchestrated by the main engine loop (<code>src/main.cpp</code> and <code>src/Gameplay/GameLoop.cpp</code>):</p>
+
+
+
+    <table>
+
+      <thead>
+
+        <tr>
+
+          <th>Subsystem</th>
+
+          <th>Implementation Path</th>
+
+          <th>Key Responsibilities & Technologies</th>
+
+        </tr>
+
+      </thead>
+
+      <tbody>
+
+        <tr>
+
+          <td><strong>Vulkan Graphics Pipeline</strong></td>
+
+          <td><code>src/Renderer/</code></td>
+
+          <td>Vulkan 1.2 Forward+ renderer: clustered lights (including LTC Area Lights), multi-scattering PBR with skin / hair / eye models and Parallax Occlusion Mapping, cascaded and point-light shadows with screen-space contact shadows, reflection probes, baked GI and Real-Time Voxel Global Illumination (VXGI), GTAO + Specular Occlusion, SSR, volumetric fog, TAA, HDR post chain, GPU skinning, instancing, multi-material glTF/FBX submeshes, texture compression, and a runtime Visual Shader Graph.</td>
+
+        </tr>
+
+        <tr>
+
+          <td><strong>Scene Graph & Entity System</strong></td>
+
+          <td><code>src/Scene/</code></td>
+
+          <td>Hierarchical node tree (<code>Node</code>, <code>MeshNode</code>, <code>CharacterNode</code>, <code>UINode</code>), transform propagation, JSON serialization, and clipboard management.</td>
+
+        </tr>
+
+        <tr>
+
+          <td><strong>Level of Detail (LOD) & Simplification</strong></td>
+
+          <td><code>src/Scene/MeshSimplifier.*</code></td>
+
+          <td>Distance-based LOD switching, draw-distance culling, and in-engine Quadric Error Metric (QEM) edge-collapse decimation (LOD1 50%, LOD2 25%, LOD3 10%).</td>
+
+        </tr>
+
+        <tr>
+
+          <td><strong>Physics & Dynamics</strong></td>
+
+          <td><code>src/Physics/</code></td>
+
+          <td>JoltPhysics simulation backend, Static, Kinematic, Dynamic rigidbodies, constraints (Fixed, Hinge, Slider, Spring, Cone-Twist), ragdolls, and character raycasting.</td>
+
+        </tr>
+
+        <tr>
+
+          <td><strong>Dual Animation Engine</strong></td>
+
+          <td><code>src/Animation/</code></td>
+
+          <td>Skeletal matrix &amp; dual-quaternion skinning, Two-Bone Analytical IK, FABRIK solvers, Blend Shapes / Morph Targets, Visual Animation State Machine graph, and In-Engine Cutscene &amp; Cinematic Sequencer.</td>
+
+        </tr>
+
+        <tr>
+
+          <td><strong>Spatial Audio & DSP Mixer</strong></td>
+
+          <td><code>src/Audio/</code></td>
+
+          <td>3D positional audio attenuation, Master/SFX/Music/Voice sub-buses, Doppler effect, DSP Reverb, Chorus, Distortion, Filters, and 3D Reverb Zones.</td>
+
+        </tr>
+
+        <tr>
+
+          <td><strong>Navigation & AI Pathfinding</strong></td>
+
+          <td><code>src/Navigation/</code></td>
+
+          <td>NavMesh voxel rasterization, slope/step filtering, convex navigation polygon extraction, A* search, funnel string pulling, and NPC patrol steering.</td>
+
+        </tr>
+
+        <tr>
+
+          <td><strong>Authoritative Multiplayer Networking</strong></td>
+
+          <td><code>src/Networking/</code></td>
+
+          <td>Client-Server architecture, Godot-style <code>multiplayerAuthority</code>, local peer IDs (1=Server, 2+=Clients), state replication packets, authority shielding, and RPCs.</td>
+
+        </tr>
+
+        <tr>
+
+          <td><strong>Embedded Scripting Runtime</strong></td>
+
+          <td><code>src/Scripting/</code></td>
+
+          <td>Lua 5.4 VM with automatic node binding, lifecycle callbacks (<code>OnInit</code>, <code>OnUpdate</code>, <code>OnCollision</code>), input polling, physics manipulation, and RPC dispatch.</td>
+
+        </tr>
+
+        <tr>
+
+          <td><strong>In-Game Video & Screen Displays</strong></td>
+
+          <td><code>src/Video/</code></td>
+
+          <td>Real-time video playback on 3D mesh surfaces (TVs, cinema screens, smartphones, CCTV, billboards) and fullscreen/PiP cutaway transmissions. Features GIF decoding, sprite-sheet atlases, procedural broadcast channels, CRT scanlines, and real-time HDR screen emission bouncing into VXGI and SSR.</td>
+
+        </tr>
+
+        <tr>
+
+          <td><strong>Editor UI & Workspace</strong></td>
+
+          <td><code>src/UI/</code></td>
+
+          <td>Dear ImGui workspace, custom borderless window chrome with draggable titlebar, Project Files Viewer, dockable panels, ImGuizmo 3D transform manipulators, Node Inspector, Timeline, Shader Graph canvas, and State Machine editor.</td>
+
+        </tr>
+
+        <tr>
+
+          <td><strong>Live Telemetry & Resource Profiler</strong></td>
+
+          <td><code>src/Monitoring/</code></td>
+
+          <td>Real-time CPU and GPU profiling, FPS/frame-time statistics, game-isolated memory, CPU, disk, network, and node telemetry with dynamic exponential smoothing.</td>
+
+        </tr>
+
+        <tr>
+
+          <td><strong>Multi-Platform Standalone & Web Export</strong></td>
+
+          <td><code>src/Export/</code>, <code>src/Project/</code></td>
+
+          <td>Windows standalone single-file bundling, Linux Standalone & SteamOS packaging with turnkey <code>launch.sh</code> and <code>.desktop</code> profiles, and zero-dependency WebGL 2.0 / HTML5 export with embedded assets and unified controls.</td>
+
+        </tr>
+
+      </tbody>
+
+    </table>
+
+
+
+    <h2>2. Project Directory Structure</h2>
+
+    <p>Tessera projects follow a clean, standardized folder structure automatically managed by the engine:</p>
+
+    <pre><code>MyGameProject/
+
+&#9500;&#9472;&#9472; MyGameProject.tess      # Project configuration & settings file (JSON)
+
+&#9500;&#9472;&#9472; assets/
+
+&#9474;   &#9500;&#9472;&#9472; models/                 # 3D Meshes (.fbx, .gltf, .glb, .obj) & LOD chains
+
+&#9474;   &#9500;&#9472;&#9472; textures/               # PBR texture maps (.png, .jpg, .tga, .bmp)
+
+&#9474;   &#9500;&#9472;&#9472; audio/                  # Audio clips (.wav, .ogg, .mp3)
+
+&#9474;   &#9492;&#9472;&#9472; fonts/                  # TrueType / OpenType fonts (.ttf, .otf)
+
+&#9500;&#9472;&#9472; scenes/
+
+&#9474;   &#9500;&#9472;&#9472; main.scene              # Primary start scene (JSON node hierarchy)
+
+&#9474;   &#9492;&#9472;&#9472; level2.scene            # Additional gameplay scenes
+
+&#9492;&#9472;&#9472; scripts/
+
+    &#9500;&#9472;&#9472; PlayerController.lua    # Lua actor and gameplay scripts
+
+    &#9492;&#9472;&#9472; NetworkSync.lua         # Multiplayer replication and RPC scripts</code></pre>
+
+
+
+    <h2>3. Engine Quickstart Guide</h2>
+
+
+
+    <h3>Step 1: Launching the Editor</h3>
+
+    <p>Run <code>TesseraGameEngine.exe</code>. If no project is passed via command-line arguments, the engine opens the default project or prompts you with the <strong>Project Manager</strong> modal.</p>
+
+
+
+    <h3>Step 2: Creating a New Project</h3>
+
+    <ol>
+
+      <li>Click <strong>File &rarr; New Project...</strong> (<kbd>Ctrl+N</kbd>).</li>
+
+      <li>Enter a Project Name (e.g. <code>FantasyRPG</code>) and choose a parent workspace folder.</li>
+
+      <li>The engine creates the folder structure, initializes <code>FantasyRPG.tess</code>, sets up default scenes, and loads the editor viewport.</li>
+
+    </ol>
+
+
+
+    <h3>Step 3: Spawning Nodes into the Scene</h3>
+
+    <p>Open the <strong>Add Node Palette</strong> by pressing <kbd>Ctrl+A</kbd> or right-clicking in the <strong>Scene Hierarchy</strong>:</p>
+
+    <ul>
+      <li><a href="engine-architecture.html"><strong>Engine Internal Architecture & Contributor Guide</strong></a> &mdash; Deep technical guide for engine developers: Vulkan pipeline flow, shaders catalog, file/class map, and how-to guides.</li>
+
+      <li><a href="linux-guide.html"><strong>Linux Build & Standalone Export Guide</strong></a> &mdash; Native compilation on Linux, export templates, turnkey <code>launch.sh</code> packaging, and Steam Deck integration.</li>
+
+      <li>To add an environment floor, choose <strong>3D Objects & Primitives &rarr; Plane</strong>.</li>
+
+      <li>To add a directional sun, choose <strong>Entities & Lighting &rarr; Directional Light</strong>.</li>
+
+      <li>To add an interactive character, choose <strong>3D Objects & Primitives &rarr; Character NPC</strong>.</li>
+
+    </ul>
+
+
+
+    <h3>Step 4: Assigning 3D Model Assets to Nodes</h3>
+
+    <ol>
+
+      <li>Select your node (e.g., <code>Humanoid NPC</code>) in the Scene Hierarchy.</li>
+
+      <li>In the <strong>Inspector</strong> panel (right), locate the <strong>3D Model Asset</strong> slot directly below the Name field.</li>
+
+      <li>Click <strong>Browse...</strong> and select an imported <code>.fbx</code> or <code>.gltf</code> character file (e.g., <code>knight.fbx</code>).</li>
+
+      <li>The engine immediately copies the asset to <code>assets/models/</code>, extracts skeleton/bone joints, uploads mesh buffers to the GPU, and updates the viewport.</li>
+
+    </ol>
+
+
+
+    <h3>Step 5: Testing Gameplay in Play Mode</h3>
+
+    <p>Press <kbd>F5</kbd> on your keyboard or click the <strong>Play</strong> button on the Viewport toolbar. The engine switches into live gameplay mode: physics are simulated, character patrol routines execute, and Lua scripts run. Tessera enforces a <strong>Clean Slate Input Architecture</strong>: brand new games start with zero unsolicited default controls, meaning cameras and entities stay exactly where you placed them until you define their behaviors via Lua scripts or Input Action bindings. (Optional debug spectator camera can be enabled via code if desired). Press <kbd>Esc</kbd> (or the Stop button) to exit Play Mode and return to editing.</p>
+
+
+
+    <h3>Command-Line Options</h3>
+
+    <table>
+
+      <thead><tr><th>Option</th><th>Effect</th></tr></thead>
+
+      <tbody>
+
+        <tr><td><code>--game --scene=&lt;file&gt;</code></td><td>Run a scene as the game, without the editor.</td></tr>
+
+        <tr><td><code>--screenshot=&lt;file.png&gt;</code></td><td>Save the rendered image and exit. In editor mode it skips the project hub and saves the 3D viewport.</td></tr>
+
+        <tr><td><code>--screenshot-frame=&lt;N&gt;</code></td><td>Frame to capture (default 90).</td></tr>
+
+        <tr><td><code>--texture-compression=off|standard|high</code></td><td>Texture compression: off, BC1/BC3 (default) or BC7. Normal maps use BC5. <code>--no-texture-compression</code> = off.</td></tr>
+
+        <tr><td><code>--bake-lighting</code></td><td>Bake the scene's lightmaps and GI volume at startup and save <code>&lt;scene&gt;.lightmap</code> / <code>&lt;scene&gt;.gi</code>; a screenshot waits for the bake.</td></tr>
+
+      </tbody>
+
+    </table>
+
+    <p>Generated data lives in <code>cache/textures/</code> (compressed textures) and <code>cache/shadergraphs/</code> (compiled shader graphs). Both can be deleted; they are rebuilt when needed.</p>
+
+    <h2>4. Documentation Directory Navigation</h2>
+
+    <p>Use the sidebar or the navigation cards below to explore every part of the engine in detail:</p>
+
+    <ul>
+      <li><a href="engine-architecture.html"><strong>Engine Internal Architecture & Contributor Guide</strong></a> &mdash; Deep technical guide for engine developers: Vulkan pipeline flow, shaders catalog, file/class map, and how-to guides.</li>
+
+      <li><a href="linux-guide.html"><strong>Linux Build & Standalone Export Guide</strong></a> &mdash; Native compilation on Linux, export templates, turnkey <code>launch.sh</code> packaging, and Steam Deck integration.</li>
+
+      <li><a href="nodes-3d.html"><strong>3D Nodes & Scene Entities</strong></a> &mdash; Every 3D mesh, character NPC, light, camera, audio source, particle emitter, decal, spline, and collider.</li>
+
+      <li><a href="nodes-ui.html"><strong>2D UI Component Nodes</strong></a> &mdash; All 22 screen-space UI nodes (Canvas, Panels, Buttons, Text, Windows, Sliders, Dropdowns, Vector Shapes).</li>
+
+      <li><a href="systems-rendering.html"><strong>Rendering, PBR & LOD</strong></a> &mdash; Vulkan pipeline, PBR textures, automatic QEM LOD generation, Bloom, SSAO, SSR, and Shader Graph.</li>
+
+      <li><a href="systems-animation.html"><strong>Animation, Armatures & IK</strong></a> &mdash; Skeletal skinning, Two-Bone IK, Blend Shapes/Morph Targets, Timeline, and State Machines.</li>
+
+      <li><a href="systems-physics.html"><strong>Physics & Dynamics</strong></a> &mdash; JoltPhysics simulation, RigidBody types, constraints, springs, ragdolls, and raycast clamping.</li>
+
+      <li><a href="systems-audio.html"><strong>Audio Engine & Mixer</strong></a> &mdash; 3D spatial attenuation, audio buses, DSP Reverb, Chorus, Distortion, and Reverb Zones.</li>
+
+      <li><a href="systems-navigation.html"><strong>Navigation & AI Patrol</strong></a> &mdash; NavMesh generation, A* pathfinding, NPC waypoints, steering, and dialogue.</li>
+
+      <li><a href="systems-networking.html"><strong>Multiplayer & Networking</strong></a> &mdash; Godot-style authority model, state replication packets, authority shielding, and RPCs.</li>
+
+      <li><a href="systems-scripting.html"><strong>Lua Scripting API Reference</strong></a> &mdash; Lifecycle hooks, Transform/Node/Input/Network/Physics APIs, and code templates.</li>
+
+      <li><a href="editor-menus.html"><strong>Main Menus & Shortcuts</strong></a> &mdash; Every menu item in File, Scene, Edit, Camera, Gizmo, Window, and global hotkeys.</li>
+
+      <li><a href="editor-windows.html"><strong>Editor Windows, Inspector & Modals</strong></a> &mdash; Complete walkthrough of all panels, components, Live Profiler, File Viewer, and export options.</li>
+
+    </ul>
+
+    
+
+
+
+    <div class="pagination">
+
+  <div></div>
+
+  <a href="nodes-3d.html" class="pagination-card next">
+
+    <span class="pagination-label">Next &rarr;</span>
+
+    <span class="pagination-title">3D Nodes & Scene Entities</span>
+
+  </a>
+
+</div>
+
+
+
+  </main>
+
+</body>
+
+</html>
+

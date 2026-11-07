@@ -1,0 +1,51 @@
+{
+  "packages": [
+{
+  "SPDXID" : "SPDXRef-resource-0",
+  "checksums" : 
+  [
+    {
+      "algorithm" : "SHA512",
+      "checksumValue" : "00ade7a3e2c2e34465f1bb9fafd78733d3e659617b0857cf1b3c7f04cfc1d8566d1fd6a8697946f0de7c808cce1c4d0a4b2195c7bc20144cfd8b1e9b1cfba621"
+    }
+  ],
+  "copyrightText" : "NOASSERTION",
+  "downloadLocation" : "git+https://github.com/ocornut/imgui@v1.93.0-docking",
+  "licenseConcluded" : "NOASSERTION",
+  "licenseDeclared" : "NOASSERTION",
+  "name" : "ocornut/imgui"
+},
+{
+  "SPDXID" : "SPDXRef-resource-1",
+  "checksums" : 
+  [
+    {
+      "algorithm" : "SHA512",
+      "checksumValue" : "b17bc797420ceb31de53a3d7e82838ae0b3abbe0f672b0bc3f13e131464843c38649cc911b25661f086b0eee03d5ff3d6e07a075aedcc76cc742a141d9591303"
+    }
+  ],
+  "copyrightText" : "NOASSERTION",
+  "downloadLocation" : "https://raw.githubusercontent.com/bluescan/proggyfonts/139ec08a38096161291792313ef5803fc4f0e37b/LICENSE",
+  "licenseConcluded" : "NOASSERTION",
+  "licenseDeclared" : "NOASSERTION",
+  "name" : "imgui-proggyclean-license-139ec08a38096161291792313ef5803fc4f0e37b.txt",
+  "packageFileName" : "imgui-proggyclean-license-139ec08a38096161291792313ef5803fc4f0e37b.txt"
+},
+{
+  "SPDXID" : "SPDXRef-resource-2",
+  "checksums" : 
+  [
+    {
+      "algorithm" : "SHA512",
+      "checksumValue" : "dda5f9f404f62dd2d3d3be12ba80db167fb3f9f5b177337fd1133b51d2adb8a58f98eb12adc6f1c7b247299513c7186859c61d4a7e2f4a69135d06b8fc2518d9"
+    }
+  ],
+  "copyrightText" : "NOASSERTION",
+  "downloadLocation" : "https://raw.githubusercontent.com/ocornut/proggyforever/f8868ba43bb42c4d88454d03ad81cbd139789f72/LICENSE.txt",
+  "licenseConcluded" : "NOASSERTION",
+  "licenseDeclared" : "NOASSERTION",
+  "name" : "imgui-proggyforever-license-f8868ba43bb42c4d88454d03ad81cbd139789f72.txt",
+  "packageFileName" : "imgui-proggyforever-license-f8868ba43bb42c4d88454d03ad81cbd139789f72.txt"
+}
+  ]
+}

@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+  <meta charset="UTF-8">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Multiplayer & Networking Authority - Tessera Engine Documentation</title>
+
+  <link rel="stylesheet" href="style.css">
+
+  <script src="nav.js" defer></script>
+
+</head>
+
+<body>
+
+  <aside id="sidebar">
+
+    <div class="sidebar-header">
+
+      <h2>&#9881; Tessera Engine</h2>
+
+      <p>Official Developer Documentation</p>
+
+    </div>
+
+    <div class="search-box">
+
+      <input type="text" id="doc-search" placeholder="Filter documentation..." autocomplete="off">
+
+    </div>
+
+    <div class="sidebar-nav">
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Getting Started</div>
+
+    <a class="nav-item" href="index.html">Overview & Quickstart</a>
+
+  </div>
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Node Reference</div>
+
+    <a class="nav-item" href="nodes-3d.html">3D Nodes & Entities</a>
+
+    <a class="nav-item" href="nodes-ui.html">2D UI Component Nodes</a>
+
+  </div>
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Core Systems</div>
+
+    <a class="nav-item" href="systems-rendering.html">Rendering, PBR & LOD</a>
+
+    <a class="nav-item" href="systems-animation.html">Animation, Armatures & IK</a>
+
+    <a class="nav-item" href="systems-physics.html">Physics & Ragdolls</a>
+
+    <a class="nav-item" href="systems-audio.html">Audio Engine & Mixer</a>
+
+    <a class="nav-item" href="systems-navigation.html">Navigation & AI Patrol</a>
+
+    <a class="nav-item active" href="systems-networking.html">Multiplayer & Authority</a>
+
+    <a class="nav-item" href="systems-scripting.html">Lua Scripting API</a>
+
+  </div>
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Editor Reference</div>
+
+    <a class="nav-item" href="editor-menus.html">Main Menus & Shortcuts</a>
+
+    <a class="nav-item" href="editor-windows.html">Windows, Inspector & Modals</a>
+
+  </div>
+
+</div>
+
+
+
+  </aside>
+
+
+
+  <main id="main-content">
+
+    <div class="breadcrumbs">
+
+      <a href="index.html">Docs</a> &gt; <span>Core Systems</span> &gt; <span>Multiplayer & Networking Authority</span>
+
+    </div>
+
+
+
+    
+
+    <h1>Multiplayer Architecture & Authority Model</h1>
+
+    <p class="lead">Tessera implements a high-performance authoritative Client-Server multiplayer architecture inspired by <strong>Godot Engine</strong>'s authority design (<code>src/Networking/</code>), featuring fine-grained per-node authority delegation, authoritative state replication packets, authority shields, and Remote Procedure Calls (RPCs).</p>
+
+
+
+    <h2>1. The Godot-Style Authority Model</h2>
+
+    <p>In Tessera, every node in the scene graph has a <code>multiplayerAuthority</code> property (a 32-bit unsigned integer representing a network Peer ID):</p>
+
+    <ul>
+
+      <li><strong>Peer ID <code>1</code></strong>: Always represents the <strong>Server / Host</strong>.</li>
+
+      <li><strong>Peer ID <code>2+</code></strong>: Represents connected <strong>Clients</strong> (Peer 2, Peer 3, Peer 4, etc.).</li>
+
+    </ul>
+
+
+
+    <div class="callout callout-info">
+
+      <div class="callout-title">&#8505; Why Per-Node Authority?</div>
+
+      <p>Instead of either the server simulating everything or clients trusting each other arbitrarily, each entity has an explicit master. The server owns the global world (monsters, doors, day/night cycle, economy), while each client is assigned authority over their own player avatar.</p>
+
+    </div>
+
+
+
+    <h2>2. State Replication & The Authority Shield</h2>
+
+    <p>Multiplayer synchronization occurs at a fixed network tick rate (default 20 Hz / 30 Hz):</p>
+
+    <ol>
+
+      <li><strong>Outbound Replication Filtering</strong>: Each peer only sends state updates for nodes it currently owns:
+
+        <pre><code class="language-cpp">if (node->multiplayerAuthority != m_localPeerId) continue; // Don't send what we don't own!</code></pre>
+
+      </li>
+
+      <li><strong>Inbound Authority Shield</strong>: When receiving state updates from a remote peer, the engine validates ownership before applying changes:
+
+        <pre><code class="language-cpp">if (node->multiplayerAuthority == m_localPeerId) return; // Discard! Remote peer cannot override our node!</code></pre>
+
+      </li>
+
+    </ol>
+
+    <p>This completely prevents malicious or desynced clients from moving the server's NPCs, teleporting other players, or altering world geometry.</p>
+
+
+
+    <h2>3. Remote Procedure Calls (RPC)</h2>
+
+    <p>Peers communicate gameplay events across the network using RPCs:</p>
+
+    <table>
+
+      <thead><tr><th>Delivery Mode</th><th>Protocol</th><th>Use Cases</th></tr></thead>
+
+      <tbody>
+
+        <tr><td><strong>Reliable</strong></td><td>Sequenced TCP / Reliable UDP</td><td>Spawning characters, dealing damage, inventory transactions, chat messages, setting authority.</td></tr>
+
+        <tr><td><strong>Unreliable</strong></td><td>Fast UDP Datagrams</td><td>Cosmetic particle effects, camera shake triggers, footstep sound triggers.</td></tr>
+
+      </tbody>
+
+    </table>
+
+
+
+    <h3>Handing Off Authority via RPC</h3>
+
+    <p>When a player logs into your game or joins a server:</p>
+
+    <pre><code class="language-lua">-- Server spawns a character for the incoming client (e.g. Peer 2)
+
+function on_player_connected(peer_id)
+
+    local avatar = Scene.add_character_node("Player_" .. peer_id)
+
+    avatar:set_multiplayer_authority(peer_id)
+
+    
+
+    -- Notify all connected clients of the new authority assignment
+
+    Network.rpc("SetAuthority", avatar:get_id(), peer_id)
+
+end</code></pre>
+
+
+
+    <h2>4. The Multiplayer & Networking Window</h2>
+
+    <p>Accessible via <kbd>Shift+P</kbd> or <strong>Window &rarr; Multiplayer & Networking</strong>:</p>
+
+    <ul>
+
+      <li><strong>Host Server Button</strong>: Launches the authoritative simulation server on the configured port (default <code>7777</code>). Sets local peer ID to <code>1</code>.</li>
+
+      <li><strong>Connect Client Button</strong>: Connects to a remote or local host IP address. Receives assigned client peer ID.</li>
+
+      <li><strong>Peer List & Ping Monitor</strong>: Shows all connected clients with live round-trip latency (ping) and packet replication rates.</li>
+
+      <li><strong>Interactive Authority Inspector</strong>: View and reassign any node's <code>multiplayerAuthority</code> with a single click.</li>
+
+      <li><strong>RPC Test Console</strong>: Send test remote procedure calls with custom string and integer payloads to any peer.</li>
+
+    </ul>
+
+    
+
+
+
+    
+    <h2>4. Declarative Multiplayer Property Sync</h2>
+    <p>In addition to authoritative transforms, Tessera supports declarative, per-property synchronization rules inspired by modern multiplayer networking patterns:</p>
+    
+    <table>
+      <thead><tr><th>Replication Mode</th><th>Enum Value</th><th>Bandwidth Profile & Description</th></tr></thead>
+      <tbody>
+        <tr><td><strong>On Change</strong></td><td><code>ReplicationMode::OnChange</code></td><td>Only broadcasts an update when the property's numerical or string value actually changes, throttled to a configurable maximum frequency (e.g. 20 Hz). Minimizes packet sizes for health, animation states, colors, and inventory counters.</td></tr>
+        <tr><td><strong>Continuous</strong></td><td><code>ReplicationMode::Continuous</code></td><td>Transmits property state on every network tick regardless of change. Best suited for high-frequency physics transforms and simulated velocities.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Configuring Declarative Replication in Lua</h3>
+    <pre><code class="language-lua">function OnInit(self)
+    -- Enable declarative replication for this entity
+    self:SetReplicationEnabled(true)
+
+    -- Synchronize position and animation state whenever they mutate
+    self:AddReplicationRule("position", "OnChange", 20.0)
+    self:AddReplicationRule("animState", "OnChange", 20.0)
+    self:AddReplicationRule("color", "OnChange", 10.0)
+end</code></pre>
+
+    <div class="pagination">
+
+  <a href="systems-navigation.html" class="pagination-card prev">
+
+    <span class="pagination-label">&larr; Previous</span>
+
+    <span class="pagination-title">Navigation, NavMesh & AI Patrol</span>
+
+  </a>
+
+  <a href="systems-scripting.html" class="pagination-card next">
+
+    <span class="pagination-label">Next &rarr;</span>
+
+    <span class="pagination-title">Lua Scripting API Reference</span>
+
+  </a>
+
+</div>
+
+
+
+  </main>
+
+</body>
+
+</html>
+

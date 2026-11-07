@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+  <meta charset="UTF-8">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Lua Scripting API Reference - Tessera Engine Documentation</title>
+
+  <link rel="stylesheet" href="style.css">
+
+  <script src="nav.js" defer></script>
+
+</head>
+
+<body>
+
+  <aside id="sidebar">
+
+    <div class="sidebar-header">
+
+      <h2>&#9881; Tessera Engine</h2>
+
+      <p>Official Developer Documentation</p>
+
+    </div>
+
+    <div class="search-box">
+
+      <input type="text" id="doc-search" placeholder="Filter documentation..." autocomplete="off">
+
+    </div>
+
+    <div class="sidebar-nav">
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Getting Started</div>
+
+    <a class="nav-item" href="index.html">Overview & Quickstart</a>
+
+  </div>
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Node Reference</div>
+
+    <a class="nav-item" href="nodes-3d.html">3D Nodes & Entities</a>
+
+    <a class="nav-item" href="nodes-ui.html">2D UI Component Nodes</a>
+
+  </div>
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Core Systems</div>
+
+    <a class="nav-item" href="systems-rendering.html">Rendering, PBR & LOD</a>
+
+    <a class="nav-item" href="systems-animation.html">Animation, Armatures & IK</a>
+
+    <a class="nav-item" href="systems-physics.html">Physics & Ragdolls</a>
+
+    <a class="nav-item" href="systems-audio.html">Audio Engine & Mixer</a>
+
+    <a class="nav-item" href="systems-navigation.html">Navigation & AI Patrol</a>
+
+    <a class="nav-item" href="systems-networking.html">Multiplayer & Authority</a>
+
+    <a class="nav-item active" href="systems-scripting.html">Lua Scripting API</a>
+
+  </div>
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Editor Reference</div>
+
+    <a class="nav-item" href="editor-menus.html">Main Menus & Shortcuts</a>
+
+    <a class="nav-item" href="editor-windows.html">Windows, Inspector & Modals</a>
+
+  </div>
+
+</div>
+
+
+
+  </aside>
+
+
+
+  <main id="main-content">
+
+    <div class="breadcrumbs">
+
+      <a href="index.html">Docs</a> &gt; <span>Core Systems</span> &gt; <span>Lua Scripting API Reference</span>
+
+    </div>
+
+
+
+    
+
+    <h1>Lua Scripting API Reference</h1>
+
+    <p class="lead">The Tessera Engine embeds a full <strong>Lua 5.4</strong> runtime (<code>src/Scripting/</code>) allowing gameplay mechanics, character controllers, user interfaces, and multiplayer network replication to be scripted with zero recompile times and live hot-reloading.</p>
+
+
+
+    <h2>1. Node Script Lifecycle Callbacks</h2>
+
+    <p>When a Lua script is bound to a node (via the <code>Script File</code> slot in the Inspector), the engine invokes the following lifecycle events:</p>
+
+    <table>
+
+      <thead><tr><th>Callback</th><th>Signature</th><th>Timing & Description</th></tr></thead>
+
+      <tbody>
+
+        <tr><td><strong><code>OnInit(self)</code></strong></td><td><code>function OnInit(self)</code></td><td>Called once when the game enters Play Mode (<kbd>F5</kbd>) or when the node is spawned dynamically at runtime. Ideal for initializing variables, caching references, and playing entrance animations.</td></tr>
+
+        <tr><td><strong><code>OnUpdate(self, dt)</code></strong></td><td><code>function OnUpdate(self, dt)</code></td><td>Called every frame during Play Mode. Receives <code>dt</code> (delta time in floating-point seconds, e.g. <code>0.0166</code> for 60 FPS). Use for movement, input handling, and game logic.</td></tr>
+
+        <tr><td><strong><code>OnDestroy(self)</code></strong></td><td><code>function OnDestroy(self)</code></td><td>Called immediately before the node is removed from the scene or when Play Mode stops. Ideal for cleanup, spawning death particles, or dropping loot.</td></tr>
+
+        <tr><td><strong><code>OnCollision(self, other_id)</code></strong></td><td><code>function OnCollision(self, other_id)</code></td><td>Invoked by JoltPhysics when this node's collider intersects with another solid collider. Receives the numerical <code>id</code> of the other node.</td></tr>
+
+      </tbody>
+
+    </table>
+
+
+
+    <h2>2. Complete Lua Global API Reference</h2>
+
+
+
+    <h3>Self (Node Instance) Methods</h3>
+
+    <table>
+
+      <thead><tr><th>Method</th><th>Parameters</th><th>Returns</th><th>Description</th></tr></thead>
+
+      <tbody>
+
+        <tr><td><code>self:get_id()</code></td><td>None</td><td>integer</td><td>Returns the unique 64-bit ID of this node.</td></tr>
+
+        <tr><td><code>self:get_name()</code></td><td>None</td><td>string</td><td>Returns the string name of this node.</td></tr>
+
+        <tr><td><code>self:get_position()</code></td><td>None</td><td>x, y, z</td><td>Returns the local position coordinates as three floats.</td></tr>
+
+        <tr><td><code>self:set_position(x, y, z)</code></td><td>number, number, number</td><td>nil</td><td>Sets the local position of this node.</td></tr>
+
+        <tr><td><code>self:translate(dx, dy, dz)</code></td><td>number, number, number</td><td>nil</td><td>Adds a relative displacement to the local position.</td></tr>
+
+        <tr><td><code>self:get_rotation()</code></td><td>None</td><td>p, y, r</td><td>Returns Euler rotation in degrees (pitch, yaw, roll).</td></tr>
+
+        <tr><td><code>self:set_rotation(p, y, r)</code></td><td>number, number, number</td><td>nil</td><td>Sets Euler rotation in degrees.</td></tr>
+
+        <tr><td><code>self:rotate(dp, dy, dr)</code></td><td>number, number, number</td><td>nil</td><td>Adds angular rotation in degrees.</td></tr>
+
+        <tr><td><code>self:get_scale()</code></td><td>None</td><td>sx, sy, sz</td><td>Returns the 3D local scale multipliers.</td></tr>
+
+        <tr><td><code>self:set_scale(sx, sy, sz)</code></td><td>number, number, number</td><td>nil</td><td>Sets local scale multipliers.</td></tr>
+
+        <tr><td><code>self:set_visible(bool)</code></td><td>boolean</td><td>nil</td><td>Toggles node visibility in the renderer.</td></tr>
+
+        <tr><td><code>self:set_animation_state(name)</code></td><td>string</td><td>nil</td><td>Triggers a state transition in the Animation State Machine.</td></tr>
+
+        <tr><td><code>self:is_multiplayer_authority()</code></td><td>None</td><td>boolean</td><td>Returns <code>true</code> if this peer owns the node.</td></tr>
+
+        <tr><td><code>self:set_multiplayer_authority(id)</code></td><td>integer</td><td>nil</td><td>Transfers ownership to the designated peer ID (1=Server).</td></tr>
+
+        <tr><td><code>self:set_ui_progress(val)</code></td><td>number (0.0 to 1.0)</td><td>nil</td><td>Sets progress bar ratio (for <code>UIProgressBarNode</code>).</td></tr>
+        <tr><td><code>self:Connect(signal_name, fn)</code></td><td>string, function</td><td>integer</td><td>Subscribes a Lua callback function to a named signal on this node; returns a connection ID.</td></tr>
+        <tr><td><code>self:Emit(signal_name, ...args)</code></td><td>string, varargs</td><td>nil</td><td>Broadcasts a signal and arguments across all registered C++ and Lua listeners.</td></tr>
+        <tr><td><code>self:Disconnect(signal_name, conn_id)</code></td><td>string, integer</td><td>boolean</td><td>Unsubscribes a listener connection from this node.</td></tr>
+        <tr><td><code>self:ReloadInstance()</code></td><td>None</td><td>boolean</td><td>Hot-reloads this instanced prefab subtree from its source <code>.scene</code> file on disk.</td></tr>
+        <tr><td><code>self:SetLiquidFill(fill)</code></td><td>number (0..1)</td><td>nil</td><td>Sets a Liquid Fill node's fill level.</td></tr>
+
+        <tr><td><code>self:GetLiquidFill()</code></td><td>&mdash;</td><td>number</td><td>The liquid's current fill level (0..1).</td></tr>
+
+        <tr><td><code>self:SetPourFlow(flow)</code></td><td>number (0..1, or -1)</td><td>nil</td><td>Pour spouts: fixes the flow, or -1 to pour by tilt again.</td></tr>
+
+        <tr><td><code>self:GetPourFlow()</code></td><td>&mdash;</td><td>number</td><td>How fast the spout is pouring this frame (0..1).</td></tr>
+
+        <tr><td><code>self:EmitParticles(n)</code></td><td>integer</td><td>nil</td><td>Particle emitters: a burst of <em>n</em> particles now (CPU or GPU emitters).</td></tr>
+
+        <tr><td><code>self:SetEmitting(on)</code></td><td>boolean</td><td>nil</td><td>Starts or stops the emitter's steady flow; living particles carry on.</td></tr>
+
+        <tr><td><code>self:GetParticleCount()</code></td><td>&mdash;</td><td>integer</td><td>Particles alive (GPU emitters report a frame or two late).</td></tr>
+
+        <tr><td><code>self:GetParticleHits()</code></td><td>&mdash;</td><td>integer, x, y, z</td><td>Particles that hit something (Collision) since the last call, and where the last one hit.</td></tr>
+
+        <tr><td><code>self:ResetParticles()</code></td><td>&mdash;</td><td>nil</td><td>Removes every particle (and trail).</td></tr>
+
+
+
+        <tr><td><code>self:EmitParticles(n)</code></td><td>integer</td><td>nil</td><td>Particle emitters: a burst of <em>n</em> particles now (CPU or GPU emitters).</td></tr>
+
+
+
+        <tr><td><code>self:SetEmitting(on)</code></td><td>boolean</td><td>nil</td><td>Starts or stops the emitter's steady flow; living particles carry on.</td></tr>
+
+
+
+        <tr><td><code>self:GetParticleCount()</code></td><td>&mdash;</td><td>integer</td><td>Particles alive (GPU emitters report a frame or two late).</td></tr>
+
+
+
+        <tr><td><code>self:GetParticleHits()</code></td><td>&mdash;</td><td>integer, x, y, z</td><td>Particles that hit something (Collision) since the last call, and where the last one hit.</td></tr>
+
+
+
+        <tr><td><code>self:ResetParticles()</code></td><td>&mdash;</td><td>nil</td><td>Removes every particle (and trail).</td></tr>
+
+        <tr><td><code>self:EmitParticles(n)</code></td><td>integer</td><td>nil</td><td>Particle emitters: a burst of <em>n</em> particles now (CPU or GPU emitters).</td></tr>
+
+        <tr><td><code>self:SetEmitting(on)</code></td><td>boolean</td><td>nil</td><td>Starts or stops the emitter's steady flow; living particles carry on.</td></tr>
+
+        <tr><td><code>self:GetParticleCount()</code></td><td>&mdash;</td><td>integer</td><td>Particles alive (GPU emitters report a frame or two late).</td></tr>
+
+        <tr><td><code>self:GetParticleHits()</code></td><td>&mdash;</td><td>integer, x, y, z</td><td>Particles that hit something (Collision) since the last call, and where the last one hit.</td></tr>
+
+        <tr><td><code>self:ResetParticles()</code></td><td>&mdash;</td><td>nil</td><td>Removes every particle (and trail).</td></tr>
+
+        <tr><td><code>self:SetCollisionLayer(layer)</code></td><td>integer (32-bit)</td><td>nil</td><td>Sets the 32-bit collision category bitfield for Jolt filtering.</td></tr>
+        <tr><td><code>self:GetCollisionLayer()</code></td><td>None</td><td>integer</td><td>Returns the 32-bit collision category bitfield.</td></tr>
+        <tr><td><code>self:SetCollisionMask(mask)</code></td><td>integer (32-bit)</td><td>nil</td><td>Sets the 32-bit collision mask bitfield.</td></tr>
+        <tr><td><code>self:GetCollisionMask()</code></td><td>None</td><td>integer</td><td>Returns the 32-bit collision mask bitfield.</td></tr>
+        <tr><td><code>self:CanCollideWith(other_id)</code></td><td>integer</td><td>boolean</td><td>Evaluates the symmetric layer/mask filter rule against another node.</td></tr>
+        <tr><td><code>self:SetReplicationEnabled(bool)</code></td><td>boolean</td><td>nil</td><td>Enables or disables declarative multiplayer property sync on this node.</td></tr>
+        <tr><td><code>self:AddReplicationRule(prop, mode, [freq])</code></td><td>string, string, number</td><td>nil</td><td>Registers a property sync rule (<code>"OnChange"</code> or <code>"Continuous"</code>) with optional max frequency in Hz.</td></tr>
+
+
+      </tbody>
+
+    </table>
+
+
+
+    <h3>Input Module (<code>Input</code>)</h3>
+
+    <ul>
+
+      <li><code>Input.is_key_pressed(key)</code> &mdash; Returns <code>true</code> while key is held down (e.g. <code>"W"</code>, <code>"A"</code>, <code>"Space"</code>, <code>"Shift"</code>).</li>
+
+      <li><code>Input.is_action_pressed(action)</code> &mdash; Returns <code>true</code> while action mapping is held down (e.g. <code>"MoveForward"</code>, <code>"Jump"</code>, <code>"Fire"</code>).</li>
+
+      <li><code>Input.get_axis(axis)</code> &mdash; Returns analog axis value (-1.0 to +1.0) from keyboard or gamepad joystick.</li>
+
+      <li><code>Input.get_mouse_position()</code> &mdash; Returns screen-space mouse cursor X and Y coordinates.</li>
+
+    </ul>
+
+
+
+    <h3>Physics Module (<code>Physics</code>)</h3>
+
+    <ul>
+
+      <li><code>Physics.apply_force(node_id, fx, fy, fz)</code> &mdash; Applies continuous force in Newtons over the physics step.</li>
+
+      <li><code>Physics.apply_impulse(node_id, ix, iy, iz)</code> &mdash; Applies an instantaneous momentum impulse (N&middot;s).</li>
+
+      <li><code>Physics.set_linear_velocity(node_id, vx, vy, vz)</code> &mdash; Overwrites linear velocity directly.</li>
+
+    </ul>
+
+
+
+    
+    <h3>Signal Module (<code>Signal</code>)</h3>
+    <ul>
+      <li><code>Signal.Emit(node_id, signal_name, ...args)</code> &mdash; Global helper to emit a signal on any target node by ID.</li>
+    </ul>
+
+    <h3>Resource Module (<code>Resource</code>)</h3>
+    <ul>
+      <li><code>Resource.GetLoadedCount()</code> &mdash; Returns the total count of deduplicated assets currently cached in memory.</li>
+      <li><code>Resource.GetMemoryUsage()</code> &mdash; Returns the approximate memory consumption of all loaded resources in bytes.</li>
+      <li><code>Resource.UnloadUnused()</code> &mdash; Purges all cached resources whose only remaining reference is the cache, returning the count of unloaded assets.</li>
+    </ul>
+
+    <h3>Sky Module (<code>Sky</code>)</h3>
+    <ul>
+      <li><code>Sky.SetTime(hours)</code> &mdash; Sets the time of day (0..24) and turns the clock on.</li>
+      <li><code>Sky.GetTime()</code> &mdash; Returns the time of day in hours.</li>
+      <li><code>Sky.SetDayLength(minutes)</code> &mdash; Real minutes for a whole day; 0 stops the clock.</li>
+      <li><code>Sky.SetMoonPhase(phase)</code> &mdash; 0 new, 0.25 first quarter, 0.5 full, 0.75 last quarter.</li>
+      <li><code>Sky.SetDate(day)</code> &mdash; The day of the year (1..365): the season, so how high the sun climbs and how long the days are.</li>
+      <li><code>Sky.GetDate()</code> &mdash; Returns the day of the year.</li>
+      <li><code>Sky.SetClouds(coverage [, opacity])</code> &mdash; Turns clouds on; coverage 0 clear to 1 overcast.</li>
+      <li><code>Sky.SetWind(speed [, direction])</code> &mdash; Wind speed (m/s) and the direction it blows toward (degrees), moving the clouds.</li>
+    </ul>
+
+    <h3>Terrain Module (<code>Terrain</code>)</h3>
+    <ul>
+      <li><code>Terrain.GetHeight(x, z)</code> &mdash; The ground's height at a world position (nil off every terrain).</li>
+      <li><code>Terrain.GetLayer(x, z)</code> &mdash; The paint layer most present there (1..4) and its name, e.g. to pick footstep sounds.</li>
+    </ul>
+
+    <h3>Weather Module (<code>Weather</code>)</h3>
+    <ul>
+      <li><code>Weather.Set(name [, seconds])</code> &mdash; Blends to a preset: <code>"Clear"</code>, <code>"Cloudy"</code>, <code>"Overcast"</code>, <code>"Rain"</code>, <code>"Storm"</code> or <code>"Snow"</code>, over the given seconds.</li>
+      <li><code>Weather.Get()</code> &mdash; The current preset's name, or <code>"Custom"</code> with presets off.</li>
+      <li><code>Weather.SetRain(amount)</code>, <code>Weather.SetSnow(amount)</code>, <code>Weather.SetWetness(amount)</code>, <code>Weather.SetSnowCover(amount)</code> &mdash; Set directly (0..1); these turn presets off.</li>
+      <li><code>Weather.SetLightning(perMinute)</code> &mdash; How often lightning strikes (turns presets off).</li>
+      <li><code>Weather.SetSnowDepth(metres)</code> &mdash; How deep the snow lies at full cover.</li>
+      <li><code>Weather.SetThunderVolume(volume)</code> &mdash; 0 silences thunder, 1 is full volume.</li>
+      <li><code>Weather.Strike()</code> &mdash; A lightning strike now.</li>
+      <li><code>Weather.GetStrikeCount()</code> &mdash; Goes up by one with each strike (the engine plays thunder itself; use this for anything else).</li>
+    </ul>
+
+    <h3>Scene Prefabs & Instancing (<code>Scene</code>)</h3>
+    <ul>
+      <li><code>Scene.Instantiate(scene_path, [parent_id], [x, y, z])</code> &mdash; Spawns an external <code>.tess</code> subscene into the hierarchy as a live linked prefab instance.</li>
+      <li><code>Scene.ReloadInstance(instance_node_id)</code> &mdash; Dynamically repopulates an instanced subtree from its source file.</li>
+    </ul>
+
+    <h3>Audio Module (<code>Audio</code>)</h3>
+
+    <ul>
+
+      <li><code>Audio.play_sound(asset_name, volume)</code> &mdash; Fires a 2D sound effect across the SFX bus.</li>
+
+    </ul>
+
+
+
+    <h3>Cutscene &amp; Cinematic Module (<code>Cutscene</code>)</h3>
+    <ul>
+      <li><code>Cutscene.Play(name)</code> &mdash; Starts the named <code>CutsceneSequence</code> in the active scene; returns <code>true</code> if found and started.</li>
+      <li><code>Cutscene.Skip()</code> &mdash; Skips the active cutscene if skippable, fast-forwarding actors to their final destination marks and end animation states and restoring the scene camera &amp; environment.</li>
+      <li><code>Cutscene.Stop()</code> &mdash; Stops the active cutscene and restores the pre-cutscene camera and environment.</li>
+      <li><code>Cutscene.IsPlaying()</code> &mdash; Returns <code>true</code> while an in-engine cutscene is actively playing.</li>
+      <li><code>Cutscene.GetTime()</code> &mdash; Returns the current playback time (in seconds) of the active cutscene.</li>
+      <li><code>Cutscene.GetName()</code> &mdash; Returns the string name of the currently playing cutscene (or <code>""</code> if none).</li>
+    </ul>
+
+    <h3>Video &amp; In-Game Screens Module (<code>Video</code>)</h3>
+    <ul>
+      <li><code>Video.Play(node_id)</code> &mdash; Starts playback on the specified 3D screen node or UI video element.</li>
+      <li><code>Video.Pause(node_id)</code> &mdash; Pauses video playback on the target node.</li>
+      <li><code>Video.Stop(node_id)</code> &mdash; Stops playback and rewinds to timestamp 0.0s.</li>
+      <li><code>Video.SetChannel(node_id, channel_preset)</code> &mdash; Switches the broadcast channel preset (<code>0</code>=Custom, <code>1</code>=Cinema, <code>2</code>=TV News, <code>3</code>=CCTV, <code>4</code>=Smartphone, <code>5</code>=CRT Bars, <code>6</code>=Sci-Fi Radar).</li>
+      <li><code>Video.SetSource(node_id, file_path)</code> &mdash; Assigns an external animated GIF, sprite-sheet atlas, or sequential frame directory.</li>
+      <li><code>Video.Seek(node_id, timestamp)</code> &mdash; Seeks playback to a specific timestamp in seconds.</li>
+      <li><code>Video.IsPlaying(node_id)</code> &mdash; Returns <code>true</code> if the specified video screen is currently playing.</li>
+      <li><code>Video.PlayCutaway(title, channel, duration, is_pip)</code> &mdash; Triggers an immediate full-screen or corner Picture-in-Picture (PiP) video cutaway transmission overlay. Skippable at any time with <kbd>Space</kbd> or <kbd>Enter</kbd>.</li>
+      <li><code>Video.StopCutaway()</code> &mdash; Dismisses the active cutaway overlay and restores standard camera view.</li>
+      <li><code>Video.IsCutawayPlaying()</code> &mdash; Returns <code>true</code> while a cutaway video transmission is actively displaying.</li>
+    </ul>
+
+    <h3>Network Module (<code>Network</code>)</h3>
+
+    <ul>
+
+      <li><code>Network.get_unique_id()</code> &mdash; Returns local peer ID (1 for Server/Host, 2+ for Clients).</li>
+
+      <li><code>Network.is_server()</code> &mdash; Returns <code>true</code> if the local engine is hosting the authoritative server.</li>
+
+      <li><code>Network.rpc(func_name, ...)</code> &mdash; Sends a Remote Procedure Call to all peers or the authority holder.</li>
+
+    </ul>
+
+
+
+    <h3>Scene Module (<code>Scene</code>)</h3>
+
+    <ul>
+
+      <li><code>Scene.find_node_by_name(name)</code> &mdash; Returns the first node matching the string name.</li>
+
+      <li><code>Scene.get_node(id)</code> &mdash; Returns the node instance matching the ID.</li>
+
+      <li><code>Scene.add_character_node(name)</code> &mdash; Dynamically instantiates a humanoid character node into the scene.</li>
+
+    </ul>
+
+
+
+    <h2>3. Production-Ready Script Templates</h2>
+
+
+
+    <h3>Template A: Third-Person Character Controller</h3>
+
+    <pre><code class="language-lua">local moveSpeed = 6.0
+
+local jumpForce = 450.0
+
+
+
+function OnInit(self)
+
+    print("Player controller initialized on: " .. self:get_name())
+
+end
+
+
+
+function OnUpdate(self, dt)
+
+    -- Authority check: Only the owner controls their character!
+
+    if not self:is_multiplayer_authority() then
+
+        return
+
+    end
+
+
+
+    local dx = 0
+
+    local dz = 0
+
+
+
+    if Input.is_key_pressed("W") then dz = dz - 1 end
+
+    if Input.is_key_pressed("S") then dz = dz + 1 end
+
+    if Input.is_key_pressed("A") then dx = dx - 1 end
+
+    if Input.is_key_pressed("D") then dx = dx + 1 end
+
+
+
+    if dx ~= 0 or dz ~= 0 then
+
+        -- Normalize vector
+
+        local len = math.sqrt(dx * dx + dz * dz)
+
+        dx = (dx / len) * moveSpeed * dt
+
+        dz = (dz / len) * moveSpeed * dt
+
+        self:translate(dx, 0, dz)
+
+        self:set_animation_state("Walk")
+
+    else
+
+        self:set_animation_state("Idle")
+
+    end
+
+
+
+    if Input.is_action_pressed("Jump") then
+
+        Physics.apply_impulse(self:get_id(), 0, jumpForce, 0)
+
+        self:set_animation_state("Jump")
+
+    end
+
+end</code></pre>
+
+
+
+    <h3>Template B: Proximity Dialogue & Interaction Trigger</h3>
+
+    <pre><code class="language-lua">local interactDist = 3.5
+
+
+
+function OnUpdate(self, dt)
+
+    local player = Scene.find_node_by_name("PlayerHero")
+
+    if not player then return end
+
+
+
+    local px, py, pz = player:get_position()
+
+    local mx, my, mz = self:get_position()
+
+    local dist = math.sqrt((px - mx)^2 + (py - my)^2 + (pz - mz)^2)
+
+
+
+    local hudText = Scene.find_node_by_name("InteractionPrompt")
+
+    if hudText then
+
+        if dist <= interactDist then
+
+            hudText:set_visible(true)
+
+            if Input.is_key_pressed("E") then
+
+                print("Interacting with: " .. self:get_name())
+
+                Audio.play_sound("quest_accept.wav", 1.0)
+
+            end
+
+        else
+
+            hudText:set_visible(false)
+
+        end
+
+    end
+
+end</code></pre>
+
+    
+
+
+
+    <h2>4. C++ sol2 Binding API</h2>
+
+    <p>The engine includes full support for <strong>sol2</strong> (<code>src/sol/sol.hpp</code>), allowing modern C++20 type-safe Lua bindings without manual Lua C-API stack management.</p>
+
+    <ul>
+
+      <li><strong>Access Engine Lua State with sol2</strong>:
+
+        <pre><code class="language-cpp">#include "Scripting/LuaScriptSystem.h"
+
+#include &lt;sol/sol.hpp&gt;
+
+
+
+// Get sol2 wrapper over engine runtime
+
+sol::state_view lua = Scripting::LuaScriptSystem::Get().GetSolState();
+
+
+
+// Bind custom C++ classes / usertypes
+
+struct QuestManager {
+
+    std::string activeQuest;
+
+    int progress{0};
+
+    void Advance() { progress++; }
+
+};
+
+
+
+lua.new_usertype&lt;QuestManager&gt;("QuestManager",
+
+    "quest", &QuestManager::activeQuest,
+
+    "progress", &QuestManager::progress,
+
+    "advance", &QuestManager::Advance
+
+);
+
+
+
+// Call Lua functions with type safety
+
+sol::function onPlayerDeath = lua["OnPlayerDeath"];
+
+if (onPlayerDeath.valid()) {
+
+    onPlayerDeath(101, "FallDamage");
+
+}</code></pre>
+
+      </li>
+
+    </ul>
+
+
+
+        <h2>5. Reactive Signals & Observer Pattern</h2>
+    <p>Tessera includes a first-class decoupled event and signal system in Lua. Entities can broadcast events without needing direct references to listening widgets or subsystems:</p>
+    
+    <pre><code class="language-lua">function OnInit(self)
+    -- Subscribe to an event on another node (e.g. Player)
+    local player = Scene.find_node_by_name("PlayerHero")
+    if player then
+        self.connId = player:Connect("on_damage_taken", function(amount, source)
+            print("Hero damaged: " .. tostring(amount) .. " by " .. tostring(source))
+            -- Update local health bar
+            self:SetProgressBarValue(self:GetProgressBarValue() - amount)
+        end)
+    end
+end
+
+function take_damage(amount)
+    -- Emit a signal to all connected listeners
+    self:Emit("on_damage_taken", amount, "SpikeTrap")
+end
+
+function OnDestroy(self)
+    -- Optional: Explicitly disconnect signal listener
+    local player = Scene.find_node_by_name("PlayerHero")
+    if player and self.connId then
+        player:Disconnect("on_damage_taken", self.connId)
+    end
+end</code></pre>
+
+    <h2>6. Nested Scene Instancing & Prefabs</h2>
+    <p>Any <code>.scene</code> file in the project's <code>scenes/</code> or <code>prefabs/</code> directory can be dynamically instanced at runtime via Lua:</p>
+
+    <pre><code class="language-lua">function spawn_loot_chest(x, y, z)
+    -- Instantiate reusable Chest.scene prefab with position offset
+    local chest = Scene.Instantiate("prefabs/Chest.scene", 0, x, y, z)
+    if chest then
+        print("Spawned chest with root ID: " .. tostring(chest:get_id()))
+    end
+end
+
+function reload_prefab_on_upgrade()
+    -- Hot-reload the instanced sub-tree directly from disk
+    local success = self:ReloadInstance()
+    print("Prefab reloaded: " .. tostring(success))
+end</code></pre>
+
+    <h2>7. Shared Resource Handles & Asset Deduplication</h2>
+    <p>Shared heavy assets (3D meshes, textures, materials, and audio clips) are tracked by the engine's <code>ResourceManager</code>. Lua can query runtime asset metrics and trigger garbage collection:</p>
+
+    <pre><code class="language-lua">function check_memory_footprint()
+    local activeAssets = Resource.GetLoadedCount()
+    local memoryBytes = Resource.GetMemoryUsage()
+    print("Active GPU Assets: " .. tostring(activeAssets))
+    print("VRAM / RAM Allocated: " .. string.format("%.2f MB", memoryBytes / (1024 * 1024)))
+
+    -- Garbage-collect unused asset buffers whose reference counts have reached zero
+    local purged = Resource.UnloadUnused()
+    print("Purged unreferenced assets: " .. tostring(purged))
+end</code></pre>
+
+    <div class="pagination">
+
+  <a href="systems-networking.html" class="pagination-card prev">
+
+    <span class="pagination-label">&larr; Previous</span>
+
+    <span class="pagination-title">Multiplayer & Networking Authority</span>
+
+  </a>
+
+  <a href="editor-menus.html" class="pagination-card next">
+
+    <span class="pagination-label">Next &rarr;</span>
+
+    <span class="pagination-title">Main Menu Bar & Shortcuts</span>
+
+  </a>
+
+</div>
+
+
+
+  </main>
+
+</body>
+
+</html>
+

@@ -1,0 +1,76 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+
+#include "atmosphere_common.glsl"
+
+// Sky-view look-up table (Hillaire 2020, "A Scalable and Production Ready Sky and Atmosphere
+// Rendering Technique"): for each direction from the camera, the sunlight scattered toward it by
+// the atmosphere, single scattering plus an approximation of the light scattered more than once.
+// Read by SkyRadiance in sky_common.glsl.
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(binding = 0, rgba16f) uniform writeonly image2D lut;
+
+layout(push_constant) uniform Params {
+    vec4 sun;     // xyz = direction toward the sun, w = camera height (km)
+    vec4 size;    // xy = LUT size
+} params;
+
+const float kSunIlluminance = 22.0; // matches the stylised sky's daylight brightness
+
+void main() {
+    ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
+    if (any(greaterThanEqual(texel, ivec2(params.size.xy)))) return;
+    vec2 uv = (vec2(texel) + 0.5) / params.size.xy;
+
+    float h = max(params.sun.w, 0.001);
+    float horizon = HorizonElevation(h);
+    float elevation, azimuth;
+    SkyViewAngles(uv, horizon, elevation, azimuth);
+
+    // Frame: up = y, the sun's azimuth along +z
+    vec3 sunDir = normalize(params.sun.xyz);
+    float sunElevation = asin(clamp(sunDir.y, -1.0, 1.0));
+    vec3 sunLocal = vec3(0.0, sin(sunElevation), cos(sunElevation));
+    vec3 viewDir = vec3(cos(elevation) * sin(azimuth), sin(elevation), cos(elevation) * cos(azimuth));
+    float cosTheta = dot(viewDir, sunLocal);
+
+    // March from the camera to the ground or the top of the atmosphere
+    float r0 = kGroundRadius + h;
+    float mu = viewDir.y;
+    float tMax = RayHitsGround(r0, mu) ? RaySphere(r0, mu, kGroundRadius) : RaySphere(r0, mu, kTopRadius);
+    // From inside, the ground hit is the near intersection
+    if (RayHitsGround(r0, mu)) {
+        float d = r0 * r0 * (mu * mu - 1.0) + kGroundRadius * kGroundRadius;
+        tMax = -r0 * mu - sqrt(max(d, 0.0));
+    }
+    tMax = max(tMax, 0.0);
+    const int steps = 30;
+    vec3 radiance = vec3(0.0);
+    vec3 throughput = vec3(1.0);
+    float phaseR = RayleighPhase(cosTheta);
+    float phaseM = MiePhase(cosTheta);
+    float tPrev = 0.0;
+    for (int i = 0; i < steps; ++i) {
+        // Steps grow with distance (more samples near the camera)
+        float f = (float(i) + 0.3) / float(steps);
+        float t = tMax * f * f;
+        float dt = t - tPrev;
+        tPrev = t;
+        vec3 p = vec3(0.0, r0, 0.0) + viewDir * t;
+        float r = length(p);
+        float hs = r - kGroundRadius;
+        vec3 up = p / r;
+        vec3 sunTransmittance = AtmosphereTransmittance(r, dot(up, sunLocal));
+        vec3 rayleigh = kRayleighScattering * exp(-hs / kRayleighHeight);
+        float mie = kMieScattering * exp(-hs / kMieHeight);
+        vec3 extinction = AtmosphereExtinction(hs);
+        // Single scattering, plus light scattered more than once (isotropic, a fraction of it)
+        vec3 scattered = (rayleigh * phaseR + mie * phaseM) * sunTransmittance;
+        vec3 multiple = (rayleigh + mie) * (0.25 / 12.566) * max(sunTransmittance, vec3(0.02) * clamp(up.y * 0.5 + sunLocal.y + 0.3, 0.0, 1.0));
+        vec3 source = (scattered + multiple) * kSunIlluminance;
+        vec3 stepTransmittance = exp(-extinction * dt);
+        radiance += throughput * (source - source * stepTransmittance) / max(extinction, vec3(1e-7));
+        throughput *= stepTransmittance;
+    }
+    imageStore(lut, texel, vec4(radiance, 1.0));
+}

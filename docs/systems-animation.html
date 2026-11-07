@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Animation, Armatures & IK - Tessera Engine Documentation</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="nav.js" defer></script>
+</head>
+<body>
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <h2>&#9881; Tessera Engine</h2>
+      <p>Official Developer Documentation</p>
+    </div>
+    <div class="search-box">
+      <input type="text" id="doc-search" placeholder="Filter documentation..." autocomplete="off">
+    </div>
+    <div class="sidebar-nav">
+  <div class="nav-group">
+    <div class="nav-group-title">Getting Started</div>
+    <a class="nav-item" href="index.html">Overview & Quickstart</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-group-title">Node Reference</div>
+    <a class="nav-item" href="nodes-3d.html">3D Nodes & Entities</a>
+    <a class="nav-item" href="nodes-ui.html">2D UI Component Nodes</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-group-title">Core Systems</div>
+    <a class="nav-item" href="systems-rendering.html">Rendering, PBR & LOD</a>
+    <a class="nav-item active" href="systems-animation.html">Animation, Armatures & IK</a>
+    <a class="nav-item" href="systems-physics.html">Physics & Ragdolls</a>
+    <a class="nav-item" href="systems-audio.html">Audio Engine & Mixer</a>
+    <a class="nav-item" href="systems-navigation.html">Navigation & AI Patrol</a>
+    <a class="nav-item" href="systems-networking.html">Multiplayer & Authority</a>
+    <a class="nav-item" href="systems-scripting.html">Lua Scripting API</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-group-title">Editor Reference</div>
+    <a class="nav-item" href="editor-menus.html">Main Menus & Shortcuts</a>
+    <a class="nav-item" href="editor-windows.html">Windows, Inspector & Modals</a>
+  </div>
+</div>
+
+  </aside>
+
+  <main id="main-content">
+    <div class="breadcrumbs">
+      <a href="index.html">Docs</a> &gt; <span>Core Systems</span> &gt; <span>Animation, Armatures & IK</span>
+    </div>
+
+    
+    <h1>Animation, Armatures, IK, State Machines &amp; Cutscenes</h1>
+    <p class="lead">Tessera features a full-featured skeletal and cinematic animation suite (<code>src/Animation/</code>) supporting rigged characters (FBX, glTF 2.0), bone hierarchy transforms, Inverse Kinematics (IK), Blend Shapes / Morph Targets, a Visual Animation State Machine graph, and an In-Engine Cutscene &amp; Cinematic Sequencer.</p>
+
+    <h2>1. Skeletal Skinning Pipeline</h2>
+    <p>When an FBX or glTF model containing an armature is loaded, the engine imports:</p>
+    <ul>
+      <li><strong>Bone Joint Hierarchy</strong>: Parent-child bone trees with relative joint translation, rotation (quaternion), and scale.</li>
+      <li><strong>Inverse Bind Matrices</strong>: Precomputed inverse world matrices for each bone in reference bind pose.</li>
+      <li><strong>Vertex Skinning Attributes</strong>: Up to 4 bone IDs and 4 normalized floating-point weights per vertex.</li>
+      <li><strong>GPU Skinning</strong>: Linear blend skinning runs in a compute shader (<code>shaders/skinning.comp</code>, <code>VulkanSkinning</code>) into a buffer per character, shared by every render pass. Last frame's pose is kept so TAA and motion blur follow moving limbs without smearing.</li>
+    </ul>
+
+    <h3>Per-Character Animation Clock</h3>
+    <p>Every animated node keeps its own clock, so a crowd of identical characters does not move in lockstep. In the Inspector's <em>Armature &amp; Animation Tree</em> section:</p>
+    <ul>
+      <li><strong>Play Animation</strong>: plays or pauses this character (off holds the rest pose). In the editor this previews just this node.</li>
+      <li><strong>Animation Speed</strong>: playback rate for this character, multiplied with the clip's own speed.</li>
+      <li><strong>Start Offset (s)</strong>: seconds into the clip this character starts at.</li>
+    </ul>
+
+    <h2>2. Inverse Kinematics (IK) Solvers</h2>
+    <p>Configurable directly in the Node Inspector under <strong>Inverse Kinematics (IK) & Morph Targets</strong>:</p>
+
+    <h3>Two-Bone Analytical IK Solver</h3>
+    <p>Solves standard two-link humanoid limb chains (e.g. Hip &rarr; Knee &rarr; Ankle or Shoulder &rarr; Elbow &rarr; Wrist):</p>
+    <ul>
+      <li><strong>End-Effector Bone</strong>: The target joint name (e.g. <code>"Ankle_R"</code>).</li>
+      <li><strong>Target World Position</strong>: World coordinate the foot or hand should reach.</li>
+      <li><strong>Pole Vector</strong>: Guide vector indicating the bend direction of the knee or elbow (prevents unnatural joint flips).</li>
+      <li><strong>IK Blend Weight</strong>: 0.0 (pure keyframed animation) to 1.0 (pure IK goal).</li>
+    </ul>
+
+    <h3>FABRIK Multi-Joint Solver</h3>
+    <p>Forward And Backward Reaching Inverse Kinematics (FABRIK) solves arbitrary multi-bone kinematic chains (e.g., spines, tails, insect legs, mechanical cranes) via iterative forward and backward passes.</p>
+
+    <h2>3. Blend Shapes & Morph Targets</h2>
+    <p>Supports live facial animation and soft-body deformation. Each morph target stores per-vertex displacement vectors (&Delta;x, &Delta;y, &Delta;z). The engine interpolates multiple active shapes simultaneously (e.g., <code>Smile = 0.8</code>, <code>Blink_L = 1.0</code>, <code>Jaw_Open = 0.4</code>) in real time.</p>
+
+    <h2>4. Animation Timeline & Scrubbing Window</h2>
+    <p>Located across the bottom of the editor workspace:</p>
+    <ul>
+      <li><strong>Transport Controls</strong>: Play, Pause, Stop, Loop Toggle.</li>
+      <li><strong>Timeline Scrubber</strong>: Drag to inspect any precise frame in the animation.</li>
+      <li><strong>Animation Clip Selector</strong>: Dropdown showing all clips embedded in the model (e.g., <code>Idle</code>, <code>Run</code>, <code>Jump</code>, <code>Slash_Combo</code>).</li>
+      <li><strong>Playback Speed</strong>: Adjustable playback rate (0.25x slow motion to 2.0x fast forward).</li>
+    </ul>
+
+    <h2>5. Visual Animation State Machine Graph</h2>
+    <p>Accessible via <kbd>Shift+M</kbd> or <strong>Window &rarr; Animation State Machine Graph</strong>:</p>
+    <ul>
+      <li><strong>State Nodes</strong>: Each box represents an animation clip state (e.g. <code>Idle</code>, <code>Walk</code>, <code>Attack</code>).</li>
+      <li><strong>Directed Transitions</strong>: Drag from one state node to another to create a transition.</li>
+      <li><strong>Crossfade Blend Duration</strong>: Set smooth blend times (e.g., 0.2s crossfading from Walk into Jump).</li>
+      <li><strong>Controlling from Lua</strong>:
+        <pre><code class="language-lua">function OnUpdate(self, dt)
+    if Input.is_key_pressed("W") then
+        self:set_animation_state("Walk")
+    else
+        self:set_animation_state("Idle")
+    end
+end</code></pre>
+      </li>
+    </ul>
+    
+
+    <h2>6. In-Engine Cutscene &amp; Cinematic Sequencer</h2>
+    <p>Accessible via <kbd>Shift+C</kbd>, <strong>Window &rarr; Cutscene &amp; Cinematic Sequencer</strong>, or <strong>Scene &rarr; Cutscene &amp; Cinematic Sequencer...</strong> (<code>src/Animation/Cutscene.h</code> / <code>Cutscene.cpp</code>):</p>
+    <ul>
+      <li><strong>Real-Time In-Engine Cinematics</strong>: Choreographs existing scene characters and cameras directly in the active 3D world without pre-rendered video files.</li>
+      <li><strong>Location Proximity Triggering</strong>: Automatically triggers when any character (<code>*</code>) or a named actor walks within a configurable 3D world coordinate and radius.</li>
+      <li><strong>Multi-Shot Camera Cuts, Dollies &amp; Live Actor Tracking</strong>: Smooth Hermite or linear camera movement, FOV zoom ramps, and live Look-At actor tracking with automatic Depth-of-Field (DoF) focus distance locking.</li>
+      <li><strong>Character Walk-to-Mark &amp; Animation State Transitions</strong>: Moves actors from their current position (or a custom start mark) to a destination mark while driving their skeletal <code>AnimationTree</code> states (e.g. <code>"Walk"</code> during movement &rarr; <code>"Idle"</code> or <code>"Wave"</code> on arrival).</li>
+      <li><strong>Cinematic Camera &amp; Color Grading Effects</strong>: Per-cutscene post-processing overrides including <strong>Sepia Tone</strong>, <strong>Black &amp; White (Monochrome)</strong>, <strong>High-Contrast Noir (B&amp;W)</strong>, <strong>Vintage 35mm Warm</strong>, <strong>Cold Moonlight</strong>, <strong>Dreamy Flashback Bloom</strong>, <strong>Vignette</strong>, <strong>35mm Film Grain</strong>, <strong>Chromatic Aberration</strong>, and <strong>2.39:1 Widescreen Letterbox bars</strong>.</li>
+      <li><strong>Audio or Silent Mode + Subtitles</strong>: Timed speaker and dialogue subtitle banners in the bottom letterbox bar with optional <code>.wav</code> or synthesized audio cues, or 1-click Silent Mode.</li>
+      <li><strong>Skippable Playback (<kbd>Space</kbd> / <kbd>Enter</kbd> / <kbd>Backspace</kbd> or UI Button)</strong>: Safely fast-forwards all cutscene actors to their final destination marks and end animation states, stops cutscene audio, and restores the pre-cutscene camera and <code>SceneEnvironment</code>.</li>
+    </ul>
+
+    <h2>7. Motion Matching &amp; Procedural Full-Body IK (AAA Standard)</h2>
+    <p>To eliminate rigid state transition trees and manual blend spaces, Tessera implements a data-driven <strong>Motion Matching</strong> engine (<code>Animation::MotionMatcher</code>) coupled with <strong>Procedural Full-Body IK</strong> (<code>Animation::FullBodyIKSolver</code>):</p>
+
+    <h3>Continuous Trajectory &amp; Pose Search</h3>
+    <p>Instead of manually keyframing transition logic, the motion matcher continuously searches a motion database of captured animations every frame to find the frame that simultaneously minimizes:</p>
+    <ul>
+      <li><strong>Desired Trajectory Matching</strong>: Compares user stick trajectory predictions at future points (+0.2s, +0.4s, +0.6s) with the animation's actual path.</li>
+      <li><strong>Pose Feature Matching</strong>: Matches foot positions, foot velocities, and root momentum to ensure continuous gait continuity.</li>
+      <li><strong>Inertialization Blending</strong>: A 5th-order quintic polynomial decay filter eliminates foot-popping and transition artifacts when switching to distant clips.</li>
+    </ul>
+
+    <h3>Procedural Full-Body IK (FBIK)</h3>
+    <p>Ensures realistic character interaction with uneven 3D terrain:</p>
+    <ul>
+      <li><strong>Pelvis Height Adaptation</strong>: Dynamically lowers the pelvis root bone based on the lowest ground contact point of either foot.</li>
+      <li><strong>Two-Foot Terrain Normal Conform</strong>: Rotates and bends ankle joints to conform flush to uneven ground slopes via <code>TwoBoneIK</code>.</li>
+      <li><strong>Spine &amp; Head Look-At</strong>: Smoothly rotates upper spine and head bones toward look targets, camera focus, or combat adversaries.</li>
+    </ul>
+
+    <div class="pagination">
+  <a href="systems-rendering.html" class="pagination-card prev">
+    <span class="pagination-label">&larr; Previous</span>
+    <span class="pagination-title">Rendering, PBR & LOD</span>
+  </a>
+  <a href="systems-physics.html" class="pagination-card next">
+    <span class="pagination-label">Next &rarr;</span>
+    <span class="pagination-title">Physics, RigidBodies & Ragdolls</span>
+  </a>
+</div>
+
+  </main>
+</body>
+</html>

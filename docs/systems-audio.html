@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+  <meta charset="UTF-8">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Audio Engine, Mixer & DSP - Tessera Engine Documentation</title>
+
+  <link rel="stylesheet" href="style.css">
+
+  <script src="nav.js" defer></script>
+
+</head>
+
+<body>
+
+  <aside id="sidebar">
+
+    <div class="sidebar-header">
+
+      <h2>&#9881; Tessera Engine</h2>
+
+      <p>Official Developer Documentation</p>
+
+    </div>
+
+    <div class="search-box">
+
+      <input type="text" id="doc-search" placeholder="Filter documentation..." autocomplete="off">
+
+    </div>
+
+    <div class="sidebar-nav">
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Getting Started</div>
+
+    <a class="nav-item" href="index.html">Overview & Quickstart</a>
+
+  </div>
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Node Reference</div>
+
+    <a class="nav-item" href="nodes-3d.html">3D Nodes & Entities</a>
+
+    <a class="nav-item" href="nodes-ui.html">2D UI Component Nodes</a>
+
+  </div>
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Core Systems</div>
+
+    <a class="nav-item" href="systems-rendering.html">Rendering, PBR & LOD</a>
+
+    <a class="nav-item" href="systems-animation.html">Animation, Armatures & IK</a>
+
+    <a class="nav-item" href="systems-physics.html">Physics & Ragdolls</a>
+
+    <a class="nav-item active" href="systems-audio.html">Audio Engine & Mixer</a>
+
+    <a class="nav-item" href="systems-navigation.html">Navigation & AI Patrol</a>
+
+    <a class="nav-item" href="systems-networking.html">Multiplayer & Authority</a>
+
+    <a class="nav-item" href="systems-scripting.html">Lua Scripting API</a>
+
+  </div>
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Editor Reference</div>
+
+    <a class="nav-item" href="editor-menus.html">Main Menus & Shortcuts</a>
+
+    <a class="nav-item" href="editor-windows.html">Windows, Inspector & Modals</a>
+
+  </div>
+
+</div>
+
+
+
+  </aside>
+
+
+
+  <main id="main-content">
+
+    <div class="breadcrumbs">
+
+      <a href="index.html">Docs</a> &gt; <span>Core Systems</span> &gt; <span>Audio Engine, Mixer & DSP</span>
+
+    </div>
+
+
+
+    
+
+    <h1>Audio Engine, Spatial Audio & DSP Mixer</h1>
+
+    <p class="lead">The Tessera Audio System (<code>src/Audio/</code>) provides high-performance multi-channel audio mixing, 3D spatial sound attenuation, Doppler frequency calculation, sub-bus routing, and real-time Digital Signal Processing (DSP) acoustic effects.</p>
+
+
+
+    <h2>1. 3D Spatial Audio & Attenuation</h2>
+
+    <p>When an <code>AudioNode</code> is placed in the scene, its sound is spatialized relative to the primary <code>CameraNode</code> (the listener):</p>
+
+    <ul>
+
+      <li><strong>Listener Orientation</strong>: Stereo panning and interaural time difference (ITD) calculated from camera forward/up vectors.</li>
+
+      <li><strong>Distance Attenuation Curves</strong>:
+
+        <ul>
+
+          <li><strong>Inverse Distance</strong>: Natural sound falloff inversely proportional to distance.</li>
+
+          <li><strong>Linear Rolloff</strong>: Volume decreases uniformly between <code>minDistance</code> and <code>maxDistance</code>.</li>
+
+          <li><strong>Exponential Rolloff</strong>: Rapid steep drop-off for intimate, localized sound effects.</li>
+
+        </ul>
+
+      </li>
+
+      <li><strong>Doppler Frequency Shift</strong>: Pitch scales dynamically based on the relative velocity between moving audio emitters (e.g., speeding vehicles, whistling arrows) and the listener.</li>
+
+    </ul>
+
+
+
+    <h2>2. Audio Buses & The Mixer Window</h2>
+
+    <p>Accessible via <kbd>Shift+A</kbd> or <strong>Window &rarr; Audio Mixer & Reverb Zones</strong>:</p>
+
+    <table>
+
+      <thead><tr><th>Audio Bus</th><th>Routing</th><th>Typical Contents</th><th>DSP Chain</th></tr></thead>
+
+      <tbody>
+
+        <tr><td><strong>Master</strong></td><td>Primary Hardware Output</td><td>Final summed output of all sub-buses.</td><td>Limiter / Master Compressor</td></tr>
+
+        <tr><td><strong>Music</strong></td><td>Routed to Master</td><td>Background scores, ambient music beds.</td><td>Parametric EQ, Gentle Low-Pass</td></tr>
+
+        <tr><td><strong>SFX</strong></td><td>Routed to Master</td><td>Weapon swings, gunshots, explosions, footsteps, physics impacts.</td><td>Distortion, Dynamic Reverb Send</td></tr>
+
+        <tr><td><strong>Voice</strong></td><td>Routed to Master</td><td>NPC speech, dialogue voiceovers, player grunts, multiplayer voice chat.</td><td>High-Pass De-esser, Clarity EQ</td></tr>
+
+      </tbody>
+
+    </table>
+
+
+
+    <p>Each bus strip features:</p>
+
+    <ul>
+
+      <li><strong>Volume Fader</strong>: -60 dB to +12 dB gain adjustment.</li>
+
+      <li><strong>Solo / Mute Buttons</strong>: Isolate or silence individual audio channels during audio balancing.</li>
+
+      <li><strong>VU Peak Meters</strong>: Live decibel level metering with clip indicators.</li>
+
+    </ul>
+
+
+
+    <h2>3. Real-Time DSP Audio Effects</h2>
+
+    <ul>
+
+      <li><strong>Environmental Reverb</strong>: Simulates acoustic reflections in enclosed spaces. Parameters: Room Size, Damping, Early Reflection Gain, Wet/Dry Mix.</li>
+
+      <li><strong>Chorus</strong>: Multi-voice detuned delay lines creating rich, shimmering acoustic depth.</li>
+
+      <li><strong>Distortion / Saturation</strong>: Overdrive clipping for explosions, crunchy radio transmissions, and sci-fi lasers.</li>
+
+      <li><strong>Resonant Filters</strong>: Low-Pass (muffles sound underwater or behind thick walls) and High-Pass filters with adjustable resonance Q.</li>
+
+      <li><strong>Pitch Shifting</strong>: Changes audio frequency without altering playback speed.</li>
+
+    </ul>
+
+
+
+    <h2>4. 3D Reverb Zones</h2>
+
+    <p>Reverb zones are 3D trigger volumes in your level (caves, cathedrals, sewers, open fields). When the player walks into a Reverb Zone, the engine smoothly crossfades the DSP reverb parameters to match the physical environment seamlessly.</p>
+
+    
+
+
+
+    
+    <h2>5. Ray-Traced Acoustic Diffraction &amp; Door Portaling (AAA Standard)</h2>
+    <p>To deliver realistic environmental acoustics, Tessera integrates a geometric acoustic ray tracer (<code>Audio::AcousticRayTracer</code>) that models true wave propagation and diffraction around physical obstacles:</p>
+
+    <h3>Physical Wall Transmission Loss</h3>
+    <p>When line-of-sight between an audio emitter and the listener is occluded by level geometry, the engine computes transmission loss based on physical wall materials:</p>
+    <ul>
+      <li><strong>Concrete</strong>: 35 dB attenuation with heavy high-frequency absorption (&le; 450 Hz cutoff).</li>
+      <li><strong>Wood</strong>: 15 dB attenuation with warm acoustic resonance (&le; 1200 Hz cutoff).</li>
+      <li><strong>Glass</strong>: 22 dB attenuation with bright acoustic reflection (&le; 800 Hz cutoff).</li>
+      <li><strong>Curtain / Fabric</strong>: 6 dB attenuation allowing sound penetration with mild dampening.</li>
+    </ul>
+
+    <h3>Huygens' Door &amp; Window Portaling</h3>
+    <p>When an open portal (doorway, window, hallway) connects two rooms, sound diffracts through the opening following Huygens' Principle:</p>
+    <ul>
+      <li><strong>Virtual Sound Source</strong>: The listener perceives sound originating from the doorway opening rather than directly through solid walls.</li>
+      <li><strong>Dynamic Aperture Modulation</strong>: As doors open or close (0.0 to 1.0 aperture), high frequencies are smoothly filtered and directional attenuation adjusts in real time.</li>
+    </ul>
+
+    <div class="pagination">
+
+  <a href="systems-physics.html" class="pagination-card prev">
+
+    <span class="pagination-label">&larr; Previous</span>
+
+    <span class="pagination-title">Physics, RigidBodies & Ragdolls</span>
+
+  </a>
+
+  <a href="systems-navigation.html" class="pagination-card next">
+
+    <span class="pagination-label">Next &rarr;</span>
+
+    <span class="pagination-title">Navigation, NavMesh & AI Patrol</span>
+
+  </a>
+
+</div>
+
+
+
+  </main>
+
+</body>
+
+</html>
+

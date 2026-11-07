@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+  <meta charset="UTF-8">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>2D UI Component Nodes - Tessera Engine Documentation</title>
+
+  <link rel="stylesheet" href="style.css">
+
+  <script src="nav.js" defer></script>
+
+</head>
+
+<body>
+
+  <aside id="sidebar">
+
+    <div class="sidebar-header">
+
+      <h2>&#9881; Tessera Engine</h2>
+
+      <p>Official Developer Documentation</p>
+
+    </div>
+
+    <div class="search-box">
+
+      <input type="text" id="doc-search" placeholder="Filter documentation..." autocomplete="off">
+
+    </div>
+
+    <div class="sidebar-nav">
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Getting Started</div>
+
+    <a class="nav-item" href="index.html">Overview & Quickstart</a>
+
+  </div>
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Node Reference</div>
+
+    <a class="nav-item" href="nodes-3d.html">3D Nodes & Entities</a>
+
+    <a class="nav-item active" href="nodes-ui.html">2D UI Component Nodes</a>
+
+  </div>
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Core Systems</div>
+
+    <a class="nav-item" href="systems-rendering.html">Rendering, PBR & LOD</a>
+
+    <a class="nav-item" href="systems-animation.html">Animation, Armatures & IK</a>
+
+    <a class="nav-item" href="systems-physics.html">Physics & Ragdolls</a>
+
+    <a class="nav-item" href="systems-audio.html">Audio Engine & Mixer</a>
+
+    <a class="nav-item" href="systems-navigation.html">Navigation & AI Patrol</a>
+
+    <a class="nav-item" href="systems-networking.html">Multiplayer & Authority</a>
+
+    <a class="nav-item" href="systems-scripting.html">Lua Scripting API</a>
+
+  </div>
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Editor Reference</div>
+
+    <a class="nav-item" href="editor-menus.html">Main Menus & Shortcuts</a>
+
+    <a class="nav-item" href="editor-windows.html">Windows, Inspector & Modals</a>
+
+  </div>
+
+</div>
+
+
+
+  </aside>
+
+
+
+  <main id="main-content">
+
+    <div class="breadcrumbs">
+
+      <a href="index.html">Docs</a> &gt; <span>Node Reference</span> &gt; <span>2D UI Component Nodes</span>
+
+    </div>
+
+
+
+    
+
+    <h1>2D UI Component Nodes</h1>
+
+    <p class="lead">The Tessera Engine includes a complete, high-performance 2D screen-space and world-space UI widget system. All 25+ UI nodes inherit from <code>UINode</code> (<code>src/Scene/Nodes/UI/UINode.h</code>) and are rendered using optimized screen-aligned vertex quads with anchor-based responsive layout scaling.</p>
+
+
+
+    <h2>1. The 25 UI Component Nodes</h2>
+
+    <table>
+
+      <thead>
+
+        <tr>
+
+          <th>Category</th>
+
+          <th>Node Class</th>
+
+          <th>Primary Role & Visual Function</th>
+
+        </tr>
+
+      </thead>
+
+      <tbody>
+
+        <tr><td rowspan="7"><strong>Containers & Auto-Layout</strong></td><td><code>UICanvasNode</code></td><td>Root UI screen-space canvas; manages reference resolution and auto-scaling.</td></tr>
+
+        <tr><td><code>UIPanelNode</code></td><td>Colored or textured background rectangle with rounded corners and border outlines.</td></tr>
+
+        <tr><td><code>UIWindowNode</code></td><td>Movable, floating, resizable in-game window with title bar, close button, and drag handles.</td></tr>
+
+        <tr><td><code>UIScrollPaneNode</code></td><td>Scrollable view area with automatic horizontal and vertical scrollbars.</td></tr>
+
+        <tr><td><code>UITabsNode</code></td><td>Multi-tab page container with tab header buttons and active view page switching.</td></tr>
+        <tr><td><code>UIBoxContainerNode</code></td><td>Linear auto-flow layout container arranging children horizontally or vertically with automated padding and spacing.</td></tr>
+        <tr><td><code>UIGridContainerNode</code></td><td>Multi-column structured auto-grid container calculating item cell coordinates automatically for RPG inventories and shop palettes.</td></tr>
+
+        <tr><td rowspan="6"><strong>Basic & Text</strong></td><td><code>UITextNode</code></td><td>Dynamic text label with customizable font size, color, drop-shadow, and alignment.</td></tr>
+
+        <tr><td><code>UIButtonNode</code></td><td>Interactive clickable button with normal, hovered, and pressed visual states.</td></tr>
+
+        <tr><td><code>UITextFieldNode</code></td><td>Single-line keyboard text input field with placeholder text and cursor navigation.</td></tr>
+
+        <tr><td><code>UIPasswordFieldNode</code></td><td>Masked security input field displaying asterisks or bullets for password entry.</td></tr>
+
+        <tr><td><code>UIProgressBarNode</code></td><td>Fill bar indicating progress, player health, stamina, mana, or loading states.</td></tr>
+
+        <tr><td><code>UISpinnerNode</code></td><td>Animated rotating circular loader indicating asynchronous background activity.</td></tr>
+
+        <tr><td rowspan="6"><strong>Inputs & Controls</strong></td><td><code>UISliderNode</code></td><td>Horizontal value slider for volume, sensitivity, FOV, and brightness settings.</td></tr>
+
+        <tr><td><code>UICheckboxNode</code></td><td>Toggleable check box with text label for boolean options.</td></tr>
+
+        <tr><td><code>UIRadioButtonNode</code></td><td>Mutually-exclusive radio selector within an identified group string.</td></tr>
+
+        <tr><td><code>UIDropdownNode</code></td><td>Drop-down selection box showing current choice with popup item list.</td></tr>
+
+        <tr><td><code>UIDatePickerNode</code></td><td>Interactive calendar widget for selecting dates and timestamps.</td></tr>
+
+        <tr><td><code>UIColorPickerNode</code></td><td>Interactive color swatch and gradient wheel with live RGBA preview.</td></tr>
+
+        <tr><td rowspan="4"><strong>Data & Media</strong></td><td><code>UIImageNode</code></td><td>Static 2D sprite or texture display with UV rectangle slicing and aspect fitting.</td></tr>
+
+        <tr><td><code>UIVideoNode</code></td><td>Hardware-accelerated 2D video display with form-factor presets (16:9 TV, 2.39:1 Cinema, 9:16 Mobile, 4:3 CCTV), click-to-play, scanlines, and audio sync.</td></tr>
+
+        <tr><td><code>UISelectableListNode</code></td><td>Scrollable list containing multiple rows with single or multi-item selection.</td></tr>
+
+        <tr><td><code>UITableNode</code></td><td>Multi-column, multi-row structured data grid with column headers and cell borders.</td></tr>
+
+        <tr><td><strong>Menu</strong></td><td><code>UIMenuBarNode</code></td><td>In-game top menu bar with cascading drop-down submenus.</td></tr>
+
+        <tr><td><strong>Vector Shapes</strong></td><td><code>UIShapeNode</code></td><td>Hardware-rasterized 2D vector shapes: <em>Rectangle</em>, <em>RoundedRect</em>, <em>Circle</em>, and <em>Triangle</em>.</td></tr>
+
+      </tbody>
+
+    </table>
+
+
+
+    <h2>2. Anchor and Responsive Layout System</h2>
+
+    <p>Every <code>UINode</code> features an anchor model that ensures UI screens scale correctly from 720p up to 4K ultrawide displays:</p>
+
+    <ul>
+
+      <li><strong>Anchors (0.0 to 1.0)</strong>: Pin the UI element relative to the parent's corners (e.g., Top-Left, Center, Bottom-Right, Full Stretch).</li>
+
+      <li><strong>Offsets (Pixels)</strong>: Pixel distance from anchor points for fixed margins and paddings.</li>
+
+      <li><strong>Pivot Point (0.0 to 1.0)</strong>: Center of rotation and scaling for the widget (<code>(0.5, 0.5)</code> centers the widget).</li>
+
+    </ul>
+
+
+
+    
+    <h2>4. Auto-Layout Containers: Box & Grid Containers</h2>
+    <p>Tessera includes smart auto-layout containers that eliminate the need for manual pixel placement when designing adaptive interfaces:</p>
+    
+    <h3>UIBoxContainerNode (<code>NodeType::UI_BoxContainer</code>)</h3>
+    <p>Arranges child elements sequentially in a single direction:</p>
+    <ul>
+      <li><strong>Orientation</strong>: <code>BoxOrientation::Horizontal</code> or <code>BoxOrientation::Vertical</code>.</li>
+      <li><strong>Spacing</strong>: Configurable pixel distance between adjacent elements.</li>
+      <li><strong>Padding</strong>: Border inset spacing from container edges.</li>
+      <li><strong>AutoResize</strong>: Dynamically recalculates the container's total width and height based on child bounds.</li>
+    </ul>
+
+    <h3>UIGridContainerNode (<code>NodeType::UI_GridContainer</code>)</h3>
+    <p>Arranges child elements in a multi-column, multi-row matrix:</p>
+    <ul>
+      <li><strong>Columns</strong>: Number of columns per row (e.g. <code>4</code> for an inventory hotbar).</li>
+      <li><strong>Cell Dimensions</strong>: Uniform <code>cellWidth</code> and <code>cellHeight</code> for each grid slot.</li>
+      <li><strong>Horizontal & Vertical Spacing</strong>: Independent gutter gaps between columns and rows.</li>
+      <li><strong>Padding</strong>: Outer margins protecting grid contents.</li>
+    </ul>
+
+        <h2>5. Video & Media UI Components</h2>
+
+    <p>The <code>UIVideoNode</code> (<code>src/Scene/Nodes/UI/UIVideoNode.h</code>) provides dedicated 2D screen-space video playback inside in-game user interfaces, menus, smartphone HUDs, security room terminal feeds, and computer terminal monitors.</p>
+
+    <h3>UIVideoNode Capabilities</h3>
+    <ul>
+      <li><strong>Dual Playback Engine</strong>: Backed by <code>VideoSystem</code>, supporting external GIF files, sprite-sheet video atlases, numbered PNG frame folders, and procedural broadcasts (TV News, CCTV, CRT, Sci-Fi Radar).</li>
+      <li><strong>Interactive Click-to-Play</strong>: Clicking the video widget in-game toggles playback (play/pause) or switches channels automatically.</li>
+      <li><strong>Form-Factor Aspect Ratios</strong>: Presets for 16:9 widescreen TV, 2.39:1 cinema ultrawide, 9:16 mobile smartphone portrait, and 4:3 CRT/CCTV displays.</li>
+      <li><strong>Post-Processing Scanlines</strong>: Optional horizontal phosphor scanline filter with adjustable intensity (<code>scanlineStrength</code>).</li>
+      <li><strong>Audio Integration</strong>: Synchronized audio playback with per-widget volume controls.</li>
+    </ul>
+
+    <h2>3. Step-by-Step: Creating an In-Game HUD & Health Bar</h2>
+
+    <ol>
+
+      <li><strong>Create Canvas</strong>: Press <kbd>Ctrl+A</kbd> &rarr; <strong>2D UI: Containers & Layout &rarr; Canvas (UI Root)</strong>.</li>
+
+      <li><strong>Add Player Health Bar</strong>: Right-click the Canvas &rarr; <strong>Add 2D UI &rarr; Basic & Text &rarr; Progress Bar</strong>.
+
+        <ul>
+
+          <li>Set Position to <code>(20, 20)</code>.</li>
+
+          <li>Set Size to <code>(240, 28)</code>.</li>
+
+          <li>Set Fill Color to bright red <code>(0.9, 0.2, 0.2, 1.0)</code>.</li>
+
+          <li>Set Background Color to dark charcoal <code>(0.15, 0.15, 0.15, 1.0)</code>.</li>
+
+        </ul>
+
+      </li>
+
+      <li><strong>Add Health Label</strong>: Right-click the Progress Bar &rarr; <strong>Add 2D UI &rarr; Text Label</strong>.
+
+        <ul>
+
+          <li>Set Text to <code>"HP: 100 / 100"</code>.</li>
+
+          <li>Set Alignment to Center.</li>
+
+        </ul>
+
+      </li>
+
+      <li><strong>Scripting the Health Bar in Lua</strong>: Attach a Lua script to the Canvas:
+
+        <pre><code class="language-lua">function OnUpdate(self, dt)
+
+    local player = Scene.find_node_by_name("PlayerHero")
+
+    if player then
+
+        local healthBar = Scene.find_node_by_name("HealthBar")
+
+        if healthBar then
+
+            healthBar:set_ui_progress(player:get_health_ratio())
+
+        end
+
+    end
+
+end</code></pre>
+
+      </li>
+
+    </ol>
+
+    
+
+
+
+    <div class="pagination">
+
+  <a href="nodes-3d.html" class="pagination-card prev">
+
+    <span class="pagination-label">&larr; Previous</span>
+
+    <span class="pagination-title">3D Nodes & Scene Entities</span>
+
+  </a>
+
+  <a href="systems-rendering.html" class="pagination-card next">
+
+    <span class="pagination-label">Next &rarr;</span>
+
+    <span class="pagination-title">Rendering, PBR & LOD</span>
+
+  </a>
+
+</div>
+
+
+
+  </main>
+
+</body>
+
+</html>
+

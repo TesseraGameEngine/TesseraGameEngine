@@ -1,0 +1,77 @@
+#version 450
+
+// GPU skinning: deforms one character's mesh by its bone matrices into that character's own
+// vertex buffer, which every render pass then draws (see VulkanSkinning). Matches the old CPU
+// path in main.cpp: skin the raw bind pose, then centre and scale it like the imported mesh.
+layout(local_size_x = 64) in;
+
+// Must match VulkanSkinning::SourceVertex
+struct SourceVertex {
+    vec4 positionU;  // xyz = raw bind-pose position (or final position when unweighted), w = u
+    vec4 normalV;    // xyz = bind-pose normal, w = v
+    ivec4 bones;     // bone indices (-1 = unused)
+    vec4 weights;    // bone weights (all 0 = not skinned: position is already final)
+    vec4 color;      // vertex colour (copied through)
+};
+
+layout(std430, binding = 0) readonly buffer Source { SourceVertex sourceVertices[]; };
+layout(std430, binding = 1) readonly buffer Bones { mat4 boneMatrices[]; };
+// Output in the engine's Vertex layout (Mesh.h): pos(3) normal(3) uv(2) boneIndices(4) boneWeights(4) color(4) lightmapUV(2)
+layout(std430, binding = 2) writeonly buffer Dest { float destVertices[]; };
+
+layout(push_constant) uniform SkinningParams {
+    vec4 centerScale; // xyz = mesh centre, w = scale factor (<= 0: none)
+    vec4 morphs;      // procedural morphs: x = smile, y = blink, z = muscle bulk, w = sum of others
+    uint vertexCount;
+    uint boneCount;
+} pc;
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= pc.vertexCount) return;
+
+    SourceVertex v = sourceVertices[i];
+    vec3 position = v.positionU.xyz;
+    vec3 normal = v.normalV.xyz;
+
+    if (dot(v.weights, vec4(1.0)) > 0.0001) {
+        vec3 skinnedPos = vec3(0.0);
+        vec3 skinnedNormal = vec3(0.0);
+        for (int b = 0; b < 4; ++b) {
+            float w = v.weights[b];
+            int bone = v.bones[b];
+            if (w <= 0.0 || bone < 0 || uint(bone) >= pc.boneCount) continue;
+            mat4 m = boneMatrices[bone];
+            skinnedPos += w * (m * vec4(position, 1.0)).xyz;
+            skinnedNormal += w * (mat3(m) * normal);
+        }
+        if (pc.centerScale.w > 0.0) {
+            skinnedPos = (skinnedPos - pc.centerScale.xyz) * pc.centerScale.w;
+        }
+        float normalLength = length(skinnedNormal);
+        if (normalLength > 0.0001) normal = skinnedNormal / normalLength;
+
+        // Procedural morph sliders (same as the former CPU path)
+        if (abs(pc.morphs.x) > 0.0001) skinnedPos.y += pc.morphs.x * 0.08 * sin(skinnedPos.x * 4.0);
+        if (abs(pc.morphs.y) > 0.0001) skinnedPos.y -= pc.morphs.y * 0.05 * max(0.0, skinnedPos.y);
+        skinnedPos += normal * (pc.morphs.z * 0.06 + pc.morphs.w * 0.04);
+        position = skinnedPos;
+    }
+
+    uint o = i * 22u;
+    destVertices[o + 0u] = position.x;
+    destVertices[o + 1u] = position.y;
+    destVertices[o + 2u] = position.z;
+    destVertices[o + 3u] = normal.x;
+    destVertices[o + 4u] = normal.y;
+    destVertices[o + 5u] = normal.z;
+    destVertices[o + 6u] = v.positionU.w;
+    destVertices[o + 7u] = v.normalV.w;
+    for (uint k = 8u; k < 16u; ++k) destVertices[o + k] = 0.0; // bone data isn't needed after skinning
+    destVertices[o + 16u] = v.color.r;
+    destVertices[o + 17u] = v.color.g;
+    destVertices[o + 18u] = v.color.b;
+    destVertices[o + 19u] = v.color.a;
+    destVertices[o + 20u] = 0.0; // characters aren't lightmapped
+    destVertices[o + 21u] = 0.0;
+}

@@ -1,0 +1,336 @@
+#version 450
+
+// GPU fluid simulation: Position Based Fluids (Macklin & Mueller 2013), one stage per dispatch
+// (VulkanFluidSim::Step records them in order with barriers between). Particles stay on the GPU;
+// the positions buffer is also the instance buffer the fluid spheres are drawn from.
+//
+// Particle state: position.w > 0 is a particle of the surface (its drawn radius), < 0 spray
+// (thrown clear of the body, drawn as droplets), 0 a free slot (absorbed into a Liquid, or room
+// for poured-in fluid). velocity.w is its foam (0..1).
+// Two-way coupling: around each solid object the fluid reports its waterline and how it flows
+// (feedback.contacts; dynamic rigid bodies float and drift in it on the CPU); particles reaching
+// a Liquid container (a sink) are absorbed and counted until it's full (feedback.sinkCounts,
+// added to its fill); poured liquid spawns particles into free slots (frameData.spawn*).
+layout(local_size_x = 256) in;
+
+struct Obstacle {
+    mat4 toLocal;  // world -> the obstacle's unit box (or unit sphere)
+    mat4 toWorld;
+    vec4 info;     // x = 1 for a sphere
+};
+
+struct Sink {
+    mat4 toLocal;  // world -> the container's unit box
+    vec4 info;     // x = 1 for a round container (cylinder), y = particles it can still take
+};
+
+layout(std430, binding = 0) buffer Positions { vec4 position[]; };
+layout(std430, binding = 1) buffer Predicted { vec4 predicted[]; };
+layout(std430, binding = 2) buffer Velocities { vec4 velocity[]; };   // xyz, w = foam
+layout(std430, binding = 3) buffer Scratch { vec4 scratch[]; };      // position change / new velocity
+layout(std430, binding = 4) buffer Lambdas { float lambda[]; };
+layout(std430, binding = 5) buffer CellOf { uint cellOf[]; };
+layout(std430, binding = 6) buffer LocalIndex { uint localIndex[]; };
+layout(std430, binding = 7) buffer Sorted { uint sorted[]; };        // particle indices by cell
+layout(std430, binding = 8) buffer CellCounts { uint cellCount[]; }; // grid cells + 1 (free slots)
+layout(std430, binding = 9) buffer CellStarts { uint cellStart[]; };
+// This frame's scene data (host-written, one per frame in flight)
+layout(std430, binding = 10) readonly buffer FrameData {
+    vec4 spawnPoint;     // xyz, w = particles to spawn each substep
+    vec4 spawnVelocity;  // xyz, w = how far apart they start (m)
+    uvec4 counts;        // x = sinks
+    Sink sinks[16];
+    // Per substep (16 at most), each obstacle where it is then: moving objects glide smoothly
+    // through the fluid instead of jumping with each physics step
+    Obstacle obstacles[16 * 64];
+} frameData;
+// What the simulation reports back (host-read two frames later, one per frame in flight)
+layout(std430, binding = 11) buffer Feedback {
+    uint sinkCounts[16];
+    uint spawnTicket;
+    uint pad[15];
+    // Per obstacle (8 each): highest fluid beside it (mm + 1e6, atomicMax), the fluid's
+    // velocity beside it (x, y, z in mm/s, summed), how many particles that is
+    int contacts[512];
+} feedback;
+
+// Must match FluidSimPushConstants in VulkanFluidSim.cpp
+layout(push_constant) uniform Params {
+    vec4 boxMin;      // xyz, w = particle radius (collisions)
+    vec4 boxMax;      // xyz, w = kernel radius h
+    ivec4 grid;       // xyz = cells per axis, w = total cells (the free-slot cell is after them)
+    uint count;       // particle slots
+    uint stage;       // which step this dispatch runs (STAGE_*)
+    uint obstacleCount;
+    float dt;
+    float invRestDensity;
+    float viscosity;
+    float drawRadius;
+    float relaxation; // constraint softening
+    uint substep;     // which substep of this frame (the obstacles' positions then)
+} pc;
+
+const uint STAGE_CLEAR_CELLS = 0u;
+const uint STAGE_PREDICT = 1u;    // gravity, predicted position, cell count
+const uint STAGE_SCAN = 2u;       // cell starts (one workgroup)
+const uint STAGE_SCATTER = 3u;    // particle indices sorted by cell
+const uint STAGE_LAMBDA = 4u;     // density constraint
+const uint STAGE_DELTA = 5u;      // position change from the constraints
+const uint STAGE_APPLY = 6u;      // move, then collide
+const uint STAGE_VELOCITY = 7u;
+const uint STAGE_VISCOSITY = 8u;  // XSPH smoothing of velocities, foam and spray
+const uint STAGE_FINISH = 9u;     // new state; absorbed into sinks
+const uint STAGE_SPAWN = 10u;     // poured-in fluid fills free slots
+
+const float PI = 3.14159265;
+
+float Poly6(float r2, float h) {
+    float h2 = h * h;
+    if (r2 >= h2) return 0.0;
+    float d = h2 - r2;
+    return 315.0 / (64.0 * PI * pow(h, 9.0)) * d * d * d;
+}
+
+vec3 SpikyGradient(vec3 r, float len, float h) {
+    if (len <= 1e-6 || len >= h) return vec3(0.0);
+    float d = h - len;
+    return (-45.0 / (PI * pow(h, 6.0)) * d * d / len) * r;
+}
+
+ivec3 CellCoord(vec3 p) {
+    return clamp(ivec3((p - pc.boxMin.xyz) / pc.boxMax.w), ivec3(0), pc.grid.xyz - 1);
+}
+
+uint CellIndex(ivec3 c) {
+    return uint((c.z * pc.grid.y + c.y) * pc.grid.x + c.x);
+}
+
+bool Alive(uint i) {
+    return position[i].w != 0.0;
+}
+
+float Hash(uint n) {
+    n = (n << 13u) ^ n;
+    n = n * (n * n * 15731u + 789221u) + 1376312589u;
+    return float(n & 0x7fffffffu) / float(0x7fffffff);
+}
+
+// Solid obstacles push the particle out; the box keeps it in
+vec3 Collide(vec3 p) {
+    float radius = pc.boxMin.w;
+    for (uint k = 0u; k < pc.obstacleCount; ++k) {
+        Obstacle o = frameData.obstacles[pc.substep * 64u + k];
+        vec3 local = (o.toLocal * vec4(p, 1.0)).xyz;
+        vec3 axisLength = vec3(length(o.toWorld[0].xyz), length(o.toWorld[1].xyz), length(o.toWorld[2].xyz));
+        vec3 margin = radius / max(axisLength, vec3(1e-5));
+        if (o.info.x > 0.5) {
+            float limit = 0.5 + margin.x;
+            float len = length(local);
+            if (len >= limit) continue;
+            local = len > 1e-6 ? local / len * limit : vec3(0.0, limit, 0.0);
+        } else {
+            vec3 limit = vec3(0.5) + margin;
+            vec3 depth = limit - abs(local);
+            if (depth.x <= 0.0 || depth.y <= 0.0 || depth.z <= 0.0) continue;
+            int axis = (depth.x < depth.y && depth.x < depth.z) ? 0 : (depth.y < depth.z ? 1 : 2);
+            local[axis] = local[axis] < 0.0 ? -limit[axis] : limit[axis];
+        }
+        p = (o.toWorld * vec4(local, 1.0)).xyz;
+    }
+    return clamp(p, pc.boxMin.xyz + radius, pc.boxMax.xyz - radius);
+}
+
+shared uint partialSums[256];
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    float h = pc.boxMax.w;
+    uint freeCell = uint(pc.grid.w);
+
+    if (pc.stage == STAGE_SCAN) {
+        // Exclusive prefix sum of the cell counts (and the free-slot cell after them): each
+        // thread sums a run of cells, the runs are added up in shared memory, then each thread
+        // writes the starts of its run
+        uint t = gl_LocalInvocationID.x;
+        uint cells = uint(pc.grid.w) + 1u;
+        uint per = (cells + 255u) / 256u;
+        uint begin = t * per;
+        uint end = min(begin + per, cells);
+        uint sum = 0u;
+        for (uint c = begin; c < end; ++c) sum += cellCount[c];
+        partialSums[t] = sum;
+        barrier();
+        if (t == 0u) {
+            uint running = 0u;
+            for (uint k = 0u; k < 256u; ++k) {
+                uint v = partialSums[k];
+                partialSums[k] = running;
+                running += v;
+            }
+        }
+        barrier();
+        uint running = partialSums[t];
+        for (uint c = begin; c < end; ++c) {
+            cellStart[c] = running;
+            running += cellCount[c];
+        }
+        return;
+    }
+
+    if (pc.stage == STAGE_CLEAR_CELLS) {
+        if (i <= uint(pc.grid.w)) cellCount[i] = 0u;
+        if (i == 0u) feedback.spawnTicket = 0u;
+        return;
+    }
+    if (i >= pc.count) return;
+
+    if (pc.stage == STAGE_SPAWN) {
+        // Free slots take tickets; the first spawnPoint.w of them become new particles
+        if (Alive(i)) return;
+        uint want = uint(frameData.spawnPoint.w);
+        if (want == 0u) return;
+        uint ticket = atomicAdd(feedback.spawnTicket, 1u);
+        if (ticket >= want) return;
+        float spread = frameData.spawnVelocity.w;
+        vec3 jitter = (vec3(Hash(i * 3u + ticket), Hash(i * 3u + 1u + ticket * 7u), Hash(i * 3u + 2u + ticket * 13u)) - 0.5) * spread;
+        vec3 p = clamp(frameData.spawnPoint.xyz + jitter, pc.boxMin.xyz + pc.boxMin.w, pc.boxMax.xyz - pc.boxMin.w);
+        position[i] = vec4(p, pc.drawRadius);
+        predicted[i] = vec4(p, 0.0);
+        velocity[i] = vec4(frameData.spawnVelocity.xyz, 0.15); // a little foam where it pours in
+        return;
+    }
+    if (pc.stage == STAGE_PREDICT) {
+        if (!Alive(i)) {
+            // Free slots sit in their own cell, which no neighbour search visits
+            predicted[i] = position[i];
+            cellOf[i] = freeCell;
+            localIndex[i] = atomicAdd(cellCount[freeCell], 1u);
+            return;
+        }
+        vec3 v = velocity[i].xyz + vec3(0.0, -9.81, 0.0) * pc.dt;
+        float speed = length(v);
+        if (speed > 10.0) v *= 10.0 / speed;
+        velocity[i] = vec4(v, velocity[i].w);
+        vec3 p = Collide(position[i].xyz + v * pc.dt);
+        predicted[i] = vec4(p, 0.0);
+        uint cell = CellIndex(CellCoord(p));
+        cellOf[i] = cell;
+        localIndex[i] = atomicAdd(cellCount[cell], 1u);
+        return;
+    }
+    if (pc.stage == STAGE_SCATTER) {
+        sorted[cellStart[cellOf[i]] + localIndex[i]] = i;
+        return;
+    }
+    if (!Alive(i)) return;
+    if (pc.stage == STAGE_APPLY) {
+        predicted[i] = vec4(Collide(predicted[i].xyz + scratch[i].xyz), 0.0);
+        return;
+    }
+    if (pc.stage == STAGE_VELOCITY) {
+        // Capped: a correction that would fling a particle (squeezed out from under an object)
+        // doesn't turn into an explosion
+        vec3 v = (predicted[i].xyz - position[i].xyz) / pc.dt;
+        float speed = length(v);
+        if (speed > 8.0) v *= 8.0 / speed;
+        velocity[i] = vec4(v, velocity[i].w);
+        return;
+    }
+    if (pc.stage == STAGE_FINISH) {
+        // scratch.w: foam, plus 2 when the particle is spray
+        float state = scratch[i].w;
+        bool spray = state >= 2.0;
+        float foam = spray ? state - 2.0 : state;
+        vec3 p = predicted[i].xyz;
+        velocity[i] = vec4(scratch[i].xyz, foam);
+        position[i] = vec4(p, spray ? -pc.drawRadius : pc.drawRadius);
+        // Beside a solid object: its waterline and the flow around it (bodies float and drift)
+        for (uint k = 0u; k < pc.obstacleCount; ++k) {
+            Obstacle o = frameData.obstacles[pc.substep * 64u + k];
+            vec3 local = (o.toLocal * vec4(p, 1.0)).xyz;
+            vec3 axisLength = vec3(length(o.toWorld[0].xyz), length(o.toWorld[1].xyz), length(o.toWorld[2].xyz));
+            vec3 margin = 1.5 * h / max(axisLength, vec3(1e-5));
+            bool beside = o.info.x > 0.5 ? length(local) < 0.5 + margin.x : all(lessThan(abs(local), vec3(0.5) + margin));
+            if (!beside) continue;
+            atomicMax(feedback.contacts[k * 8u + 0u], int(p.y * 1000.0 + 1000000.0));
+            ivec3 mmps = ivec3(scratch[i].xyz * 1000.0);
+            atomicAdd(feedback.contacts[k * 8u + 1u], mmps.x);
+            atomicAdd(feedback.contacts[k * 8u + 2u], mmps.y);
+            atomicAdd(feedback.contacts[k * 8u + 3u], mmps.z);
+            atomicAdd(feedback.contacts[k * 8u + 4u], 1);
+        }
+        // Reaching a Liquid container: absorbed into it while it has room (its fill rises on the CPU)
+        for (uint s = 0u; s < frameData.counts.x; ++s) {
+            vec3 local = (frameData.sinks[s].toLocal * vec4(p, 1.0)).xyz;
+            bool inside = frameData.sinks[s].info.x > 0.5 ? (length(local.xz) < 0.5 && abs(local.y) < 0.5)
+                                                          : all(lessThan(abs(local), vec3(0.5)));
+            if (inside) {
+                uint taken = atomicAdd(feedback.sinkCounts[s], 1u);
+                if (float(taken) >= frameData.sinks[s].info.y) continue; // full: stays as fluid
+                position[i] = vec4(p, 0.0);
+                velocity[i] = vec4(0.0);
+                break;
+            }
+        }
+        return;
+    }
+
+    // The remaining stages visit the neighbours in the 27 surrounding cells
+    vec3 p = predicted[i].xyz;
+    ivec3 c = CellCoord(p);
+    float h2 = h * h;
+    float density = 0.0;
+    vec3 gradientI = vec3(0.0);
+    float gradientSum = 0.0;
+    vec3 delta = vec3(0.0);
+    vec3 smoothing = vec3(0.0);
+    float neighbours = 0.0;
+    for (int z = max(c.z - 1, 0); z <= min(c.z + 1, pc.grid.z - 1); ++z) {
+        for (int y = max(c.y - 1, 0); y <= min(c.y + 1, pc.grid.y - 1); ++y) {
+            for (int x = max(c.x - 1, 0); x <= min(c.x + 1, pc.grid.x - 1); ++x) {
+                uint cell = CellIndex(ivec3(x, y, z));
+                uint start = cellStart[cell];
+                uint end = start + cellCount[cell];
+                for (uint k = start; k < end; ++k) {
+                    uint j = sorted[k];
+                    vec3 r = p - predicted[j].xyz;
+                    float r2 = dot(r, r);
+                    if (r2 >= h2) continue;
+                    if (pc.stage == STAGE_LAMBDA) {
+                        density += Poly6(r2, h);
+                        if (j == i) continue;
+                        vec3 g = SpikyGradient(r, sqrt(r2), h) * pc.invRestDensity;
+                        gradientI += g;
+                        gradientSum += dot(g, g);
+                    } else if (pc.stage == STAGE_DELTA) {
+                        if (j == i) continue;
+                        delta += (lambda[i] + lambda[j]) * SpikyGradient(r, sqrt(r2), h);
+                    } else {
+                        if (j == i) continue;
+                        smoothing += (velocity[j].xyz - velocity[i].xyz) * (Poly6(r2, h) * pc.invRestDensity);
+                        neighbours += 1.0;
+                    }
+                }
+            }
+        }
+    }
+    if (pc.stage == STAGE_LAMBDA) {
+        // Only pushes apart (a fluid surface doesn't pull particles together)
+        float constraint = max(density * pc.invRestDensity - 1.0, 0.0);
+        lambda[i] = -constraint / (gradientSum + dot(gradientI, gradientI) + pc.relaxation);
+    } else if (pc.stage == STAGE_DELTA) {
+        scratch[i] = vec4(delta * pc.invRestDensity, 0.0);
+    } else if (pc.stage == STAGE_VISCOSITY) {
+        // Foam: churned-up water (neighbours moving very differently), and fast water at the
+        // surface (few neighbours); it fades over a couple of seconds once things calm down.
+        // Spray: fast particles with hardly any neighbours, flying clear of the body.
+        vec3 v = velocity[i].xyz;
+        float speed = length(v);
+        float surface = smoothstep(14.0, 6.0, neighbours);
+        float churn = smoothstep(0.8, 2.0, length(smoothing));
+        float target = clamp((churn + smoothstep(2.0, 4.0, speed)) * surface, 0.0, 1.0);
+        float foam = max(target, velocity[i].w - pc.dt * 0.6);
+        bool spray = neighbours < 4.0 && speed > 1.2;
+        scratch[i] = vec4(v + pc.viscosity * smoothing, foam + (spray ? 2.0 : 0.0));
+    }
+}

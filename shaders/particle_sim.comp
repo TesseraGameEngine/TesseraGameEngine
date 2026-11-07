@@ -1,0 +1,520 @@
+#version 450
+
+// GPU particle simulation (VulkanParticleSim): a Particle Emitter in GPU mode keeps its particles
+// on the GPU. Each frame, in four stages:
+//   0 Simulate: forces, motion, collision (scene shapes, terrain, water) and trail points
+//   1 Spawn:    new particles, and the ones thrown up where particles hit something, into the
+//               next slots of the ring (slots still in use are skipped)
+//   2 Advance:  moves the ring's cursor past this frame's spawns (one thread)
+//   3 Quads:    writes the quads the particle pipelines draw (ParticleQuad, as on the CPU):
+//               first a sprite per particle (also the instances of mesh particles), then each
+//               particle's trail (or ribbon) segments
+// The CPU sends the emitter's settings, the scene's shapes and how many to spawn (FrameData).
+// Must match VulkanParticleSim.cpp.
+
+layout(local_size_x = 64) in;
+
+struct Particle {
+    vec4 position; // xyz, w = age
+    vec4 velocity; // xyz, w = lifetime
+    vec4 spin;     // x = rotation, y = angular velocity, z = seed, w = flipbook frame offset
+    vec4 misc;     // x = size scale, y = trail timer
+    uvec4 info;    // x = spawn index, y = flags (1 alive, 2 spawned by a hit), z = trail head, w = trail points
+};
+
+struct Quad {
+    vec4 a;
+    vec4 b;
+    vec4 colorA;
+    vec4 colorB;
+    vec4 params;
+};
+
+struct Solid {
+    mat4 toLocal;
+    mat4 toWorld;
+    vec4 info; // x = 1 sphere, y = 1 water
+};
+
+struct HeightField {
+    mat4 toLocal;
+    mat4 toWorld;
+    vec4 size;   // xy = size (m), z = height scale, w = resolution
+    uvec4 data;  // x = offset into heights
+};
+
+layout(std430, binding = 0) buffer Particles { Particle particles[]; };
+layout(std430, binding = 1) buffer Trails { vec4 trailPoints[]; }; // xyz, w = time recorded
+layout(std430, binding = 2) buffer Quads { Quad quads[]; };
+layout(std430, binding = 3) readonly buffer FrameData {
+    mat4 toWorld;         // the emitter's space (identity for world-space emitters)
+    mat4 toLocal;
+    vec4 origin;          // xyz = spawn origin (emitter space), w = dt
+    vec4 shape;           // x = shape (0 point, 1 sphere, 2 box, 3 cone), y = radius, z = cone angle (rad), w = start speed
+    vec4 boxExtents;      // xyz, w = emitter clock (s)
+    vec4 life;            // x, y = lifetime range, z = start size, w = end size
+    vec4 startColor;
+    vec4 endColor;
+    vec4 forces;          // x = gravity (m/s^2, up), y = drag (1/s), z = vortex strength, w = attractor strength
+    vec4 vortexAxis;      // xyz, w = curl strength (0 = off)
+    vec4 attractor;       // xyz = centre (0 strength = off), w = curl frequency
+    vec4 rotation;        // xy = start rotation range (rad), zw = angular velocity range (rad/s)
+    vec4 flipbook;        // x = frames, y = mode (0 over lifetime, 1 fixed rate), z = fps or cycles, w = random start
+    vec4 trail;           // x = mode (0 none, 1 per particle, 2 ribbon), y = points, z = interval (s), w = width
+    vec4 trail2;          // x = taper, y = draw particles, z = texture tiling, w = velocity stretch
+    vec4 collision;       // x = mode (0 none, 1 ground plane, 2 scene), y = plane height, z = radius scale, w = bounce
+    vec4 collision2;      // x = friction, y = die on hit, z = life lost per hit, w = particles spawned per hit
+    vec4 collision3;      // x = hit spawn speed, y = hit spawn size, z = solids, w = height fields
+    uvec4 counts;         // x = slots, y = particles to spawn, z = frame seed, w = quads per particle
+    vec4 waterGrid;       // xy = origin (x, z), zw = extent; heightField[kMaxHeightFields] is the water when present
+    Solid solids[64];
+    HeightField heightFields[5]; // terrains, then the water grid (the ocean's surface)
+} frame;
+layout(std430, binding = 4) readonly buffer Heights { float heights[]; };
+layout(std430, binding = 5) buffer Feedback {
+    uint alive;
+    uint hits;
+    uint pad0;
+    uint pad1;
+    vec4 lastHit;
+} feedback;
+layout(std430, binding = 6) buffer State {
+    uint cursor;     // the ring's next slot
+    uint spawnIndex; // next birth number
+    uint hitRequests;
+    uint spawned;    // slots taken this frame (spawns and hits)
+    vec4 requests[512]; // per hit: position (w = parent seed), normal (w = parent lifetime)
+} state;
+
+layout(push_constant) uniform Push {
+    uint stage;
+    uint waterField; // 1 when heightFields[4] (the water) is set
+    uint pad0;
+    uint pad1;
+} push;
+
+const uint kMaxRequests = 256u;
+
+float Hash(uint a, uint b, uint c) {
+    uint h = a * 374761393u + b * 668265263u + c * 2246822519u;
+    h = (h ^ (h >> 13u)) * 1274126177u;
+    h ^= h >> 16u;
+    return float(h & 0xFFFFFFu) / 16777215.0;
+}
+
+int FrameCount() { return max(int(frame.flipbook.x), 1); }
+
+float FlipbookFrame(Particle p) {
+    float frames = float(FrameCount());
+    if (frames <= 1.0) return 0.0;
+    float f;
+    if (frame.flipbook.y > 0.5) {
+        f = p.position.w * frame.flipbook.z;
+    } else {
+        float cycles = max(frame.flipbook.z, 0.01);
+        float t = clamp(p.position.w / max(p.velocity.w, 1e-4), 0.0, 1.0) * cycles;
+        f = (cycles <= 1.0 ? min(t, 0.9999) : fract(t)) * frames;
+    }
+    f += p.spin.w;
+    return f - floor(f / frames) * frames;
+}
+
+float HeightAt(int field, vec2 xz, out bool inside) {
+    HeightField hf = frame.heightFields[field];
+    uint n = uint(hf.size.w);
+    vec2 uv = (xz + hf.size.xy * 0.5) / hf.size.xy;
+    inside = all(greaterThanEqual(uv, vec2(0.0))) && all(lessThanEqual(uv, vec2(1.0)));
+    if (!inside || n < 2u) return 0.0;
+    vec2 f = uv * float(n - 1u);
+    uvec2 i0 = uvec2(clamp(floor(f), vec2(0.0), vec2(float(n) - 2.0)));
+    vec2 t = f - vec2(i0);
+    uint o = hf.data.x;
+    float h00 = heights[o + i0.y * n + i0.x], h10 = heights[o + i0.y * n + i0.x + 1u];
+    float h01 = heights[o + (i0.y + 1u) * n + i0.x], h11 = heights[o + (i0.y + 1u) * n + i0.x + 1u];
+    float h = mix(mix(h00, h10, t.x), mix(h01, h11, t.x), t.y);
+    if (h < -1e8) inside = false; // no water there
+    return h * hf.size.z;
+}
+
+// The first surface the path from -> to (world space, a sphere of this radius) meets.
+// Returns t (2 = nothing), with the surface's normal and whether it's water
+float Sweep(vec3 from, vec3 to, float radius, out vec3 normal, out bool water) {
+    float best = 2.0;
+    normal = vec3(0.0, 1.0, 0.0);
+    water = false;
+    int mode = int(frame.collision.x + 0.5);
+    if (mode == 1) {
+        float level = frame.collision.y + radius;
+        if (to.y < level) {
+            best = from.y > level ? (from.y - level) / max(from.y - to.y, 1e-6) : 0.0;
+        }
+        return best;
+    }
+    int solidCount = int(frame.collision3.z + 0.5);
+    for (int s = 0; s < solidCount; ++s) {
+        Solid solid = frame.solids[s];
+        bool isWater = solid.info.y > 0.5;
+        vec3 a = (solid.toLocal * vec4(from, 1.0)).xyz;
+        vec3 b = (solid.toLocal * vec4(to, 1.0)).xyz;
+        vec3 scale = vec3(length(solid.toWorld[0].xyz), length(solid.toWorld[1].xyz), length(solid.toWorld[2].xyz));
+        vec3 pad = isWater ? vec3(0.0) : vec3(radius) / max(scale, vec3(1e-4));
+        vec3 d = b - a;
+        vec3 nLocal = vec3(0.0);
+        float t = -1.0;
+        if (solid.info.x > 0.5) {
+            float r = 0.5 + (pad.x + pad.y + pad.z) / 3.0;
+            float c = dot(a, a) - r * r;
+            if (c <= 0.0) {
+                t = 0.0;
+                nLocal = length(a) > 1e-5 ? normalize(a) : vec3(0.0, 1.0, 0.0);
+            } else {
+                float qa = dot(d, d), qb = dot(a, d);
+                float disc = qb * qb - qa * c;
+                if (qa > 1e-12 && disc >= 0.0) {
+                    float root = (-qb - sqrt(disc)) / qa;
+                    if (root >= 0.0 && root <= 1.0) {
+                        t = root;
+                        nLocal = normalize(a + d * root);
+                    }
+                }
+            }
+        } else {
+            vec3 halfSize = vec3(0.5) + pad;
+            vec3 depth = halfSize - abs(a);
+            if (all(greaterThan(depth, vec3(0.0)))) {
+                t = 0.0;
+                int axis = isWater ? 1 : ((depth.x < depth.y && depth.x < depth.z) ? 0 : (depth.y < depth.z ? 1 : 2));
+                nLocal[axis] = (a[axis] < 0.0 && !isWater) ? -1.0 : 1.0;
+            } else {
+                float tEnter = 0.0, tExit = 1.0;
+                int enterAxis = -1;
+                bool miss = false;
+                for (int i = 0; i < 3; ++i) {
+                    if (abs(d[i]) < 1e-9) {
+                        if (abs(a[i]) > halfSize[i]) miss = true;
+                        continue;
+                    }
+                    float t0 = (-halfSize[i] - a[i]) / d[i];
+                    float t1 = (halfSize[i] - a[i]) / d[i];
+                    if (t0 > t1) { float tmp = t0; t0 = t1; t1 = tmp; }
+                    if (t0 > tEnter) { tEnter = t0; enterAxis = i; }
+                    tExit = min(tExit, t1);
+                    if (tEnter > tExit) miss = true;
+                }
+                if (!miss && enterAxis >= 0) {
+                    t = tEnter;
+                    nLocal[enterAxis] = d[enterAxis] > 0.0 ? -1.0 : 1.0;
+                }
+            }
+        }
+        if (t >= 0.0 && t < best) {
+            best = t;
+            normal = normalize(transpose(mat3(solid.toLocal)) * nLocal);
+            water = isWater;
+        }
+    }
+    int fields = int(frame.collision3.w + 0.5);
+    for (int f = 0; f < 5; ++f) {
+        bool isWater = f == 4;
+        if ((!isWater && f >= fields) || (isWater && push.waterField == 0u)) continue;
+        HeightField hf = frame.heightFields[f];
+        vec3 a = (hf.toLocal * vec4(from, 1.0)).xyz;
+        vec3 b = (hf.toLocal * vec4(to, 1.0)).xyz;
+        float localRadius = isWater ? 0.0 : radius / max(length(hf.toWorld[1].xyz), 1e-4);
+        bool insideB;
+        float hb = HeightAt(f, b.xz, insideB);
+        if (!insideB || b.y >= hb + localRadius) continue;
+        bool insideA;
+        float ha = HeightAt(f, a.xz, insideA);
+        float t = 0.0;
+        if (insideA && a.y >= ha + localRadius) {
+            float lo = 0.0, hi = 1.0;
+            for (int i = 0; i < 8; ++i) {
+                float mid = (lo + hi) * 0.5;
+                vec3 p = mix(a, b, mid);
+                bool inside;
+                float h = HeightAt(f, p.xz, inside);
+                if (inside && p.y < h + localRadius) hi = mid; else lo = mid;
+            }
+            t = lo;
+        }
+        if (t < best) {
+            vec3 p = mix(a, b, t);
+            float e = max(hf.size.x, hf.size.y) / max(hf.size.w - 1.0, 1.0);
+            bool unused;
+            vec3 nLocal = normalize(vec3(HeightAt(f, p.xz - vec2(e, 0.0), unused) - HeightAt(f, p.xz + vec2(e, 0.0), unused), 2.0 * e,
+                                         HeightAt(f, p.xz - vec2(0.0, e), unused) - HeightAt(f, p.xz + vec2(0.0, e), unused)));
+            best = t;
+            normal = isWater ? vec3(0.0, 1.0, 0.0) : normalize(transpose(mat3(hf.toLocal)) * nLocal);
+            water = isWater;
+        }
+    }
+    return best;
+}
+
+vec3 CurlNoise(vec3 pos) {
+    vec3 p = pos * frame.attractor.w;
+    float vx = sin(p.y * 2.1 + p.z * 1.3) - cos(p.z * 1.7 + p.x * 0.9);
+    float vy = sin(p.z * 2.3 + p.x * 1.1) - cos(p.x * 1.9 + p.y * 0.7);
+    float vz = sin(p.x * 1.7 + p.y * 2.5) - cos(p.y * 1.5 + p.z * 1.2);
+    return vec3(vx, vy, vz) * frame.vortexAxis.w;
+}
+
+void RecordTrail(inout Particle p, uint index) {
+    uint points = uint(frame.trail.y);
+    if (int(frame.trail.x + 0.5) != 1 || points < 2u) return;
+    float now = frame.boxExtents.w;
+    float life = float(points) * max(frame.trail.z, 0.001);
+    uint base = index * points;
+    while (p.info.w > 0u) {
+        uint tail = (p.info.z + points - p.info.w + 1u) % points;
+        if (now - trailPoints[base + tail].w <= life) break;
+        p.info.w -= 1u;
+    }
+    if ((p.info.y & 1u) == 0u) return;
+    p.misc.y += frame.origin.w;
+    if (p.info.w == 0u || p.misc.y >= frame.trail.z) {
+        p.misc.y = 0.0;
+        p.info.z = (p.info.z + 1u) % points;
+        trailPoints[base + p.info.z] = vec4(p.position.xyz, now);
+        p.info.w = min(p.info.w + 1u, points);
+    }
+}
+
+void Simulate(uint i) {
+    Particle p = particles[i];
+    float dt = frame.origin.w;
+    if ((p.info.y & 1u) == 0u) {
+        if (p.info.w > 0u) {
+            RecordTrail(p, i);
+            particles[i] = p;
+        }
+        return;
+    }
+    p.position.w += dt;
+    if (p.position.w >= p.velocity.w) {
+        p.info.y &= ~1u;
+        RecordTrail(p, i);
+        particles[i] = p;
+        return;
+    }
+    vec3 accel = vec3(0.0, frame.forces.x, 0.0);
+    vec3 origin = frame.origin.xyz;
+    if (frame.forces.z != 0.0) {
+        vec3 axis = length(frame.vortexAxis.xyz) > 0.001 ? normalize(frame.vortexAxis.xyz) : vec3(0.0, 1.0, 0.0);
+        vec3 tangent = cross(axis, p.position.xyz - origin);
+        if (length(tangent) > 0.0001) accel += normalize(tangent) * frame.forces.z;
+    }
+    if (frame.forces.w != 0.0) {
+        vec3 toTarget = frame.attractor.xyz - p.position.xyz;
+        float dist = length(toTarget);
+        if (dist > 0.01) accel += toTarget / dist * frame.forces.w;
+    }
+    if (frame.vortexAxis.w != 0.0) accel += CurlNoise(p.position.xyz);
+    p.velocity.xyz += accel * dt;
+    p.velocity.xyz *= exp(-max(frame.forces.y, 0.0) * dt);
+    vec3 previous = p.position.xyz;
+    p.position.xyz += p.velocity.xyz * dt;
+    p.spin.x += p.spin.y * dt;
+
+    if (frame.collision.x > 0.5) {
+        float normAge = clamp(p.position.w / p.velocity.w, 0.0, 1.0);
+        float size = mix(frame.life.z, frame.life.w, normAge) * p.misc.x;
+        vec3 from = (frame.toWorld * vec4(previous, 1.0)).xyz;
+        vec3 to = (frame.toWorld * vec4(p.position.xyz, 1.0)).xyz;
+        vec3 n;
+        bool water;
+        float t = Sweep(from, to, size * frame.collision.z, n, water);
+        if (t <= 1.0) {
+            vec3 hit = mix(from, to, t) + n * 0.001;
+            atomicAdd(feedback.hits, 1u);
+            feedback.lastHit = vec4(hit, 1.0);
+            if ((p.info.y & 2u) == 0u && frame.collision2.w > 0.5) {
+                uint r = atomicAdd(state.hitRequests, 1u);
+                if (r < kMaxRequests) {
+                    vec3 nLocal = normalize(mat3(frame.toLocal) * n);
+                    state.requests[r * 2u] = vec4((frame.toLocal * vec4(hit, 1.0)).xyz, p.spin.z);
+                    state.requests[r * 2u + 1u] = vec4(nLocal, p.velocity.w);
+                }
+            }
+            if (water || frame.collision2.y > 0.5) {
+                p.info.y &= ~1u;
+                p.position.xyz = (frame.toLocal * vec4(hit, 1.0)).xyz;
+                RecordTrail(p, i);
+                particles[i] = p;
+                return;
+            }
+            vec3 v = mat3(frame.toWorld) * p.velocity.xyz;
+            float into = dot(v, n);
+            if (into < 0.0) {
+                vec3 along = v - into * n;
+                v = along * (1.0 - clamp(frame.collision2.x, 0.0, 1.0)) - into * n * max(frame.collision.w, 0.0);
+            }
+            p.velocity.xyz = mat3(frame.toLocal) * v;
+            p.position.xyz = (frame.toLocal * vec4(hit, 1.0)).xyz;
+            p.position.w += frame.collision2.z * p.velocity.w;
+        }
+    }
+    RecordTrail(p, i);
+    particles[i] = p;
+}
+
+void Spawn(uint i) {
+    uint slots = frame.counts.x;
+    uint spawnCount = min(frame.counts.y, slots);
+    uint perHit = uint(frame.collision2.w + 0.5);
+    uint requests = min(state.hitRequests, kMaxRequests);
+    uint total = spawnCount + requests * perHit;
+    if (i >= total || i >= slots) return;
+    uint slot = (state.cursor + i) % slots;
+    Particle old = particles[slot];
+    if ((old.info.y & 1u) != 0u || old.info.w > 0u) return; // still in use: no room (as on the CPU)
+    uint seed = frame.counts.z;
+    Particle p;
+    p.misc = vec4(1.0, 0.0, 0.0, 0.0);
+    p.info = uvec4(state.spawnIndex + i, 1u, 0u, 0u);
+    p.spin = vec4(mix(frame.rotation.x, frame.rotation.y, Hash(slot, seed, 1u)), mix(frame.rotation.z, frame.rotation.w, Hash(slot, seed, 2u)),
+                  Hash(slot, seed, 3u), 0.0);
+    if (frame.flipbook.w > 0.5) p.spin.w = floor(Hash(slot, seed, 4u) * float(FrameCount()));
+    if (i < spawnCount) {
+        p.velocity.w = max(0.05, mix(frame.life.x, frame.life.y, Hash(slot, seed, 5u)));
+        vec3 r = vec3(Hash(slot, seed, 6u), Hash(slot, seed, 7u), Hash(slot, seed, 8u)) * 2.0 - 1.0;
+        vec3 dir = length(r) > 0.0001 ? normalize(r) : vec3(0.0, 1.0, 0.0);
+        int shape = int(frame.shape.x + 0.5);
+        vec3 origin = frame.origin.xyz;
+        float speed = frame.shape.w;
+        if (shape == 0) {
+            p.position.xyz = origin;
+            p.velocity.xyz = dir * speed;
+        } else if (shape == 1) {
+            p.position.xyz = origin + dir * frame.shape.y * Hash(slot, seed, 9u);
+            p.velocity.xyz = dir * speed;
+        } else if (shape == 2) {
+            p.position.xyz = origin + r * frame.boxExtents.xyz * 0.5;
+            p.velocity.xyz = vec3(0.0, speed, 0.0);
+        } else {
+            float angle = frame.shape.z * Hash(slot, seed, 10u);
+            float phi = Hash(slot, seed, 11u) * 6.2831853;
+            vec3 coneDir = vec3(sin(angle) * cos(phi), cos(angle), sin(angle) * sin(phi));
+            p.position.xyz = origin + vec3(coneDir.x, 0.0, coneDir.z) * frame.shape.y * Hash(slot, seed, 12u);
+            p.velocity.xyz = normalize(coneDir) * speed;
+        }
+    } else {
+        // Thrown up where a particle hit: up and out from the surface
+        uint r = (i - spawnCount) / perHit;
+        vec4 at = state.requests[r * 2u];
+        vec4 normalLife = state.requests[r * 2u + 1u];
+        vec3 n = normalLife.xyz;
+        vec3 jitter = vec3(Hash(slot, seed, 13u), Hash(slot, seed, 14u), Hash(slot, seed, 15u)) * 2.0 - 1.0;
+        vec3 dir = n + jitter * 0.85;
+        if (dot(dir, n) < 0.1) dir += n * 0.5;
+        dir = normalize(dir);
+        p.position.xyz = at.xyz + n * 0.01;
+        p.velocity.xyz = dir * frame.collision3.x * (0.5 + Hash(slot, seed, 16u));
+        p.velocity.w = max(0.05, normalLife.w * 0.35 * (0.6 + 0.8 * Hash(slot, seed, 17u)));
+        p.misc.x = max(frame.collision3.y, 0.01);
+        p.info.y = 3u;
+    }
+    p.position.w = 0.0;
+    particles[slot] = p;
+}
+
+void WriteQuad(uint index, Quad q) { quads[index] = q; }
+
+Quad EmptyQuad() {
+    Quad q;
+    q.a = vec4(0.0);
+    q.b = vec4(0.0);
+    q.colorA = vec4(0.0);
+    q.colorB = vec4(0.0);
+    q.params = vec4(0.0, 0.0, 0.0, 0.0);
+    return q;
+}
+
+void BuildQuads(uint i) {
+    Particle p = particles[i];
+    uint stride = frame.counts.w;
+    uint segments = frame.counts.x + i * (stride - 1u); // this particle's trail segments
+    bool alive = (p.info.y & 1u) != 0u;
+    if (alive) atomicAdd(feedback.alive, 1u);
+    float normAge = clamp(p.position.w / max(p.velocity.w, 1e-4), 0.0, 1.0);
+    vec4 color = mix(frame.startColor, frame.endColor, normAge);
+    float size = mix(frame.life.z, frame.life.w, normAge) * p.misc.x;
+    int trailMode = int(frame.trail.x + 0.5);
+    float halfWidth = 0.5 * max(frame.trail.w, 0.0);
+
+    // The particle itself
+    Quad sprite = EmptyQuad();
+    if (alive && (trailMode == 0 || frame.trail2.y > 0.5)) {
+        sprite.a = vec4((frame.toWorld * vec4(p.position.xyz, 1.0)).xyz, max(0.005, size) * 0.5);
+        sprite.b = vec4(mat3(frame.toWorld) * p.velocity.xyz * frame.trail2.w, p.spin.x);
+        sprite.colorA = color;
+        sprite.colorB = color;
+        sprite.params = vec4(FlipbookFrame(p), p.spin.z, -1.0, 0.0);
+    }
+    WriteQuad(i, sprite);
+
+    if (trailMode == 1) {
+        uint points = uint(frame.trail.y);
+        float life = float(points) * max(frame.trail.z, 0.001);
+        float now = frame.boxExtents.w;
+        vec3 head = alive ? p.position.xyz : trailPoints[i * points + p.info.z].xyz;
+        float headAge = 0.0;
+        float width = size * halfWidth;
+        bool taper = frame.trail2.x > 0.5;
+        for (uint k = 0u; k < points; ++k) {
+            Quad q = EmptyQuad();
+            uint step = alive ? k : k + 1u;
+            if (step < p.info.w) {
+                uint slot = (p.info.z + points - step) % points;
+                vec4 point = trailPoints[i * points + slot];
+                float tailAge = clamp((now - point.w) / life, 0.0, 1.0);
+                if (dot(point.xyz - head, point.xyz - head) > 1e-10) {
+                    q.a = vec4((frame.toWorld * vec4(head, 1.0)).xyz, width * (taper ? 1.0 - headAge : 1.0));
+                    q.b = vec4((frame.toWorld * vec4(point.xyz, 1.0)).xyz, width * (taper ? 1.0 - tailAge : 1.0));
+                    q.colorA = vec4(color.rgb, color.a * (1.0 - headAge));
+                    q.colorB = vec4(color.rgb, color.a * (1.0 - tailAge));
+                    q.params = vec4(0.0, p.spin.z, headAge * frame.trail2.z, tailAge * frame.trail2.z);
+                }
+                head = point.xyz;
+                headAge = tailAge;
+            }
+            WriteQuad(segments + k, q);
+        }
+    } else if (trailMode == 2) {
+        // Ribbon: to the particle born next (the next slot of the ring)
+        Quad q = EmptyQuad();
+        uint next = (i + 1u) % frame.counts.x;
+        Particle n = particles[next];
+        if (alive && (n.info.y & 1u) != 0u && n.info.x == p.info.x + 1u) {
+            float nAge = clamp(n.position.w / max(n.velocity.w, 1e-4), 0.0, 1.0);
+            float nSize = mix(frame.life.z, frame.life.w, nAge) * n.misc.x;
+            q.a = vec4((frame.toWorld * vec4(p.position.xyz, 1.0)).xyz, size * halfWidth);
+            q.b = vec4((frame.toWorld * vec4(n.position.xyz, 1.0)).xyz, nSize * halfWidth);
+            q.colorA = color;
+            q.colorB = mix(frame.startColor, frame.endColor, nAge);
+            q.params = vec4(0.0, p.spin.z, normAge * frame.trail2.z, nAge * frame.trail2.z);
+        }
+        WriteQuad(segments, q);
+    }
+}
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (push.stage == 0u) {
+        if (i < frame.counts.x) Simulate(i);
+    } else if (push.stage == 1u) {
+        Spawn(i);
+    } else if (push.stage == 2u) {
+        if (i == 0u) {
+            uint perHit = uint(frame.collision2.w + 0.5);
+            uint total = min(frame.counts.y, frame.counts.x) + min(state.hitRequests, kMaxRequests) * perHit;
+            total = min(total, frame.counts.x);
+            state.cursor = (state.cursor + total) % max(frame.counts.x, 1u);
+            state.spawnIndex += total;
+            state.hitRequests = 0u;
+        }
+    } else {
+        if (i < frame.counts.x) BuildQuads(i);
+    }
+}

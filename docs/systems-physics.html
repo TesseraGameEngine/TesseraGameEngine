@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+  <meta charset="UTF-8">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Physics, RigidBodies & Ragdolls - Tessera Engine Documentation</title>
+
+  <link rel="stylesheet" href="style.css">
+
+  <script src="nav.js" defer></script>
+
+</head>
+
+<body>
+
+  <aside id="sidebar">
+
+    <div class="sidebar-header">
+
+      <h2>&#9881; Tessera Engine</h2>
+
+      <p>Official Developer Documentation</p>
+
+    </div>
+
+    <div class="search-box">
+
+      <input type="text" id="doc-search" placeholder="Filter documentation..." autocomplete="off">
+
+    </div>
+
+    <div class="sidebar-nav">
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Getting Started</div>
+
+    <a class="nav-item" href="index.html">Overview & Quickstart</a>
+
+  </div>
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Node Reference</div>
+
+    <a class="nav-item" href="nodes-3d.html">3D Nodes & Entities</a>
+
+    <a class="nav-item" href="nodes-ui.html">2D UI Component Nodes</a>
+
+  </div>
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Core Systems</div>
+
+    <a class="nav-item" href="systems-rendering.html">Rendering, PBR & LOD</a>
+
+    <a class="nav-item" href="systems-animation.html">Animation, Armatures & IK</a>
+
+    <a class="nav-item active" href="systems-physics.html">Physics & Ragdolls</a>
+
+    <a class="nav-item" href="systems-audio.html">Audio Engine & Mixer</a>
+
+    <a class="nav-item" href="systems-navigation.html">Navigation & AI Patrol</a>
+
+    <a class="nav-item" href="systems-networking.html">Multiplayer & Authority</a>
+
+    <a class="nav-item" href="systems-scripting.html">Lua Scripting API</a>
+
+  </div>
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Editor Reference</div>
+
+    <a class="nav-item" href="editor-menus.html">Main Menus & Shortcuts</a>
+
+    <a class="nav-item" href="editor-windows.html">Windows, Inspector & Modals</a>
+
+  </div>
+
+</div>
+
+
+
+  </aside>
+
+
+
+  <main id="main-content">
+
+    <div class="breadcrumbs">
+
+      <a href="index.html">Docs</a> &gt; <span>Core Systems</span> &gt; <span>Physics, RigidBodies & Ragdolls</span>
+
+    </div>
+
+
+
+    
+
+    <h1>Physics Engine, RigidBodies & Ragdolls</h1>
+
+    <p class="lead">The Tessera Engine integrates <strong>JoltPhysics</strong> (<code>src/Physics/</code>), the AAA multi-threaded physics engine powering modern open-world titles, providing high-precision collision detection, dynamic constraint solvers, continuous collision detection (CCD), and realistic humanoid ragdoll simulation.</p>
+
+
+
+    <h2>1. RigidBody Modes</h2>
+
+    <p>Configurable for any 3D node under the <strong>Physics & Dynamics</strong> Inspector header:</p>
+
+    <table>
+
+      <thead><tr><th>Mode</th><th>Simulation Type</th><th>Collision Behavior</th><th>Ideal Use Cases</th></tr></thead>
+
+      <tbody>
+
+        <tr><td><strong>None</strong></td><td>Unsimulated</td><td>No physics bounding box</td><td>Pure visual props, lights, cameras, decorative geometry.</td></tr>
+
+        <tr><td><strong>Static</strong></td><td>Immovable (Zero Mass)</td><td>Solid collidable boundary</td><td>Terrain, buildings, fixed walls, floors, static obstacles.</td></tr>
+
+        <tr><td><strong>Kinematic</strong></td><td>Scripted Velocity</td><td>Pushes dynamic bodies</td><td>Moving elevators, rotating traps, sliding doors, player controllers.</td></tr>
+
+        <tr><td><strong>Dynamic</strong></td><td>Fully Simulated</td><td>Affected by gravity and forces</td><td>Barrels, crates, vehicles, debris, ragdoll limbs, physics projectiles.</td></tr>
+
+      </tbody>
+
+    </table>
+
+
+
+    <h2>2. Physical Material Properties</h2>
+
+    <ul>
+
+      <li><strong>Mass (kg)</strong>: Weight of the body (affects momentum and collision impulse response).</li>
+
+      <li><strong>Floats on Water</strong> (Dynamic bodies): in an Ocean, the body bobs and tilts with the waves, using Jolt's buoyancy against the wave surface under it. <em>Buoyancy</em>: 1 = neutral, below 1 sinks, above 1 rides higher.</li>
+      <li><strong>Use Gravity</strong>: When checked, the body accelerates downward using the world gravity vector (default -9.81 m/s&sup2;).</li>
+
+      <li><strong>Friction (0.0 to 1.0)</strong>: Coulomb surface friction opposing sliding motion.</li>
+
+      <li><strong>Restitution / Bounciness (0.0 to 1.0)</strong>: Coefficient of restitution (0.0 = completely inelastic, 1.0 = perfect elastic bounce).</li>
+
+      <li><strong>Linear Velocity (vec3)</strong>: Current directional movement velocity vector.</li>
+
+      <li><strong>Angular Velocity (vec3)</strong>: Current rotational angular spin vector.</li>
+
+    </ul>
+
+
+
+    <h2>3. Constraints & Joint Solvers</h2>
+
+    <p>Joints connect two physics bodies together with restricted degrees of freedom:</p>
+
+    <ul>
+
+      <li><strong>Fixed Joint</strong>: Rigidly locks position and orientation between two bodies.</li>
+
+      <li><strong>Hinge Joint</strong>: Constrains rotation around a single axis with optional angular limits (swinging doors, wheel axles).</li>
+
+      <li><strong>Slider Joint</strong>: Constrains movement to a single translational axis (hydraulic pistons, sliding drawers).</li>
+
+      <li><strong>Distance Spring</strong>: Damped harmonic spring maintaining a target distance between two attachment points.</li>
+
+      <li><strong>Cone-Twist Joint</strong>: Ball-and-socket joint with cone and twist angle limits used for ragdoll shoulders, hips, and necks.</li>
+
+    </ul>
+
+
+
+    <h2>4. Humanoid Ragdoll Physics</h2>
+
+    <p>Check <strong>Enable Humanoid Ragdoll Physics</strong> on any character node with an armature:</p>
+
+    <ul>
+
+      <li>The engine binds capsule colliders to each bone joint connected by Cone-Twist and Hinge constraints.</li>
+
+      <li>Click <strong>Apply Upward Ragdoll Impulse Test</strong> in the Inspector to immediately see the character knocked backward with physical momentum.</li>
+
+      <li>Smoothly blending from animated keyframes into dynamic ragdolls on character defeat or heavy projectile impacts.</li>
+
+    </ul>
+
+
+
+    <h2>5. Physics Scripting API (Lua)</h2>
+
+    <pre><code class="language-lua">function OnInit(self)
+
+    -- Apply an initial jump impulse
+
+    Physics.apply_impulse(self:get_id(), 0, 500, 0)
+
+end
+
+
+
+function OnCollision(self, other_node_id)
+
+    local other = Scene.get_node(other_node_id)
+
+    print("Collided with: " .. other:get_name())
+
+end</code></pre>
+
+    
+
+
+
+    
+    <h2>5. 32-Bit Collision Filtering (Layers & Masks)</h2>
+    <p>Tessera provides fine-grained 32-bit collision filtering directly integrated into Jolt Physics narrowphase via <code>TesseraContactListener</code> (inheriting <code>JPH::ContactListener::OnContactValidate</code>):</p>
+    
+    <ul>
+      <li><strong>Collision Layer (32-bit bitfield)</strong>: Defines which category/categories this entity belongs to (e.g., Layer 1 = World/Environment, Layer 2 = Player, Layer 3 = Enemies, Layer 4 = Projectiles).</li>
+      <li><strong>Collision Mask (32-bit bitfield)</strong>: Defines which layers this entity is allowed to scan and collide against.</li>
+    </ul>
+
+    <div class="callout callout-info">
+      <div class="callout-title">&#8505; Symmetric Collision Rule</div>
+      <p>Two entities $A$ and $B$ only generate contact manifolds if both agree to collide:</p>
+      <pre><code>CanCollide = ((layerA & maskB) != 0) && ((layerB & maskA) != 0)</code></pre>
+      <p>If this condition evaluates to <code>false</code>, Jolt Physics immediately rejects the contact pair before solver impulses or constraint iterations run, yielding substantial performance gains in scenes with high entity counts.</p>
+    </div>
+
+    <h3>Configuring Collision Bitfields in Lua</h3>
+    <pre><code class="language-lua">function OnInit(self)
+    -- Set Player to Layer 2 (bit 1) and scan Layers 1 (World) & 3 (Enemies)
+    self:SetCollisionLayer(2)
+    self:SetCollisionMask(1 | 4) -- 5
+
+    -- Query whether we can collide with another node
+    local enemyId = 42
+    if self:CanCollideWith(enemyId) then
+        print("Player can collide with enemy!")
+    end
+end</code></pre>
+
+    
+    <h2>6. GPU Cloth Simulation (XPBD) &amp; Dynamic Hair Physics (AAA Standard)</h2>
+    <p>Tessera includes secondary character physics simulation via Extended Position-Based Dynamics (<code>Physics::XPBDClothSimulator</code> and <code>Physics::DynamicHairSimulator</code>):</p>
+
+    <h3>XPBD Cloth Simulation</h3>
+    <ul>
+      <li><strong>Time-Step Independent Compliance</strong>: Physical compliance parameter &alpha; ensures stiffness does not fluctuate with framerate changes or substepping.</li>
+      <li><strong>Multi-Constraint Particle Mesh</strong>: Solves structural springs, diagonal shear constraints, and isometric bending constraints across quad cloth meshes.</li>
+      <li><strong>Aerodynamic Drag &amp; Wind Forces</strong>: Dynamic surface velocity drag coupled with global wind velocity vectors from <code>Weather</code>.</li>
+      <li><strong>Kinematic Capsule Collisions</strong>: Continuous collision avoidance against character limbs, head, and torso capsules to prevent fabric penetration.</li>
+    </ul>
+
+    <h3>Dynamic Hair Rod Physics</h3>
+    <ul>
+      <li><strong>Elastic Rod Strands</strong>: Multi-segment hair strands with root pinning to the scalp, segment length constraints, and bending stiffness.</li>
+      <li><strong>Inertia &amp; Gravity</strong>: Dynamic motion responding naturally to character movement, head turns, jumps, and wind forces.</li>
+    </ul>
+
+    <div class="pagination">
+
+  <a href="systems-animation.html" class="pagination-card prev">
+
+    <span class="pagination-label">&larr; Previous</span>
+
+    <span class="pagination-title">Animation, Armatures & IK</span>
+
+  </a>
+
+  <a href="systems-audio.html" class="pagination-card next">
+
+    <span class="pagination-label">Next &rarr;</span>
+
+    <span class="pagination-title">Audio Engine, Mixer & DSP</span>
+
+  </a>
+
+</div>
+
+
+
+  </main>
+
+</body>
+
+</html>
+

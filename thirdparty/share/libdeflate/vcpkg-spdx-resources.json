@@ -1,0 +1,19 @@
+{
+  "packages": [
+{
+  "SPDXID" : "SPDXRef-resource-0",
+  "checksums" : 
+  [
+    {
+      "algorithm" : "SHA512",
+      "checksumValue" : "06605eabce8635b82e03863c87b515696d08b8a1fc36b746b44b660989613d2ebd6ca1bb13dd0f88244846894dbf5a15169dd443c34dcda64e960fdbd08a8d3b"
+    }
+  ],
+  "copyrightText" : "NOASSERTION",
+  "downloadLocation" : "git+https://github.com/ebiggers/libdeflate@v1.26",
+  "licenseConcluded" : "NOASSERTION",
+  "licenseDeclared" : "NOASSERTION",
+  "name" : "ebiggers/libdeflate"
+}
+  ]
+}

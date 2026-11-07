@@ -1,0 +1,64 @@
+# =============================================================================
+# Tessera Game Engine - Git Ignore Rules
+# =============================================================================
+
+# Build and Output Binaries
+build/
+build-*/
+bin/
+out/
+*.exe
+*.dll
+*.so
+*.so.*
+*.dylib
+*.a
+*.lib
+*.x86_64
+
+# Keep Windows pre-bundled thirdparty libraries
+!thirdparty/**/*.lib
+!thirdparty/**/*.dll
+
+# Standalone Export Templates (Binaries are generated locally)
+templates/**/*.x86_64
+templates/**/*.exe
+!templates/**/.gitkeep
+
+# Exported Standalone Games and Distributions
+exports/
+
+# Local User Settings & Runtime Logs
+editor_settings.json
+imgui.ini
+*.log
+engine.log
+logs/
+
+# Runtime Cache (Texture compression cache, PSO cache, shader graph builds)
+cache/
+*.bctex
+pipeline_cache.bin
+
+# Temporary Scripts, Python & Scratch Files
+scratch/
+*.py
+*.pyc
+__pycache__/
+
+# Visual Studio, VS Code & IDE Files
+.vs/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.pdb
+*.idb
+*.ilk
+*.exp
+
+# CMake Generated Files
+CMakeUserPresets.json
+CMakeFiles/
+CMakeCache.txt

@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Editor Windows, Inspector & Modals - Tessera Engine Documentation</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="nav.js" defer></script>
+</head>
+<body>
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <h2>&#9881; Tessera Engine</h2>
+      <p>Official Developer Documentation</p>
+    </div>
+    <div class="search-box">
+      <input type="text" id="doc-search" placeholder="Filter documentation..." autocomplete="off">
+    </div>
+    <div class="sidebar-nav">
+  <div class="nav-group">
+    <div class="nav-group-title">Getting Started</div>
+    <a class="nav-item" href="index.html">Overview & Quickstart</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-group-title">Node Reference</div>
+    <a class="nav-item" href="nodes-3d.html">3D Nodes & Entities</a>
+    <a class="nav-item" href="nodes-ui.html">2D UI Component Nodes</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-group-title">Core Systems</div>
+    <a class="nav-item" href="systems-rendering.html">Rendering, PBR & LOD</a>
+    <a class="nav-item" href="systems-animation.html">Animation, Armatures & IK</a>
+    <a class="nav-item" href="systems-physics.html">Physics & Ragdolls</a>
+    <a class="nav-item" href="systems-audio.html">Audio Engine & Mixer</a>
+    <a class="nav-item" href="systems-navigation.html">Navigation & AI Patrol</a>
+    <a class="nav-item" href="systems-networking.html">Multiplayer & Authority</a>
+    <a class="nav-item" href="systems-scripting.html">Lua Scripting API</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-group-title">Editor Reference</div>
+    <a class="nav-item" href="editor-menus.html">Main Menus & Shortcuts</a>
+    <a class="nav-item active" href="editor-windows.html">Windows, Inspector & Modals</a>
+  </div>
+</div>
+
+  </aside>
+
+  <main id="main-content">
+    <div class="breadcrumbs">
+      <a href="index.html">Docs</a> &gt; <span>Editor Reference</span> &gt; <span>Editor Windows, Inspector & Modals</span>
+    </div>
+
+    
+    <h1>Editor Windows, Inspector & Modals</h1>
+    <p class="lead">The Tessera Editor interface is arranged into dockable, highly configurable panels (<code>src/UI/EditorUI.cpp</code>) providing visual scene construction, component editing, real-time audio and rendering adjustments, animation state authoring, and standalone bundling.</p>
+
+    <h2>1. Scene Hierarchy Panel (Left)</h2>
+    <p>Displays the active scene graph in a hierarchical tree view:</p>
+    <ul>
+      <li><strong>Parenting & Reordering</strong>: Drag and drop nodes onto other nodes to parent them. Use the up (<kbd>&blacktriangle;</kbd>) and down (<kbd>&blacktriangledown;</kbd>) buttons to reorder sibling nodes.</li>
+      <li><strong>Visual Node Badges</strong>: Identifies node categories at a glance (e.g. <code>[3D]</code>, <code>[UI]</code>, <code>[CAM]</code>, <code>[LGT]</code>, <code>[Rigged FBX]</code>, <code>[COL]</code>, <code>[Prefab]</code>).</li>
+      <li><strong>Search Filter</strong>: Instant search bar at the top filtering nodes by name.</li>
+      <li><strong>Context Menu</strong>: Right-click any node to access <em>Add Child Node</em>, <em>Rename</em>, <em>Duplicate</em>, <em>Copy</em>, or <em>Delete</em>.</li>
+    </ul>
+
+    <h2>2. Node Inspector Panel (Right)</h2>
+    <p>Displays all components, parameters, and options of the currently selected node:</p>
+
+    <h3>2.1 Header & 3D Model Asset Picker</h3>
+    <ul>
+      <li><strong>Bidirectional Deletion</strong>: Prominent red <strong>Delete Node from Scene [Del]</strong> button at the bottom of the inspector (works for all entities, including Camera nodes).</li>
+      <li><strong>Node ID & Hierarchy Badges</strong>: Displays numerical ID, root/child status, and <code>[Prefab]</code> indicator when instanced from an external <code>.tess</code> scene.</li>
+      <li><strong>Prefab Provenance & Reload Button</strong>: If the node is a scene instance root, displays the source file path and a <strong>[ Reload Prefab From Disk ]</strong> button to re-sync any disk changes immediately.</li>
+      <li><strong>Name Input Field</strong>: Edit the node's identifier string.</li>
+      <li><strong>Shape Type Dropdown</strong>: Switch between <em>Cube</em>, <em>Sphere</em>, <em>Cylinder</em>, <em>Cone</em>, <em>Plane</em>, or <em>Custom 3D Model Asset</em>.</li>
+      <li><strong>3D Model Asset Slot</strong>:
+        <ul>
+          <li><strong>Text Path</strong>: Shows relative asset filename (e.g. <code>knight.fbx</code>).</li>
+          <li><strong><code>[ Browse... ]</code></strong>: Opens Windows Explorer to pick external <code>.fbx</code>, <code>.gltf</code>, <code>.glb</code>, or <code>.obj</code> files.</li>
+          <li><strong><code>[ X ]</code></strong>: Clears the custom mesh and resets the node to a primitive cube placeholder.</li>
+          <li><strong>Project Models Dropdown</strong>: One-click selection of any 3D model found in the project's <code>assets/models/</code> directory.</li>
+          <li><strong>Geometry Stats</strong>: Shows live vertex count, triangle count, and rigged armature indicators.</li>
+        </ul>
+      </li>
+    </ul>
+
+    <h3>2.2 Transform Component</h3>
+    <ul>
+      <li><strong>Local Position</strong>: Drag float inputs for X, Y, Z translation.</li>
+      <li><strong>Local Rotation (Degrees)</strong>: Euler rotation sliders (-180&deg; to +180&deg;) for Pitch, Yaw, Roll.</li>
+      <li><strong>Local Scale</strong>: Proportional scaling factors for X, Y, Z.</li>
+      <li><strong>World Position</strong>: Readout of the absolute accumulated world-space coordinates.</li>
+      <li><strong>Reset Transform</strong>: Resets position to <code>(0,0,0)</code>, rotation to <code>(0,0,0)</code>, and scale to <code>(1,1,1)</code>.</li>
+    </ul>
+
+    <h3>2.3 Material & Appearance (PBR) Component</h3>
+    <p>A live preview at the top shows the material on a sphere, cube or plane (<em>Preview</em>) in a lit studio. In the file browser, hovering a texture or a <code>.shadergraph</code> file shows it on a sphere.</p>
+    <ul>
+      <li><strong>Base Color / Tint</strong>: Color picker swatch and RGB sliders.</li>
+      <li><strong>Roughness & Metallic</strong>: Precision sliders controlling surface specular scatter.</li>
+      <li><strong>PBR Texture Map Slots</strong>: Dedicated browse/clear slots for Albedo, Normal, Metallic, Roughness, AO, Emissive, and Height maps (full GPU Parallax Occlusion Mapping with horizon self-shadowing). Multi-material <code>.gltf</code>/<code>.glb</code> and <code>.fbx</code> imports preserve separate materials per primitive/submesh.</li>
+      <li><strong>Emissive Intensity (HDR)</strong>: HDR multiplier slider for self-illuminating neon and magical surfaces.</li>
+      <li><strong>Alpha Cutoff, Double-Sided, Refraction (IOR)</strong>: cutout foliage and hair cards, back faces, and glass bending.</li>
+      <li><strong>Material Model</strong>: Standard, Skin (<em>Scatter Colour</em>, <em>Scatter Strength</em>, <em>Translucency</em>), Hair (<em>Highlight Tint</em>, <em>Highlight Shift</em>) or Eye (<em>Cornea IOR</em>, <em>Iris Radius (UV)</em>, <em>Iris Depth (UV)</em>).</li>
+      <li><strong>Clear Coat</strong> / <strong>Clear Coat Roughness</strong>, <strong>Triplanar Mapping</strong>, detail albedo / normal maps (<em>Detail Tiling</em>, <em>Detail Strength</em>) and <strong>Use Vertex Colours</strong>.</li>
+      <li><strong>Mirror</strong>, <strong>Reflection Probe</strong> (with <em>Probe Radius</em> and <em>Box Projection</em>) and <strong>GI Volume (Baked Lighting)</strong> (with <em>GI Volume Size</em>).</li>
+      <li><strong>Lightmap Static</strong>: on for objects that never move, so Bake Lighting gives them a lightmap.</li>
+      <li><strong>Ocean</strong> (Ocean nodes only, replacing the material settings): size, waves, water colours, clarity, roughness and foam.</li>
+      <li><strong>Shader Graph Material</strong>: shows the applied graph; <strong>Open Visual Shader Graph Editor &gt;&gt;</strong> opens it.</li>
+      <li><strong>In-Game Video Screen & Display</strong>: Enable video playback on this mesh surface:
+        <ul>
+          <li><strong>Enable Video Screen</strong>: Checkbox activating <code>VideoSystem</code> playback and dynamic Vulkan texture slot <code>@video_&lt;id&gt;</code>.</li>
+          <li><strong>Channel Preset</strong>: Dropdown selecting Custom, Cinema Reel (2.39:1), TV News (16:9), CCTV Surveillance (4:3), Smartphone (9:16), Retro CRT Color Bars (4:3), or Sci-Fi Radar (1:1).</li>
+          <li><strong>Video Source File</strong>: Path to animated <code>.gif</code>, sprite-sheet atlas (<code>.png</code>/<code>.jpg</code> with custom columns/rows), or folder of sequential frames.</li>
+          <li><strong>Playback Controls</strong>: Play, Pause, Rewind buttons, Loop toggle, and Speed multiplier slider (0.1x &ndash; 5.0x).</li>
+          <li><strong>Screen Brightness &amp; Emissive Bounce</strong>: Slider scaling HDR emission intensity (0.0 &ndash; 10.0) that dynamically bounces light into the room via Real-Time VXGI and SSR.</li>
+          <li><strong>Scanline Strength</strong>: Horizontal raster phosphor line filter strength (0.0 = clean modern digital, 1.0 = heavy retro CRT).</li>
+          <li><strong>Audio Track &amp; Spatial Sound</strong>: WAV audio path, master volume slider, and 3D spatial attenuation toggle.</li>
+        </ul>
+      </li>
+    </ul>
+    <p>Details of each option: <a href="systems-rendering.html">Rendering, PBR &amp; LOD</a>.</p>
+
+    <h3>2.4 Level of Detail (LOD) & Mesh Decimation Component</h3>
+    <ul>
+      <li><strong>Enable Distance-Based LOD</strong>: Checkbox activating runtime LOD distance switching.</li>
+      <li><strong>Max Draw Distance</strong>: Culling distance threshold in meters.</li>
+      <li><strong>Live Camera Distance Indicator</strong>: Displays exact meter distance from camera and shows current active tier (e.g. <code>Active: [LOD0 (Base)]</code>).</li>
+      <li><strong>LOD Preview Override</strong>: Force preview any LOD tier directly in the editor viewport.</li>
+      <li><strong>Auto-Generate 3-Tier LODs (50% / 25% / 10%)</strong>: Triggers QEM decimation to compute LOD1, LOD2, and LOD3 meshes automatically.</li>
+    </ul>
+
+    <h3>2.5 Physics & Dynamics (JoltPhysics) Component</h3>
+    <ul>
+      <li><strong>RigidBody Mode</strong>: None, Static, Kinematic, Dynamic.</li>
+      <li><strong>Mass (kg), Friction, Bounciness</strong>: Physical simulation parameters.</li>
+      <li><strong>Use Gravity</strong>: Toggles downward gravitational acceleration.</li>
+      <li><strong>Floats on Water</strong> and <strong>Buoyancy</strong> (Dynamic only): bob on an ocean's waves.</li>
+      <li><strong>Joint / Constraint</strong>: Fixed, Hinge, Slider, Distance Spring, Cone-Twist.</li>
+      <li><strong>Humanoid Ragdoll Physics</strong>: Toggles physical ragdoll bones with impulse testing.</li>
+      <li><strong>32-Bit Collision Layers & Masks</strong>: Interactive bitfield matrix (Layers 1-32, Masks 1-32) configuring Jolt narrowphase filtering.</li>
+    </ul>
+
+    <h3>2.6 Character NPC & Dialogue Settings</h3>
+    <ul>
+      <li><strong>Character Name & Dialogue Prompt</strong>: Conversation text displayed on proximity.</li>
+      <li><strong>Patrol Move Speed & Turn Speed</strong>: Navigation parameters.</li>
+      <li><strong>Waypoints List</strong>: Add, edit, or delete 3D patrol coordinates.</li>
+      <li><strong>Ground Raycast Clamping</strong>: Terrain snapping toggle and ground height offset.</li>
+      <li><strong>Animation Clip Dropdowns</strong>: Select active idle and walk animation clips.</li>
+    </ul>
+
+    <h3>2.7 Particle System & Niagara Modules Component</h3>
+    <p>Available when a <code>ParticleNode</code> is selected. Configures real-time visual effect generation, blending, and force integration:</p>
+    <ul>
+      <li><strong>1-Click VFX Presets</strong>: Instant one-click configuration dropdown for <em>Fire / Torch Flame</em>, <em>Campfire Smoke</em>, <em>Ground Fog / Mist</em>, <em>Magic Sparkles</em>, and <em>Explosion Burst</em>.</li>
+      <li><strong>Render Mode Dropdown</strong>:
+        <ul>
+          <li><strong>Billboard (Additive Glow)</strong>: Camera-facing quads with additive blending and depth-write disabled for fire, magic, and glowing embers.</li>
+          <li><strong>Billboard (Alpha Blend)</strong>: Camera-facing quads with soft-particle alpha blending and depth-write disabled for smoke and fog.</li>
+          <li><strong>3D Mesh (Sphere / Cube)</strong>: Renders 3D solid geometry for physical debris and voxel bursts.</li>
+        </ul>
+      </li>
+      <li><strong>Simulation Backend</strong>: Toggle between standard CPU emitter and Niagara GPU Compute stack.</li>
+      <li><strong>Emitter Geometry</strong>: Switch between <em>Point</em>, <em>Sphere</em> (radius slider), <em>Box</em> (3D extents), and <em>Cone</em> (cone angle slider).</li>
+      <li><strong>Spawn Rate & Capacity</strong>: Max Particles (up to 100,000), Spawn Rate (/s), and Min/Max Lifetime ranges.</li>
+      <li><strong>Velocity & Size Curve</strong>: Start Speed, Start Size, End Size, and Gravity Multiplier (negative values float upward like hot air).</li>
+      <li><strong>Color Gradients</strong>: Start Color (RGBA) and End Color (RGBA) with alpha fade over particle lifespan.</li>
+      <li><strong>Niagara Force Modules</strong>:
+        <ul>
+          <li><strong>Vortex Force Module</strong>: Swirling tangential velocity around an arbitrary 3D axis.</li>
+          <li><strong>Point Attractor Module</strong>: Gravitational pull toward a customizable 3D target point.</li>
+          <li><strong>3D Curl Noise Turbulence</strong>: Organic chaotic drift with frequency and strength sliders.</li>
+        </ul>
+      </li>
+      <li><strong>Live Burst Testing</strong>: <em>Emit Burst (50)</em> and <em>Reset</em> buttons for instantaneous preview in the viewport.</li>
+    </ul>
+
+    <h3>2.8 Terrain Landscape Generator & Sculptor Component</h3>
+    <p>Available when a <code>TerrainNode</code> is selected. Controls grid dimensions, procedural terrain generation, heightmap loading, and interactive sculpting brushes:</p>
+    <ul>
+      <li><strong>1-Click Procedural Landscapes</strong>:
+        <ul>
+          <li><strong>Rolling Hills</strong>: Instantly creates natural undulating hills and gentle slopes.</li>
+          <li><strong>Mountain Peaks</strong>: Generates sharp alpine mountain chains, jagged peaks, and ridgelines.</li>
+          <li><strong>Canyons &amp; Ravines</strong>: Generates high flat plateaus sliced through by deep river canyons.</li>
+          <li><strong>Flatten</strong>: Resets the entire heightfield to a flat zero-elevation plain.</li>
+        </ul>
+      </li>
+      <li><strong>Terrain Dimensions &amp; Resolution</strong>:
+        <ul>
+          <li><strong>Grid Resolution</strong>: Dropdown supporting 32&times;32, 64&times;64, 128&times;128, and 256&times;256 grids. Automatically resamples existing elevation data smoothly when switching resolutions.</li>
+          <li><strong>Size (X, Z)</strong>: World dimensions in meters (e.g. 100m &times; 100m, 500m &times; 500m).</li>
+          <li><strong>Max Elevation (Height Scale)</strong>: Peak vertical height scale in meters.</li>
+          <li><strong>UV Tiling</strong>: Repetition frequency of ground textures across the landscape.</li>
+        </ul>
+      </li>
+      <li><strong>Heightmap Image Import</strong>: Path input and <em>[ Load ]</em> button to load external grayscale heightmap images.</li>
+      <li><strong>Interactive Viewport Sculpting</strong>:
+        <ul>
+          <li><strong>Enable Sculpt Mode</strong>: Toggles in-viewport cursor sculpting.</li>
+          <li><strong>Brush Actions</strong>: <em>Raise (Hills)</em>, <em>Lower (Ravines)</em>, <em>Smooth</em>, and <em>Flatten (Plateaus)</em>.</li>
+          <li><strong>Brush Radius &amp; Strength</strong>: Controls falloff footprint and sculpting speed.</li>
+          <li><strong>Viewport Visuals</strong>: Displays a bright green 3D circle gizmo tracking the brush position and radius over the landscape.</li>
+        </ul>
+      </li>
+    </ul>
+
+    
+    <h3>2.9 Declarative Multiplayer Property Sync Component</h3>
+    <ul>
+      <li><strong>Enable Replication Checkbox</strong>: Toggles automated network state synchronization for this entity.</li>
+      <li><strong>Add Property Rule Dropdown</strong>: Select property (e.g. <code>position</code>, <code>rotation</code>, <code>scale</code>, <code>color</code>, <code>animState</code>).</li>
+      <li><strong>Replication Mode Toggle</strong>: Choose between <em>On Change</em> (bandwidth-efficient delta packets) or <em>Continuous</em>.</li>
+      <li><strong>Frequency Slider</strong>: Set maximum transmission rate (e.g. 20 Hz, 30 Hz, 60 Hz).</li>
+    </ul>
+
+    <h2>3. 3D Viewport Window (Center)</h2>
+    <ul>
+      <li><strong>Toolbar Controls</strong>: Play (<kbd>F5</kbd>), Pause, Stop (<kbd>Esc</kbd>), Step Simulation (<kbd>F6</kbd>).</li>
+      <li><strong>Camera Controls & Desktop Navigation</strong>:
+        <ul>
+          <li><strong>Right-Click Drag</strong>: Orbit camera around focus point.</li>
+          <li><strong>Middle-Click Drag</strong>: Pan camera horizontally and vertically.</li>
+          <li><strong>Mouse Wheel</strong>: Zoom in and out.</li>
+          <li><strong>Fly Camera</strong>: Hold Right-Click and use <kbd>W</kbd>, <kbd>A</kbd>, <kbd>S</kbd>, <kbd>D</kbd>, <kbd>Q</kbd>, <kbd>E</kbd>.</li>
+          <li><strong>Focus (<kbd>F</kbd>)</strong>: Instantly centers and frames the camera on the selected node.</li>
+        </ul>
+      </li>
+      <li><strong>Touchscreen & On-Screen Viewport Navigation</strong>:
+        <ul>
+          <li><strong><code>Zoom +</code> & <code>Zoom -</code> Buttons</strong>: Dedicated blue buttons with continuous touch-and-hold repeat for smooth zooming without requiring a mouse scroll wheel or pinch gestures.</li>
+          <li><strong><code>Focus [F]</code> Button</strong>: Instantly re-centers the camera on the currently selected scene node.</li>
+          <li><strong>Pan Nudge Buttons (<code>&lt;</code>, <code>&gt;</code>, <code>^</code>, <code>v</code>)</strong>: Hold-to-repeat buttons to pan the camera left, right, up, and down.</li>
+          <li><strong>Touch Drag Mode Switcher</strong>:
+            <ul>
+              <li><strong><code>[Select]</code></strong> (Green): Standard touch mode for selecting objects in the hierarchy and using 3D transform gizmos.</li>
+              <li><strong><code>[Orbit]</code></strong> (Orange): Enables single-finger touch dragging across the 3D viewport to orbit/rotate the camera view around the scene.</li>
+              <li><strong><code>[Pan]</code></strong> (Purple): Enables single-finger touch dragging across the 3D viewport to pan the camera view horizontally and vertically.</li>
+            </ul>
+          </li>
+        </ul>
+      </li>
+      <li><strong>Transform Gizmos (ImGuizmo)</strong>: Translate (<kbd>W</kbd>), Rotate (<kbd>E</kbd>), Scale (<kbd>R</kbd>).</li>
+      <li><strong>View Display Toggles</strong>: Grid toggle, Pivot marker, Polygon mode (Solid vs Wireframe), Preset orthographic views (Front, Top, Side, Iso).</li>
+      <li><strong>Real-size rendering</strong>: the viewport renders at its on-screen pixel size. After you resize or redock it, the image follows once the size has been steady for a few frames.</li>
+      <li><strong>Grid overlay</strong>: the grid and axes are drawn after post-processing, so they stay sharp under TAA and never receive shadows.</li>
+    </ul>
+
+    <h3>3.1 Camera Preview (Viewfinder Window)</h3>
+    <p>Provides a live preview render of what an in-game camera sees, including UI elements and post-processing. Like the main viewport (and the Game window), it renders at its real on-screen size.</p>
+    <ul>
+      <li><strong>Active Camera Selector</strong>: Dropdown menu to switch between any <code>CameraNode</code> in your scene.</li>
+      <li><strong><code>Sync Editor Cam to Scene Cam</code></strong>: Snaps the editor viewport camera to the exact position and orientation of the active scene camera.</li>
+      <li><strong>Touch-Friendly Viewfinder Zoom & Dolly Buttons</strong>:
+        <ul>
+          <li><strong><code>Zoom +</code> & <code>Zoom -</code></strong>: Press or hold to narrow or widen the active camera's Field of View (<code>cameraFov</code>), zooming in closer to distant subjects or pulling back for wide-angle framing.</li>
+          <li><strong><code>Dolly +</code> & <code>Dolly -</code></strong>: Press or hold to physically translate the camera along its local viewing vector, moving forward into the scene or backward away from it.</li>
+        </ul>
+      </li>
+    </ul>
+
+    <h2>4. Custom Themed Title Bar & Window Controls</h2>
+    <p>The standard Windows OS white title bar, borders, and controls have been replaced with a seamless, custom borderless title bar (<code>32px</code> height) fully integrated into the engine's cyberpunk dark slate theme:</p>
+    <ul>
+      <li><strong>Consistent Across All Startup Stages</strong>: The custom title bar is present during the animated <em>Splash Screen</em>, the <em>Project Launcher Hub</em>, and the <em>Main Editor</em>.</li>
+      <li><strong>Brand Icon & Inlined Menus</strong>: Features the glowing cyan <code>&#9883; TESSERA</code> logo on the left, immediately adjacent to the main menus (<em>File</em>, <em>Edit</em>, <em>Scene</em>, <em>Camera</em>, <em>Gizmo</em>, <em>Window</em>, <em>Help</em>).</li>
+      <li><strong>Draggable Title & Status Area</strong>: Shows the active Project and Scene name in the center. Clicking and dragging anywhere in this region moves the window smoothly; double-clicking toggles between Maximized and Restored states. On Windows, full <strong>Aero Snap</strong> (snap to edges, corners, and monitor tops) is natively supported.</li>
+      <li><strong>Cyberpunk Window Control Buttons</strong> (Top-Right):
+        <ul>
+          <li><strong>Minimize (<kbd>&mdash;</kbd>)</strong>: Smoothly iconifies the window to the taskbar with soft slate hover highlighting.</li>
+          <li><strong>Maximize / Restore (<kbd>&#9633;</kbd> / <kbd>&#10697;</kbd>)</strong>: Dynamically toggles between standard windowed view and maximized view fitting the monitor's work area without covering the Windows taskbar.</li>
+          <li><strong>Close (<kbd>&#10005;</kbd>)</strong>: Triggers engine save and exit with vivid crimson red hover highlighting.</li>
+        </ul>
+      </li>
+      <li><strong>Borderless Edge Resizing</strong>: Hovering within 6 pixels of any border edge or corner displays the appropriate sizing cursor and allows smooth window resizing.</li>
+    </ul>
+
+    <h2>5. Modals Reference</h2>
+
+    <h3>4.1 Input Settings Modal (<kbd>Ctrl+K</kbd>)</h3>
+    <p>Configures global input actions (e.g. <code>"Jump"</code>, <code>"Fire"</code>, <code>"Interact"</code>) and directional axes (e.g. <code>"MoveForward"</code>, <code>"MoveRight"</code>) with primary and secondary keyboard/mouse/gamepad bindings and joystick deadzones.</p>
+
+    <h3>4.3 Startup Splash Screen & Project Launcher Hub</h3>
+    <p>When starting the engine, an animated high-tech <strong>Splash Screen</strong> appears during subsystem initialization, followed by the <strong>Project Launcher Hub</strong>:</p>
+    <ul>
+      <li><strong>Animated Splash Screen</strong>: Displays the Tessera glowing nucleus logo, version details, and a real-time progress bar tracking Vulkan, Shaders, Lua, and Physics mounting. Can be skipped instantly by clicking or pressing <kbd>Space</kbd> / <kbd>Enter</kbd> / <kbd>Esc</kbd>.</li>
+      <li><strong>Project Launcher Hub (Startup Window)</strong>:
+        <ul>
+          <li><strong>Recent Projects (Left Panel)</strong>: Displays a scrollable list of recent projects with 1-click <code>[Open]</code> buttons and project status, plus a <code>[Browse for Project File (*.tess)...]</code> button.</li>
+          <li><strong>Create New Project (Right Panel)</strong>: Configure project name, target directory location, and choose a starting template (<em>3D Standard</em>, <em>Blank Scene</em>, or <em>Third-Person Character Sandbox</em>) followed by <code>[+ Create &amp; Launch Project]</code>.</li>
+          <li><strong>Switching Projects</strong>: You can return to the Project Launcher Hub at any time from within the editor via <code>File -&gt; Project Launcher / Hub...</code>.</li>
+        </ul>
+      </li>
+    </ul>
+
+    <h3>4.2 Standalone Game Exporter Modal (<kbd>Ctrl+B</kbd>)</h3>
+    <p>Packages your project into a deployable standalone release for Windows or Web:</p>
+    <ul>
+      <li><strong>Target Platform Selector</strong>:
+        <ul>
+          <li><strong>Windows Standalone (.exe)</strong>:
+            <ul>
+              <li><strong>Single-File Bundle (Embedded)</strong>: Packages all assets, models, textures, shaders, scenes, configs, and DLLs inside a single self-extracting <code>.exe</code>. Zero installation, zero loose files, runs anywhere on Windows.</li>
+              <li><strong>Folder Distribution</strong>: Outputs an executable with loose <code>assets/</code>, <code>scenes/</code>, and <code>shaders/</code> folders.</li>
+              <li><strong>Window & Resolution Modes</strong>: 720p, 900p, 1080p, 1440p, or Fullscreen.</li>
+            </ul>
+          </li>
+          <li><strong>Web / HTML5 (WebGL 2.0)</strong>:
+            <ul>
+              <li><strong>Zero-Dependency WebGL 2.0 Runtime (`tessera_web.js`)</strong>: Standalone 3D engine with PBR shaders, procedural geometry, scene parser, and camera transformations.</li>
+              <li><strong>Embed Scene in HTML</strong>: Embeds the scene JSON directly into an inline <code>&lt;script&gt;</code> tag in <code>index.html</code> to bypass browser CORS file restrictions when opened via <code>file://</code>.</li>
+              <li><strong>1-Click Local Web Server Launcher</strong>: Exports <code>serve.py</code> (CORS-enabled Python HTTP server on port 8080) and <code>start_server.bat</code> for instant local testing.</li>
+              <li><strong>Mobile Virtual Touch Controls</strong>: Adds an on-screen virtual movement joystick and jump button for mobile and tablet browsers.</li>
+              <li><strong>Canvas Display Mode</strong>: Choose between <em>Responsive Aspect Ratio</em> (letterboxed auto-scale), <em>Fixed 1280x720 HD</em>, or <em>Fill Entire Browser Window</em> (100vw x 100vh).</li>
+              <li><strong>1-Click Test Launcher</strong>: Click <code>[🌐 Launch in Browser (Start Web Server)]</code> in the export success banner to immediately launch the local server and open your default browser.</li>
+            </ul>
+          </li>
+          <li><strong>Linux Standalone (x86_64 / SteamOS)</strong>:
+            <ul>
+              <li><strong>Turnkey POSIX Launcher (<code>launch.sh</code>)</strong>: Automated bash launcher with isolated <code>LD_LIBRARY_PATH</code>, Vulkan 1.2 runtime configuration, and SteamOS / MangoHud performance monitoring support.</li>
+              <li><strong>Native Linux ELF & Proton/Wine Dual Runner</strong>: Directly launches <code>.x86_64</code> native Linux binary if present, with seamless fallback to Valve Proton or Wine for Windows player builds with Vulkan 1.2 pass-through.</li>
+              <li><strong>Steam Deck & Desktop Launcher (<code>.desktop</code>)</strong>: Generates an XDG-compliant <code>.desktop</code> entry and Steam-compatible application profile for 1-click <em>"Add a Non-Steam Game"</em> on Valve Steam Deck.</li>
+              <li><strong>Cross-Distro Compatibility</strong>: Verified on Ubuntu 20.04+, Debian 11+, Fedora 36+, Arch Linux, and Valve SteamOS 3.</li>
+            </ul>
+          </li>
+        </ul>
+      </li>
+      <li><strong>Startup Scene</strong>: Designate which scene loads upon launching the standalone executable or web page.</li>
+    </ul>
+
+    <h2>6. Live Telemetry & Resource Monitor Window</h2>
+    <p>Available under <code>Window -&gt; Performance &amp; Resource Profiler</code>. Operates in real-time strictly during Play Mode to isolate game metrics from editor UI overhead:</p>
+    <ul>
+      <li><strong>Memory Tracking</strong>: Live monitoring of RAM Working Set, Committed Heap, Peak Usage, Estimated GPU VRAM Allocation, and Scene Heap.</li>
+      <li><strong>CPU Stage Profiler</strong>: Real-time per-frame millisecond budget breakdown across Lua scripts, Jolt physics, skeletal animations, Niagara VFX, and rendering passes with Exponential Moving Average (EMA) smoothing to eliminate text jitter.</li>
+      <li><strong>GPU Pass Profiler</strong>: the game view's passes as the GPU timed them (timestamp queries): shadows, prepass, opaque, transparents and VFX, post-processing.</li>
+      <li><strong>GPU Profiler window</strong> (<code>Window -&gt; GPU Profiler</code>, Ctrl+9): every pass of every view, nested, with smoothed times, each pass's share of the GPU frame and a frame-time graph, in the editor as well as in Play.</li>
+      <li><strong>Scene Hierarchy Audit &amp; 1-Click Orphan Repair Tool</strong>: Real-time audit of active nodes by type (Meshes, Lights, Cameras, Colliders, UI) and automatic detection of orphaned nodes (nodes with missing parents) with a 1-click reparenting repair button that safely re-attaches them to Root.</li>
+    </ul>
+
+    <h2>7. Project Files Viewer Window</h2>
+    <p>Available under <code>Window -&gt; File Viewer</code>:</p>
+    <ul>
+      <li><strong>Dockable Workspace Tree Browser</strong>: Browse all project directories, scripts (<code>.lua</code>), scenes (<code>.tess</code>), 3D models (<code>.obj</code>, <code>.fbx</code>, <code>.gltf</code>), and configs.</li>
+      <li><strong>Context Menu &amp; Quick Actions</strong>: Double-click or right-click files to open scripts in the code editor, load scenes, or drag-and-drop assets directly into the 3D viewport.</li>
+      <li><strong>Unified Docking Ecosystem</strong>: Can be docked alongside the Scene Hierarchy or Inspector, or snapped to the bottom tab bar next to the Timeline.</li>
+    </ul>
+
+    <h2>8. Game Runtime Controls & Clean Slate Input Architecture</h2>
+    <p>When a brand new game starts in <strong>Editor Play Mode</strong> (<kbd>F5</kbd>), <strong>Windows Standalone (.exe)</strong>, or <strong>Web / HTML5 (WebGL2)</strong>, Tessera enforces a <strong>Clean Slate Architecture</strong> with zero default controls:</p>
+    <ul>
+      <li><strong>No Unsolicited Movement</strong>: The active camera and scene entities remain completely stationary upon starting Play Mode, preventing unwanted camera drift or character hijacking.</li>
+      <li><strong>Developer-Driven Input</strong>: All locomotion, camera controls, combat actions, and menus are defined explicitly by the developer via Lua scripting (e.g. <code>Input.is_action_down(...)</code> or <code>Input.is_key_down(...)</code>) or the Project Input Map.</li>
+      <li><strong>Optional Spectator Fly-Cam</strong>: If you ever require a quick debug spectator camera while testing large scenes, you can opt in programmatically via <code>gameLoop.SetDefaultCameraControllerEnabled(true)</code>.</li>
+    </ul>
+    
+
+        <h2>9. 3D Precision Ruler & Measurement Tool (<kbd>M</kbd>)</h2>
+    <p>Available under <code>Window -&gt; 3D Ruler &amp; Measurement Tool [M]</code>, through the viewport toolbar button <code>[Ruler: ON/OFF [M]]</code>, or via the <kbd>M</kbd> shortcut key:</p>
+    <ul>
+      <li><strong>Interactive 3D Viewport Measuring</strong>: Left-click anywhere in the 3D viewport to place Point A, then click again to anchor Point B. Drag the circular handle rings at either point to dynamically reposition endpoints in real-time.</li>
+      <li><strong>Hero Distance Card &amp; Component Breakdown</strong>:
+        <ul>
+          <li><strong>Total 3D Euclidean Distance</strong>: Large readout formatted in your chosen unit.</li>
+          <li><strong>Component Deltas</strong>: Independent orthogonal dimensions: Width (&Delta;X in red), Height (&Delta;Y in green), and Depth (&Delta;Z in blue).</li>
+          <li><strong>Ground Distance (XZ)</strong>: Horizontal planar separation between points ($D_{horiz} = \sqrt{\Delta X^2 + \Delta Z^2}$).</li>
+          <li><strong>Angles</strong>: Pitch/elevation angle from horizontal and 8-wind compass heading azimuth (e.g. <code>45.0&deg; (NE)</code>).</li>
+        </ul>
+      </li>
+      <li><strong>3D Visual Overlays</strong>:
+        <ul>
+          <li><strong>Delta Triad Guide Box</strong>: Renders orthogonal bounding dimension legs connecting Point A to Point B with numerical distance badges.</li>
+          <li><strong>Physical Tick Marks</strong>: Subdivides the 3D line into physical 1-meter major tick marks with distance text and 0.25-meter minor ticks.</li>
+          <li><strong>Midpoint Badge</strong>: Floating high-contrast label displaying the live distance at the center of the line.</li>
+          <li><strong>Live Rubberband Preview</strong>: Tracks mouse position after Point A is placed, showing the distance before clicking Point B.</li>
+        </ul>
+      </li>
+      <li><strong>Precision Snapping Modes</strong>:
+        <ul>
+          <li><strong>Surface / Object Snapping</strong>: Real-time raycasting against 3D mesh colliders and bounding boxes. Snaps directly to node centers when within 0.65m.</li>
+          <li><strong>Ground Fallback</strong>: Automatically snaps to the infinite ground plane ($Y = 0$) when clicking empty space.</li>
+          <li><strong>Grid Snapping</strong>: Quantizes coordinates to configurable increments (e.g. 0.1m, 0.25m, 0.5m, 1.0m, 2.0m).</li>
+        </ul>
+      </li>
+      <li><strong>Multi-Unit Support</strong>: Instant unit conversion between <em>Meters (m)</em>, <em>Centimeters (cm)</em>, <em>Millimeters (mm)</em>, <em>Feet (ft)</em>, and <em>Inches (in)</em>.</li>
+      <li><strong>Node-to-Node Quick Measure</strong>: 1-click buttons to assign Point A or Point B to the currently selected scene node or measure distance to the world origin <code>(0,0,0)</code>.</li>
+      <li><strong>Saved Measurements List</strong>: Pin multiple measurements with custom names, toggle individual line visibility, or clear old measurements.</li>
+    </ul>
+
+    <h2>10. Cutscene &amp; Cinematic Sequencer Window (<kbd>Shift+C</kbd>)</h2>
+    <p>Available under <code>Window -&gt; Cutscene &amp; Cinematic Sequencer [Shift+C]</code>, <code>Scene -&gt; Cutscene &amp; Cinematic Sequencer...</code>, or the <strong>Cutscenes...</strong> button in the Camera Preview toolbar:</p>
+    <ul>
+      <li><strong>1-Click Demo Cutscene Generator</strong>: Click <code>+ Create Demo Cinematic Cutscene</code> to automatically build a multi-shot skippable sequence using your scene's characters and camera.</li>
+      <li><strong>Location / Proximity Triggers</strong>: Enable <em>Trigger Automatically When Character Reaches Location</em> to start the cutscene as soon as a character or player enters the trigger radius around a target 3D coordinate.</li>
+      <li><strong>Skippable Playback &amp; Audio / Silent Mode</strong>: Toggle <em>Skippable</em> (<kbd>Space</kbd> / <kbd>Enter</kbd> / <kbd>Backspace</kbd> or clicking the on-screen <code>Skip Cutscene &gt;&gt;</code> button fast-forwards characters to their end marks and restores the gameplay camera and environment) and <em>Silent Mode</em> (mutes audio cues for silent film or subtitle-only cutscenes).</li>
+      <li><strong>Camera Effects &amp; Color Grading Presets</strong>: Apply per-cutscene widescreen <code>2.39:1</code> letterbox bars, <em>Sepia Tone</em>, <em>Black &amp; White (Monochrome)</em>, <em>Film Noir (High-Contrast B&amp;W)</em>, <em>Vintage 35mm Warm</em>, <em>Cold Moonlight</em>, <em>Dreamy Flashback Bloom</em>, <em>Vignette</em>, <em>Film Grain</em>, <em>Chromatic Aberration</em>, and <em>Auto-Focus Depth of Field (DOF)</em>.</li>
+      <li><strong>Multi-Shot Camera Cuts, Character Walk Actions &amp; Subtitles</strong>: Sequence multiple camera dolly/zoom shots (with live node tracking), character walk-to-mark paths with skeletal animation clip transitions (e.g. <code>Walk</code> &rarr; <code>Idle</code>), and timed speaker subtitle + WAV/synthesized audio cues.</li>
+    </ul>
+    <ul>
+      <li style="display:none"></li>
+    </ul>
+
+    <div class="pagination">
+  <a href="editor-menus.html" class="pagination-card prev">
+    <span class="pagination-label">&larr; Previous</span>
+    <span class="pagination-title">Main Menu Bar & Shortcuts</span>
+  </a>
+  <a href="index.html" class="pagination-card next">
+    <span class="pagination-label">Next &rarr;</span>
+    <span class="pagination-title">Engine Overview & Quickstart</span>
+  </a>
+</div>
+
+  </main>
+</body>
+</html>

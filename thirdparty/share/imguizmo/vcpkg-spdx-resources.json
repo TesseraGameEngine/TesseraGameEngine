@@ -1,0 +1,19 @@
+{
+  "packages": [
+{
+  "SPDXID" : "SPDXRef-resource-0",
+  "checksums" : 
+  [
+    {
+      "algorithm" : "SHA512",
+      "checksumValue" : "c707e22d3caffcf06c5aab33201ebc4fe352d07e893ee8623db374a7e848bc18d031fb1904e7ddae5573443783bd70ccf787cd7029074a1de2c7e9fe12a54733"
+    }
+  ],
+  "copyrightText" : "NOASSERTION",
+  "downloadLocation" : "git+https://github.com/CedricGuillemet/ImGuizmo@1.10",
+  "licenseConcluded" : "NOASSERTION",
+  "licenseDeclared" : "NOASSERTION",
+  "name" : "CedricGuillemet/ImGuizmo"
+}
+  ]
+}

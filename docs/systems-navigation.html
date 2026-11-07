@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Navigation, NavMesh & AI Patrol - Tessera Engine Documentation</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="nav.js" defer></script>
+</head>
+<body>
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <h2>&#9881; Tessera Engine</h2>
+      <p>Official Developer Documentation</p>
+    </div>
+    <div class="search-box">
+      <input type="text" id="doc-search" placeholder="Filter documentation..." autocomplete="off">
+    </div>
+    <div class="sidebar-nav">
+  <div class="nav-group">
+    <div class="nav-group-title">Getting Started</div>
+    <a class="nav-item" href="index.html">Overview & Quickstart</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-group-title">Node Reference</div>
+    <a class="nav-item" href="nodes-3d.html">3D Nodes & Entities</a>
+    <a class="nav-item" href="nodes-ui.html">2D UI Component Nodes</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-group-title">Core Systems</div>
+    <a class="nav-item" href="systems-rendering.html">Rendering, PBR & LOD</a>
+    <a class="nav-item" href="systems-animation.html">Animation, Armatures & IK</a>
+    <a class="nav-item" href="systems-physics.html">Physics & Ragdolls</a>
+    <a class="nav-item" href="systems-audio.html">Audio Engine & Mixer</a>
+    <a class="nav-item active" href="systems-navigation.html">Navigation & AI Patrol</a>
+    <a class="nav-item" href="systems-networking.html">Multiplayer & Authority</a>
+    <a class="nav-item" href="systems-scripting.html">Lua Scripting API</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-group-title">Editor Reference</div>
+    <a class="nav-item" href="editor-menus.html">Main Menus & Shortcuts</a>
+    <a class="nav-item" href="editor-windows.html">Windows, Inspector & Modals</a>
+  </div>
+</div>
+
+  </aside>
+
+  <main id="main-content">
+    <div class="breadcrumbs">
+      <a href="index.html">Docs</a> &gt; <span>Core Systems</span> &gt; <span>Navigation, NavMesh & AI Patrol</span>
+    </div>
+
+    
+    <h1>Navigation, NavMesh & AI Patrol</h1>
+    <p class="lead">The Tessera AI Navigation subsystem (<code>src/Navigation/</code>) provides automated Navigation Mesh (NavMesh) voxelization, convex polygon decomposition, multi-agent A* pathfinding, and high-level humanoid NPC patrol behaviors.</p>
+
+    <h2>1. The NavMesh Baker</h2>
+    <p>Accessible via <kbd>Shift+N</kbd> or <strong>Window &rarr; Navigation & NavMesh Baker</strong>:</p>
+    <ul>
+      <li><strong>Voxel Rasterization</strong>: Voxelizes all static scene colliders into a solid heightfield.</li>
+      <li><strong>Walkable Surface Filtering</strong>: Filters out steep triangles exceeding <code>Max Slope Angle</code> (default 45&deg;).</li>
+      <li><strong>Agent Dimensions</strong>:
+        <ul>
+          <li><strong>Agent Radius</strong>: Erodes walkable edges by the agent's radius (e.g. 0.5m) to prevent characters from clipping into walls.</li>
+          <li><strong>Agent Height</strong>: Clears underpasses, tunnels, and ceilings lower than the character's clearance height (e.g. 2.0m).</li>
+          <li><strong>Max Step Height</strong>: Allows agents to step over curbs and stair risers (e.g. 0.35m).</li>
+        </ul>
+      </li>
+      <li><strong>Convex Polygon Partitioning</strong>: Simplifies the heightfield into a 2D polygonal navigation mesh graph.</li>
+    </ul>
+
+    <h2>2. A* Pathfinding Engine</h2>
+    <p>When an agent requests a path between Point A and Point B:</p>
+    <ol>
+      <li><strong>Polygon Search</strong>: The A* algorithm finds the optimal polygon corridor connecting the start and goal nodes using Euclidean distance heuristics.</li>
+      <li><strong>Funnel Algorithm (String Pulling)</strong>: Optimizes the route through polygon portals, producing straight-line, natural waypoints rather than zigzagging through triangle centers.</li>
+    </ol>
+
+    <h2>3. Humanoid NPC Patrol & Steering</h2>
+    <p>The <code>CharacterNode</code> class incorporates an autonomous patrol controller:</p>
+    <div class="callout callout-tip">
+      <div class="callout-title">&#128161; Setting Up an NPC Patrol in Seconds</div>
+      <ol>
+        <li>Add a <strong>Character NPC</strong> node to your scene.</li>
+        <li>Move the character to the patrol start position and click <strong>Add Current Position as Waypoint</strong>.</li>
+        <li>Move the character to location 2, click <strong>Add Current Position as Waypoint</strong>.</li>
+        <li>Repeat for locations 3 and 4, then check <strong>Is Patrolling</strong> and <strong>Loop Waypoints</strong>.</li>
+        <li>Press <kbd>F5</kbd> &mdash; the NPC immediately turns and patrols smoothly between your waypoints!</li>
+      </ol>
+    </div>
+
+    <h3>Patrol Steering Mechanics</h3>
+    <ul>
+      <li><strong>Smooth Yaw Rotation</strong>: Steers smoothly towards target waypoints using angular interpolation with <code>turnSpeed</code>.</li>
+      <li><strong>Arrival Tolerance</strong>: Detects waypoint arrival when <code>planarDistance &lt;= waypointTolerance</code> (default 0.5m).</li>
+      <li><strong>Ground Raycast Clamping</strong>: Keeps the NPC's feet locked to stairs, slopes, and terrain via downward physics raycasts.</li>
+      <li><strong>Animation Sync</strong>: Automatically plays <code>walkAnimClip</code> during movement and returns to <code>idleAnimClip</code> when reaching terminal stops.</li>
+    </ul>
+    
+
+    <div class="pagination">
+  <a href="systems-audio.html" class="pagination-card prev">
+    <span class="pagination-label">&larr; Previous</span>
+    <span class="pagination-title">Audio Engine, Mixer & DSP</span>
+  </a>
+  <a href="systems-networking.html" class="pagination-card next">
+    <span class="pagination-label">Next &rarr;</span>
+    <span class="pagination-title">Multiplayer & Networking Authority</span>
+  </a>
+</div>
+
+  </main>
+</body>
+</html>

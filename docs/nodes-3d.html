@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+  <meta charset="UTF-8">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>3D Nodes & Scene Entities - Tessera Engine Documentation</title>
+
+  <link rel="stylesheet" href="style.css">
+
+  <script src="nav.js" defer></script>
+
+</head>
+
+<body>
+
+  <aside id="sidebar">
+
+    <div class="sidebar-header">
+
+      <h2>&#9881; Tessera Engine</h2>
+
+      <p>Official Developer Documentation</p>
+
+    </div>
+
+    <div class="search-box">
+
+      <input type="text" id="doc-search" placeholder="Filter documentation..." autocomplete="off">
+
+    </div>
+
+    <div class="sidebar-nav">
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Getting Started</div>
+
+    <a class="nav-item" href="index.html">Overview & Quickstart</a>
+
+  </div>
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Node Reference</div>
+
+    <a class="nav-item active" href="nodes-3d.html">3D Nodes & Entities</a>
+
+    <a class="nav-item" href="nodes-ui.html">2D UI Component Nodes</a>
+
+  </div>
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Core Systems</div>
+
+    <a class="nav-item" href="systems-rendering.html">Rendering, PBR & LOD</a>
+
+    <a class="nav-item" href="systems-animation.html">Animation, Armatures & IK</a>
+
+    <a class="nav-item" href="systems-physics.html">Physics & Ragdolls</a>
+
+    <a class="nav-item" href="systems-audio.html">Audio Engine & Mixer</a>
+
+    <a class="nav-item" href="systems-navigation.html">Navigation & AI Patrol</a>
+
+    <a class="nav-item" href="systems-networking.html">Multiplayer & Authority</a>
+
+    <a class="nav-item" href="systems-scripting.html">Lua Scripting API</a>
+
+  </div>
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Editor Reference</div>
+
+    <a class="nav-item" href="editor-menus.html">Main Menus & Shortcuts</a>
+
+    <a class="nav-item" href="editor-windows.html">Windows, Inspector & Modals</a>
+
+  </div>
+
+</div>
+
+
+
+  </aside>
+
+
+
+  <main id="main-content">
+
+    <div class="breadcrumbs">
+
+      <a href="index.html">Docs</a> &gt; <span>Node Reference</span> &gt; <span>3D Nodes & Scene Entities</span>
+
+    </div>
+
+
+
+    
+
+    <h1>3D Nodes & Scene Entities</h1>
+
+    <p class="lead">The Tessera 3D scene graph is built on an extensible object-oriented hierarchy. Every entity in the scene inherits from the base <code>Node</code> class (<code>src/Scene/Node.h</code>) and can be parented, transformed, animated, scripted, and replicated across the network.</p>
+
+
+
+    <div class="callout callout-info">
+
+      <div class="callout-title">&#8505; Universal Node Properties</div>
+
+      <p>Every node possesses a unique 64-bit unsigned ID (<code>node->id</code>), a string identifier (<code>node->name</code>), parent ID (<code>node->parentId</code>), list of children (<code>node->childrenIds</code>), local position/rotation/scale, world transform caching, visibility flag, script file path, and a <code>multiplayerAuthority</code> peer ID.</p>
+
+    </div>
+
+
+
+    <h2>1. Overview of 3D Scene Nodes</h2>
+
+    <table>
+
+      <thead>
+
+        <tr>
+
+          <th>Node Class</th>
+
+          <th>Tag</th>
+
+          <th>Enum Type</th>
+
+          <th>Primary Role & Usage</th>
+
+        </tr>
+
+      </thead>
+
+      <tbody>
+
+        <tr>
+
+          <td><a href="#mesh-node"><strong>MeshNode</strong></a></td>
+
+          <td><span class="badge badge-3d">[3D]</span></td>
+
+          <td><code>NodeType::Mesh</code></td>
+
+          <td>Renders 3D procedural geometric primitives or imported FBX/glTF/OBJ model meshes with full PBR shading.</td>
+
+        </tr>
+
+        <tr>
+
+          <td><a href="#character-node"><strong>CharacterNode</strong></a></td>
+
+          <td><span class="badge badge-3d">[3D]</span></td>
+
+          <td><code>NodeType::Character</code></td>
+
+          <td>Specialized humanoid character NPC featuring waypoint patrol steering, dialogue interaction, animations, and ground snapping.</td>
+
+        </tr>
+
+        <tr>
+
+          <td><a href="#camera-node"><strong>CameraNode</strong></a></td>
+
+          <td><span class="badge badge-3d">[CAM]</span></td>
+
+          <td><code>NodeType::Camera</code></td>
+
+          <td>3D perspective viewing camera with configurable Field of View, clipping planes, and picture-in-picture preview rendering.</td>
+
+        </tr>
+
+        <tr>
+
+          <td><a href="#light-node"><strong>LightNode</strong></a></td>
+
+          <td><span class="badge badge-3d">[LGT]</span></td>
+
+          <td><code>NodeType::Light</code></td>
+
+          <td>Scene illumination source supporting Directional (Sun with CSM), Point (omnidirectional), Spot (focused cone), and Area (Rect) (rectangular LTC area light) lighting.</td>
+
+        </tr>
+
+        <tr>
+
+          <td><a href="#audio-node"><strong>AudioNode</strong></a></td>
+
+          <td><span class="badge badge-3d">[SND]</span></td>
+
+          <td><code>NodeType::AudioSource</code></td>
+
+          <td>Positional 3D spatial or 2D stereo sound emitter with distance rolloff curves, Doppler effect, and audio bus routing.</td>
+
+        </tr>
+
+        <tr>
+
+          <td><a href="#particle-node"><strong>ParticleNode</strong></a></td>
+
+          <td><span class="badge badge-3d">[VFX]</span></td>
+
+          <td><code>NodeType::ParticleEmitter</code></td>
+
+          <td>Particle effects (fire, smoke, sparks, rain, magic, heat haze) on the CPU or GPU: flipbooks, soft particles, trails and ribbons, mesh particles and collision.</td>
+
+        </tr>
+
+        <tr>
+
+          <td><a href="#decal-node"><strong>DecalNode</strong></a></td>
+
+          <td><span class="badge badge-3d">[DCL]</span></td>
+
+          <td><code>NodeType::Decal</code></td>
+
+          <td>Oriented Bounding Box (OBB) surface decal projector that projects textures and normal maps onto scene geometry.</td>
+
+        </tr>
+
+        <tr>
+
+          <td><a href="#spline-node"><strong>SplineNode</strong></a></td>
+
+          <td><span class="badge badge-3d">[SPL]</span></td>
+
+          <td><code>NodeType::Spline</code></td>
+
+          <td>3D parametric Catmull-Rom and Bezier curve for rollercoasters, patrol routes, camera rails, and procedural extrusion.</td>
+
+        </tr>
+
+        <tr>
+
+          <td><a href="#collider-node"><strong>ColliderNode</strong></a></td>
+
+          <td><span class="badge badge-3d">[COL]</span></td>
+
+          <td><code>NodeType::Collider</code></td>
+
+          <td>Physics collision geometry supporting Box, Sphere, and Capsule shapes with physical material properties.</td>
+
+        </tr>
+
+        <tr>
+
+          <td><a href="#empty-node"><strong>EmptyNode</strong></a></td>
+
+          <td><span class="badge badge-3d">[GRP]</span></td>
+
+          <td><code>NodeType::Empty</code></td>
+
+          <td>Zero-overhead structural transform node used for spatial grouping, scene folder hierarchies, and pivot offset handles.</td>
+
+        </tr>
+
+        <tr>
+
+          <td><a href="#terrain-node"><strong>TerrainNode</strong></a></td>
+
+          <td><span class="badge badge-3d">[TRN]</span></td>
+
+          <td><code>NodeType::Terrain</code></td>
+
+          <td>Subdivided heightmap landscape with procedural generation (Rolling Hills, Mountain Peaks, Canyons & Ravines), 2D heightmap PNG import, and interactive real-time sculpting brushes.</td>
+
+        </tr>
+
+      </tbody>
+
+    </table>
+
+
+
+    <h2 id="mesh-node">2. MeshNode (3D Mesh & Primitives)</h2>
+
+    <p><code>MeshNode</code> (<code>src/Scene/Nodes/3D/MeshNode.h</code>) is the primary visual building block for static and dynamic 3D geometry. It can render either procedurally generated mathematical shapes or custom complex meshes loaded from 3D asset files.</p>
+
+
+
+    <h3>Shape Types</h3>
+
+    <ul>
+
+      <li><strong>Cube</strong>: Unit box with face normals, tangent vectors, and UV coordinates mapped per face.</li>
+
+      <li><strong>Sphere</strong>: Lat/long tessellated UV sphere with smooth normal vectors.</li>
+
+      <li><strong>Cylinder</strong>: Cylindrical tube with capped top and bottom discs.</li>
+
+      <li><strong>Cone</strong>: Circular base tapering to a single apex vertex.</li>
+
+      <li><strong>Plane</strong>: Flat horizontal quad suitable for ground, floors, and water surfaces.</li>
+
+      <li><strong>Custom 3D Model Asset</strong>: Loads an external mesh asset (<code>.fbx</code>, <code>.gltf</code>, <code>.glb</code>, <code>.obj</code>) with vertex skinning, bone weights, materials, and LOD hierarchies.</li>
+
+    </ul>
+
+
+
+    <h3>Configurable Properties (Inspector)</h3>
+
+    <table>
+
+      <thead>
+
+        <tr><th>Property</th><th>Type</th><th>Default</th><th>Description</th></tr>
+
+      </thead>
+
+      <tbody>
+
+        <tr><td><code>type</code></td><td>ShapeType (Enum)</td><td>Cube</td><td>Active shape type or Custom Model mode.</td></tr>
+
+        <tr><td><code>customMeshName</code></td><td>String</td><td>""</td><td>Filename of the imported 3D asset in <code>assets/models/</code>.</td></tr>
+
+        <tr><td><code>color</code></td><td>vec4 (RGBA)</td><td>(1, 1, 1, 1)</td><td>Base diffuse color tint applied over textures.</td></tr>
+
+        <tr><td><code>roughness</code></td><td>float</td><td>0.5</td><td>PBR surface roughness (0.0 = mirror smooth, 1.0 = completely matte).</td></tr>
+
+        <tr><td><code>metallic</code></td><td>float</td><td>0.0</td><td>PBR surface metallicness (0.0 = dielectric/plastic, 1.0 = pure metal).</td></tr>
+
+        <tr><td><code>texturePath</code></td><td>String</td><td>""</td><td>Albedo / Diffuse texture map path.</td></tr>
+
+        <tr><td><code>normalMapPath</code></td><td>String</td><td>""</td><td>Tangent-space normal map path.</td></tr>
+
+        <tr><td><code>metallicMapPath</code></td><td>String</td><td>""</td><td>Grayscale metallic texture map path.</td></tr>
+        <tr><td><code>meshResource</code></td><td>shared_ptr&lt;MeshResource&gt;</td><td>nullptr</td><td>Ref-counted shared mesh handle deduplicated by <code>ResourceManager</code>.</td></tr>
+        <tr><td><code>materialResource</code></td><td>shared_ptr&lt;MaterialResource&gt;</td><td>nullptr</td><td>Ref-counted shared material parameters handle.</td></tr>
+        <tr><td><code>instanceScenePath</code></td><td>String</td><td>""</td><td>External <code>.tess</code> subscene file path if this node is an instanced prefab.</td></tr>
+        <tr><td><code>isSceneInstanceRoot</code></td><td>bool</td><td>false</td><td>Flags whether this node is the root anchor of a linked prefab tree.</td></tr>
+
+
+        <tr><td><code>roughnessMapPath</code></td><td>String</td><td>""</td><td>Grayscale roughness texture map path.</td></tr>
+
+        <tr><td><code>aoMapPath</code></td><td>String</td><td>""</td><td>Ambient Occlusion map path.</td></tr>
+        <tr><td><code>heightMapPath</code> / <code>heightScale</code></td><td>String / float</td><td>"" / 0.02</td><td>Height / displacement map path and scale for GPU Parallax Occlusion Mapping (POM) with tangent-space horizon self-shadowing.</td></tr>
+
+        <tr><td><code>materialModel</code></td><td>int</td><td>0</td><td>0 Standard, 1 Skin, 2 Hair, 3 Eye (each with its own settings).</td></tr>
+
+        <tr><td><code>clearCoat</code> / <code>clearCoatRoughness</code></td><td>float</td><td>0 / 0.05</td><td>Glossy top layer (car paint, varnish); 0 = none.</td></tr>
+
+        <tr><td><code>triplanarMapping</code></td><td>bool</td><td>false</td><td>Project textures from world X/Y/Z instead of UVs (<code>triplanarTileSize</code>, <code>triplanarSharpness</code>).</td></tr>
+
+        <tr><td><code>detailAlbedoPath</code> / <code>detailNormalPath</code></td><td>String</td><td>""</td><td>Tiled close-up detail maps (<code>detailTiling</code>, <code>detailStrength</code>).</td></tr>
+
+        <tr><td><code>useVertexColors</code></td><td>bool</td><td>false</td><td>Multiply the base colour by the mesh's vertex colours.</td></tr>
+
+        <tr><td><code>isMirror</code></td><td>bool</td><td>false</td><td>Planar mirror showing the scene reflected across this surface.</td></tr>
+
+        <tr><td><code>isReflectionProbe</code></td><td>bool</td><td>false</td><td>Captures the surroundings for nearby reflections (<code>probeRadius</code>, <code>probeBoxProjection</code>, <code>probeBoxSize</code>).</td></tr>
+
+        <tr><td><code>isGIVolume</code></td><td>bool</td><td>false</td><td>Marks the box (<code>giVolumeSize</code>) that baked lighting covers.</td></tr>
+
+        <tr><td><code>lightmapStatic</code></td><td>bool</td><td>true</td><td>Never moves: gets a baked lightmap when lighting is baked.</td></tr>
+
+        <tr><td><code>isOcean</code></td><td>bool</td><td>false</td><td>Drawn as an ocean surface at the node's height (<code>oceanSize</code>, <code>waveHeight</code>, <code>waveLength</code>, <code>waveDirection</code>, <code>waveChoppiness</code>, <code>waveSpeed</code>, water colours, <code>waterClarity</code>, <code>whitecaps</code>, <code>shoreFoamWidth</code>). Added with Scene &rarr; Add Entity &rarr; Ocean.</td></tr>
+
+        <tr><td><code>isLiquid</code></td><td>bool</td><td>false</td><td>Liquid in a container: cut off at <code>liquidFill</code> (0..1), top surface in <code>liquidTopColor</code>, sloshes by <code>liquidSlosh</code>.</td></tr>
+
+        <tr><td><code>isPourSpout</code></td><td>bool</td><td>false</td><td>Empty nodes: pours a stream along its forward axis when tilted past <code>pourStartAngle</code> (<code>pourFlow</code>, <code>pourStreamRadius</code>, <code>pourSpeed</code>, <code>pourColor</code>, <code>pourSourceId</code>).</td></tr>
+
+        <tr><td><code>isFluidVolume</code></td><td>bool</td><td>false</td><td>Empty nodes: simulated fluid in a box (<code>fluidSize</code>, <code>fluidFill</code>, <code>fluidStart</code>, <code>fluidSpacing</code>, <code>fluidViscosity</code>, <code>fluidColor</code>, <code>fluidColorDepth</code>).</td></tr>
+
+        <tr><td><code>liquidColorDepth</code></td><td>float</td><td>0.05</td><td>Liquids: metres of liquid that show its colour (thicker looks deeper).</td></tr>
+
+        <tr><td><code>floatsOnWater</code> / <code>buoyancy</code></td><td>bool / float</td><td>false / 1.4</td><td>Dynamic bodies: float on an ocean's waves (1 = neutral buoyancy).</td></tr>
+
+        <tr><td><code>animationSpeed</code> / <code>animationStartOffset</code></td><td>float</td><td>1 / 0</td><td>This character's own playback speed and start time in the clip.</td></tr>
+
+        <tr><td><code>emissiveMapPath</code></td><td>String</td><td>""</td><td>Emissive illumination map path.</td></tr>
+
+        <tr><td><code>emissiveIntensity</code></td><td>float</td><td>0.0</td><td>HDR glow multiplier (up to 50.0).</td></tr>
+
+        <tr><td><code>enableLOD</code></td><td>bool</td><td>false</td><td>Enables distance-based LOD switching.</td></tr>
+
+        <tr><td><code>maxDrawDistance</code></td><td>float</td><td>0.0</td><td>Maximum visibility distance in meters (0 = infinite).</td></tr>
+
+        <tr><td><code>isVideoScreen</code></td><td>bool</td><td>false</td><td>Flags this mesh as an in-game video screen surface (TV set, cinema screen, smartphone, CCTV monitor, billboard). Frames are decoded and uploaded dynamically to runtime texture slot <code>@video_&lt;id&gt;</code>, emitting HDR emissive light into Real-Time VXGI and SSR.</td></tr>
+
+        <tr><td><code>videoChannelPreset</code></td><td>int</td><td>0</td><td>Channel preset: <code>0</code> Custom Source, <code>1</code> Cinema Reel (2.39:1), <code>2</code> TV News Broadcast (16:9), <code>3</code> CCTV Surveillance (4:3 night-vision), <code>4</code> Smartphone OS (9:16), <code>5</code> Retro CRT Bars (4:3), <code>6</code> Sci-Fi Telemetry (1:1).</td></tr>
+
+        <tr><td><code>videoSourcePath</code></td><td>String</td><td>""</td><td>Path to external video file: animated <code>.gif</code>, sprite-sheet atlas image (<code>.png</code>/<code>.jpg</code>), or folder containing numbered frame sequence.</td></tr>
+
+        <tr><td><code>videoPlaying</code> / <code>videoLoop</code> / <code>videoSpeed</code></td><td>bool / bool / float</td><td>true / true / 1.0</td><td>Playback controls: play/pause state, looping mode, and speed multiplier.</td></tr>
+
+        <tr><td><code>videoScreenBrightness</code></td><td>float</td><td>1.5</td><td>Screen luminosity and HDR emissive multiplier that casts bounce illumination into surrounding geometry via Real-Time VXGI.</td></tr>
+
+        <tr><td><code>videoScanlineStrength</code></td><td>float</td><td>0.3</td><td>CRT/LCD monitor raster scanline effect intensity (0.0 = clean digital, 1.0 = heavy phosphor lines).</td></tr>
+
+        <tr><td><code>videoAudioPath</code> / <code>videoAudioVolume</code> / <code>videoSpatialAudio</code></td><td>String / float / bool</td><td>"" / 1.0 / true</td><td>Associated soundtrack (<code>.wav</code>), audio volume, and 3D spatial attenuation from the screen's world position.</td></tr>
+
+      </tbody>
+
+    </table>
+
+
+
+        <h3>In-Game Video Screens & Monitors</h3>
+
+    <p>Any 3D mesh surface in Tessera can be turned into an active video screen. When <code>isVideoScreen</code> is enabled, the <code>VideoSystem</code> engine decodes external media or generates real-time procedural broadcast channels, uploading the dynamic frame buffer to Vulkan texture slot <code>@video_&lt;nodeId&gt;</code> without requiring scene recompilation or shader swaps.</p>
+
+    <ul>
+
+      <li><strong>Real-Time Screen Light Bounce</strong>: In-game screens act as dynamic light sources! Every frame, the screen's average HDR color and brightness are sampled and fed directly into the <strong>Real-Time Voxel Global Illumination (VXGI)</strong> and <strong>Screen-Space Reflections (SSR)</strong> pipelines, illuminating actors and room geometry around the screen with authentic color bounce.</li>
+
+      <li><strong>Supported Formats</strong>: Animated GIFs (decoded via <code>stbi_load_gif_from_memory</code>), sprite-sheet video atlases with custom column/row counts, sequential numbered PNG frames, and procedural real-time TV channels.</li>
+
+      <li><strong>Form-Factor Presets</strong>: Built-in presets automatically configure UV aspect ratios, scanlines, and content: <em>Living Room TV Set (16:9)</em>, <em>Cinema Projection Screen (2.39:1)</em>, <em>Smartphone / Mobile Screen (9:16)</em>, <em>CCTV Night-Vision Monitor (4:3)</em>, <em>Retro CRT Color Bars (4:3)</em>, and <em>Sci-Fi Radar Telemetry (1:1)</em>.</li>
+
+    </ul>
+
+    <h2 id="character-node">3. CharacterNode (Humanoid NPC)</h2>
+
+    <p><code>CharacterNode</code> (<code>src/Scene/Nodes/3D/CharacterNode.h</code>) inherits from <code>MeshNode</code>, providing high-level gameplay automation for interactive humanoid characters, quest givers, wandering civilians, and patrol guards.</p>
+
+
+
+    <h3>Key Capabilities</h3>
+
+    <ul>
+
+      <li><strong>Waypoint Patrol Engine</strong>: Automatically steers the character through a list of 3D world positions with configurable turn speed (yaw), move speed, and arrival tolerance.</li>
+
+      <li><strong>Looping Patrols</strong>: When enabled, the character loops back to waypoint 0 upon reaching the final waypoint; otherwise, it stops and transitions to idle.</li>
+
+      <li><strong>Ground Raycasting & Snapping</strong>: Fires a physical down-ray into the scene to snap the character's feet smoothly to slopes and uneven terrain.</li>
+
+      <li><strong>Dialogue Prompt & Interaction Radius</strong>: Displays dialogue text prompts when the player enters the character's proximity trigger radius.</li>
+
+      <li><strong>Automatic Animation State Binding</strong>: Links idle and walk skeletal animation clips so the character automatically plays <code>walkAnimClip</code> while navigating and switches to <code>idleAnimClip</code> when stationary.</li>
+
+    </ul>
+
+
+
+    <h3>Configurable Properties (Inspector)</h3>
+
+    <table>
+
+      <thead>
+
+        <tr><th>Property</th><th>Type</th><th>Default</th><th>Description</th></tr>
+
+      </thead>
+
+      <tbody>
+
+        <tr><td><code>characterName</code></td><td>String</td><td>"Humanoid NPC"</td><td>Display name shown above character in HUD dialogue.</td></tr>
+
+        <tr><td><code>dialogueText</code></td><td>String</td><td>"Hello adventurer!"</td><td>Conversation prompt displayed during proximity interactions.</td></tr>
+
+        <tr><td><code>interactionRadius</code></td><td>float</td><td>3.0 m</td><td>Spherical trigger distance for player interactions.</td></tr>
+
+        <tr><td><code>moveSpeed</code></td><td>float</td><td>2.5 m/s</td><td>Forward locomotion speed along the patrol path.</td></tr>
+
+        <tr><td><code>turnSpeed</code></td><td>float</td><td>5.0</td><td>Angular yaw steering speed towards the next waypoint.</td></tr>
+
+        <tr><td><code>waypointTolerance</code></td><td>float</td><td>0.5 m</td><td>Distance threshold to register a waypoint as reached.</td></tr>
+
+        <tr><td><code>isPatrolling</code></td><td>bool</td><td>false</td><td>Toggles active navigation through waypoints.</td></tr>
+
+        <tr><td><code>loopWaypoints</code></td><td>bool</td><td>true</td><td>Loops back to the first waypoint after finishing the patrol route.</td></tr>
+
+        <tr><td><code>applyGroundClamping</code></td><td>bool</td><td>true</td><td>Applies physical gravity and snaps the character vertically onto detected collision surfaces.</td></tr>
+
+        <tr><td><code>clampToWorldFloor</code></td><td>bool</td><td>true</td><td>When enabled, stops the character on the world grid floor (Y = 0) if no floor plane or terrain is placed underneath, preventing it from falling off the screen into the void.</td></tr>
+
+        <tr><td><code>groundOffset</code></td><td>float</td><td>0.0 m</td><td>Manual height offset above detected ground. When left at 0.0 (default), the engine automatically computes the character's exact half-height so feet rest flush on contact with zero surface penetration.</td></tr>
+
+        <tr><td><code>idleAnimClip</code></td><td>String</td><td>"Idle"</td><td>Name of the skeletal animation clip played when stationary.</td></tr>
+
+        <tr><td><code>walkAnimClip</code></td><td>String</td><td>"Walk"</td><td>Name of the skeletal animation clip played while walking.</td></tr>
+
+      </tbody>
+
+    </table>
+
+
+
+    <h2 id="camera-node">4. CameraNode</h2>
+
+    <p><code>CameraNode</code> represents an in-game viewpoint. When active, it calculates the view matrix (<code>glm::lookAt</code>) and perspective projection matrix (<code>glm::perspective</code>) used by the renderer.</p>
+
+    <ul>
+
+      <li><code>fov</code>: Vertical Field of View in degrees (default 60&deg;).</li>
+
+      <li><code>nearClip</code>: Near depth clipping plane distance (default 0.1m).</li>
+
+      <li><code>farClip</code>: Far depth clipping plane distance (default 1000.0m).</li>
+
+      <li><code>isPrimary</code>: Designates this camera as the active rendering target for the game loop.</li>
+      <li><strong>Scene Lifecycle & Deletion</strong>: Camera nodes can be freely created, deleted, or duplicated. Deleting a camera (via <kbd>Del</kbd> or the Inspector's <em>Delete Node from Scene</em> button) cleanly removes it from both the viewport and hierarchy without phantom auto-respawn loops. If a scene contains no active camera, the camera preview offscreen buffer cleanly clears while the main 3D viewport retains the editor spectator camera.</li>
+
+    </ul>
+
+
+
+    <h2 id="light-node">5. LightNode</h2>
+
+    <p><code>LightNode</code> illuminates scene geometry and casts dynamic shadows. Lights use clustered forward shading, so up to 1,024 lights per view can be active; the sun and up to 4 point or spot lights cast shadows at once. Three distinct illumination modes are supported:</p>
+
+    <ul>
+
+      <li><strong>Directional Light</strong>: Parallel light rays simulating distant sun or moon light. Includes a 4-split Cascaded Shadow Map (CSM) covering near, mid, and far distance bands.</li>
+
+      <li><strong>Point Light</strong>: Radiates light spherically in all directions with inverse-square falloff that fades smoothly to zero at its range. Can cast cube-map shadows.</li>
+
+      <li><strong>Spot Light</strong>: Conical spotlight with adjustable <code>innerCutoffAngle</code> and <code>outerCutoffAngle</code> for soft penumbra edges, ideal for flashlights, streetlights, and vehicle headlights.</li>
+      <li><strong>Area Light (Rect)</strong>: Rectangular area light (<code>LightType::AreaRect</code>) with configurable <code>areaLightSize</code> (width and height in meters) and <code>areaLightTwoSided</code> emission, evaluated on the GPU via Linearly Transformed Cosines (LTC) for broad, realistic window and studio softbox highlights.</li>
+
+    </ul>
+
+
+
+    <h2 id="audio-node">6. AudioNode</h2>
+
+    <p><code>AudioNode</code> attaches an audio source to the scene graph. In 3D mode, the sound's volume and pan are computed based on the listener's camera position, with distance attenuation curves and Doppler frequency shifts based on node velocity.</p>
+
+
+
+    <h2 id="particle-node">7. ParticleNode</h2>
+
+    <p><code>ParticleNode</code> emits particles continuously or in bursts and moves them by gravity, drag, vortex, attractor and curl-noise forces, with size, colour and alpha over their life, rotation and spin. It runs on the CPU, or on the GPU in a compute shader (<em>Simulation Backend</em>, up to 1,000,000 particles).</p>
+
+    <ul>
+
+      <li><strong>Render Modes:</strong>
+
+        <ul>
+
+          <li><code>Billboard (Additive Glow)</code>: Camera-facing quads with additive blending and depth-write disabled. Overlapping particles accumulate radiance, creating realistic bright cores for fire, sparks, and energy blasts without solid depth clipping.</li>
+
+          <li><code>Billboard (Alpha Blend)</code>: Camera-facing quads with translucent alpha blending, depth-write disabled, and procedural soft feathering. Perfect for billowy campfire smoke, ground fog, and atmospheric mist.</li>
+
+          <li><code>3D Mesh (Sphere / Cube)</code>: Instanced, lit spheres or cubes that tumble as they spin, for debris, shrapnel and voxel bursts (<em>Self Glow</em> for embers).</li>
+
+          <li><code>Distortion (Heat Haze)</code>: Bends the finished scene behind it with a rippling offset (<em>Distortion</em> sets how far).</li>
+
+        </ul>
+
+      </li>
+
+      <li><strong>1-Click VFX Presets:</strong>
+
+        <ul>
+
+          <li><code>🔥 Fire / Torch Flame</code>: Upward-rising cone emission with hot golden-yellow core and red embers, curl noise turbulence, and additive glow.</li>
+
+          <li><code>💨 Campfire Smoke</code>: Expanding alpha-blended plume with soft edges, negative gravity, and low-frequency curl drift.</li>
+
+          <li><code>🌫️ Ground Fog / Mist</code>: Large-scale horizontal box emission with smooth radial falloff, low opacity, and subtle drift.</li>
+
+          <li><code>✨ Magic Sparkles</code>: Multi-colored swirling particles driven by vortex force modules and additive luminance.</li>
+
+          <li><code>💥 Explosion Burst</code>: A burst of the built-in explosion sheet: fireballs that grow, cool through orange to dark smoke and thin away, the fire glowing (<em>Self Glow</em>).</li>
+
+          <li><code>Sparks</code>: Fast stretched sparks with trails that bounce off the scene.</li>
+
+          <li><code>Heat Haze</code>: Rising distortion for above fires and exhausts.</li>
+
+          <li><code>Magic Ribbon</code>: A glowing ribbon through the particles in birth order: move the emitter to draw a swoosh.</li>
+
+          <li><code>Rain Splashes</code>: Drops that die where they land and throw up small splashes.</li>
+
+        </ul>
+
+      </li>
+
+      <li><strong>Look:</strong> a texture played as a sprite sheet (<em>Columns</em>, <em>Rows</em>, <em>Frames</em>, over life or at a fixed rate, random start, blended frames), or a <em>Built-in Sheet</em> (Fire, Smoke, Explosion, Sparks) without one; <em>Softness</em> (soft particles), <em>Camera Fade</em>, <em>Velocity Stretch</em>, <em>Lit</em>, <em>Glow Intensity</em>, <em>Self Glow</em>.</li>
+
+      <li><strong>Trails &amp; Ribbons:</strong> <em>Per Particle</em> trails (<em>Points</em>, <em>Point Interval</em>, <em>Width</em>, <em>Taper</em>) or one <em>Ribbon</em> through the particles; <em>Draw Particles Too</em>, <em>Texture Tiling</em>.</li>
+
+      <li><strong>Collision:</strong> <em>Ground Plane</em> (a height) or <em>Scene</em> (meshes, terrain, and water with <em>Sink Into Water</em>); <em>Bounce</em>, <em>Friction</em>, <em>Life Lost per Hit</em>, <em>Die On Hit</em>, <em>Spawn on Hit</em> (splashes and sparks, with speed and size).</li>
+
+      <li><strong>Lua:</strong> <code>self:EmitParticles(n)</code>, <code>self:SetEmitting(on)</code>, <code>self:GetParticleCount()</code>, <code>self:GetParticleHits()</code>, <code>self:ResetParticles()</code>.</li>
+
+    </ul>
+
+
+
+    <h2 id="decal-node">8. DecalNode</h2>
+
+    <p><code>DecalNode</code> projects textures onto existing static and dynamic 3D meshes without modifying geometry. Ideal for bullet impact holes, blood splatters, tire tracks, and road markings. Projected within an Oriented Bounding Box (OBB) with normal angle rejection.</p>
+
+    <p>The surface under each pixel is rebuilt from the view's depth prepass and textured where it faces the box's y axis within the <em>Normal Angle Cutoff</em>, fading at the box's ends and beyond the <em>Fade Distance</em>. <em>Blend Mode</em>: <strong>Alpha Blend</strong> paints a lit layer (with the node's normal map), <strong>Stain / Multiply</strong> darkens the surface, <strong>Emissive / Additive</strong> glows in the node's emissive colour. Overlapping decals draw in <em>Sort Priority</em> order.</p>
+
+
+
+    <h2 id="spline-node">9. SplineNode</h2>
+
+    <p><code>SplineNode</code> creates continuous 3D mathematical curves passing through an arbitrary number of control points. Supports Catmull-Rom interpolation for automatic tangent smoothing. Used for camera tracks, train rails, and character movement paths.</p>
+
+
+
+    <h2 id="collider-node">10. ColliderNode</h2>
+
+    <p><code>ColliderNode</code> specifies collision boundaries for JoltPhysics. Available in <strong>Box</strong> (extents X, Y, Z), <strong>Sphere</strong> (radius), and <strong>Capsule</strong> (radius, height) shapes. Can be set as physical solid obstacles or non-physical trigger volumes for gameplay events.</p>
+
+
+
+    <h2 id="empty-node">11. EmptyNode</h2>
+
+    <p><code>EmptyNode</code> carries no mesh or renderer payload. It serves as a pure spatial transform node for grouping related entities, organizing levels, or acting as rotational pivot points (e.g., turret bases or orbiting camera mounts).</p>
+
+
+
+    <h2 id="terrain-node">12. TerrainNode</h2>
+
+    <p><code>TerrainNode</code> generates dynamic 3D landscapes with customizable resolution (up to 256&times;256 vertices), arbitrary world dimensions, and continuous heightfield sampling for character navigation.</p>
+
+    <ul>
+
+      <li><strong>Procedural Generators:</strong>
+
+        <ul>
+
+          <li><code>Rolling Hills</code>: Multi-octave continuous harmonic noise for countryside, mounds, and meadows.</li>
+
+          <li><code>Mountain Peaks</code>: Ridged multifractal peaks and alpine ridge crests reaching dramatic altitudes.</li>
+
+          <li><code>Canyons &amp; Ravines</code>: High elevated plateaus carved through by winding river chasms and deep gorges.</li>
+
+          <li><code>Flatten</code>: Resets the terrain to a flat ground surface.</li>
+
+        </ul>
+
+      </li>
+
+      <li><strong>Brush</strong>: tick <em>Brush Active</em>, pick a tool (<em>Sculpt</em>, <em>Paint Layers</em>, <em>Place Foliage</em>, <em>Erase Foliage</em>) and drag over the terrain; the brush follows the ground under the cursor.</li>
+
+      <li><strong>Paint layers</strong>: up to four (texture or plain tint, tiling in metres, roughness), blended by a painted splat map with height blending at their edges. <em>Auto Paint from Slope &amp; Height</em> fills the map from the land's shape.</li>
+
+      <li><strong>Foliage</strong>: built-in grass, flowers, bushes, broadleaf trees, pines and rocks, or any model, scattered at each type's density and slope limit; they follow the ground, sway in the wind, cast shadows and can be solid in Play.</li>
+
+      <li><strong>Physics</strong>: in Play the terrain is a solid heightfield.</li>
+
+      <li><strong>Interactive 3D Sculpting Tools:</strong>
+
+        <ul>
+
+          <li><code>Raise</code>: Pulls land upward to create mounds, hills, and cliffs.</li>
+
+          <li><code>Lower</code>: Carves valleys, ravines, craters, and riverbeds.</li>
+
+          <li><code>Smooth</code>: Softens sharp vertices using local neighbor averaging.</li>
+
+          <li><code>Flatten</code>: Levels land to a specified plateau height.</li>
+
+          <li>Click and drag directly in the 3D viewport with a visible green brush circle to sculpt in real time!</li>
+
+        </ul>
+
+      </li>
+
+      <li><strong>Heightmap Import:</strong> Load any grayscale <code>.png</code> or <code>.jpg</code> heightmap image to instantly recreate real-world GIS topography or digital elevation models (DEM).</li>
+
+      <li><strong>Continuous Height Sampling:</strong> Characters, NPCs, vehicles, and physics raycasts can call <code>SampleHeight(worldX, worldZ)</code> for exact bilinear-interpolated ground elevation.</li>
+
+    </ul>
+
+    
+
+
+
+    <div class="pagination">
+
+  <a href="index.html" class="pagination-card prev">
+
+    <span class="pagination-label">&larr; Previous</span>
+
+    <span class="pagination-title">Engine Overview & Quickstart</span>
+
+  </a>
+
+  <a href="nodes-ui.html" class="pagination-card next">
+
+    <span class="pagination-label">Next &rarr;</span>
+
+    <span class="pagination-title">2D UI Component Nodes</span>
+
+  </a>
+
+</div>
+
+
+
+  </main>
+
+</body>
+
+</html>
+

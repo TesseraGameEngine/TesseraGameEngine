@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Engine Internal Architecture & Developer Guide - Tessera Engine Documentation</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="nav.js" defer></script>
+</head>
+<body>
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <h2>&#9881; Tessera Engine</h2>
+      <p>Official Developer Documentation</p>
+    </div>
+    <div class="search-box">
+      <input type="text" id="doc-search" placeholder="Filter documentation..." autocomplete="off">
+    </div>
+    <div class="sidebar-nav">
+      <div class="nav-group">
+        <div class="nav-group-title">Engine Internals & Architecture</div>
+        <a class="nav-item active" href="engine-architecture.html">Engine Architecture & Contributor Guide</a>
+        <a class="nav-item" href="linux-guide.html">Linux Build & Standalone Export</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Getting Started</div>
+        <a class="nav-item" href="index.html">Overview & Quickstart</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Node Reference</div>
+        <a class="nav-item" href="nodes-3d.html">3D Nodes & Entities</a>
+        <a class="nav-item" href="nodes-ui.html">2D UI Component Nodes</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Core Systems</div>
+        <a class="nav-item" href="systems-rendering.html">Rendering, PBR & LOD</a>
+        <a class="nav-item" href="systems-animation.html">Animation, Armatures & IK</a>
+        <a class="nav-item" href="systems-physics.html">Physics & Ragdolls</a>
+        <a class="nav-item" href="systems-audio.html">Audio Engine & Mixer</a>
+        <a class="nav-item" href="systems-navigation.html">Navigation & AI Patrol</a>
+        <a class="nav-item" href="systems-networking.html">Multiplayer & Authority</a>
+        <a class="nav-item" href="systems-scripting.html">Lua Scripting API</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Editor Reference</div>
+        <a class="nav-item" href="editor-menus.html">Main Menus & Shortcuts</a>
+        <a class="nav-item" href="editor-windows.html">Windows, Inspector & Modals</a>
+      </div>
+    </div>
+  </aside>
+
+  <main id="main-content">
+    <div class="breadcrumbs">
+      <a href="index.html">Docs</a> &gt; <span>Engine Internals</span> &gt; <span>Engine Architecture & Contributor Guide</span>
+    </div>
+
+    <h1>Tessera Engine Internal Architecture &amp; Contributor Guide</h1>
+    <p class="lead">This document is written strictly from the perspective of an <strong>engine developer working on the engine's C++20 and Vulkan codebase</strong>. It details the execution lifecycle, class responsibilities, file organization, Vulkan pipeline internals, compute/graphics shaders, and step-by-step instructions for extending the engine, adding features, and fixing bugs.</p>
+
+    <div class="callout callout-info">
+      <div class="callout-title">&#8505; Codebase Standards</div>
+      <p>Tessera is built with <strong>C++20</strong>, compiled using MSVC on Windows and Clang on macOS/Linux. Rendering is native <strong>Vulkan 1.2</strong> with cross-platform ray tracing abstractions. Physics uses <strong>Jolt Physics</strong>, scripting uses <strong>Sol2 Lua 5.4</strong>, and the UI uses <strong>Dear ImGui (Docking)</strong>.</p>
+    </div>
+
+    <h2>1. Engine Lifecycle &amp; Frame Loop</h2>
+    <p>The entire application lifecycle is driven by <code>src/main.cpp</code> through the <code>EngineApp</code> class:</p>
+    <pre><code>main()
+  &rarr; EngineApp::Run()
+      &rarr; InitWindow()             // GLFW window, borderless hit testing, icon setup
+      &rarr; InitVulkan()             // VulkanContext, swapchain, pipelines, subsystems
+      &rarr; InitScene()              // Default nodes, Jolt physics, audio, Lua scripting
+      &rarr; MainLoop()               // While !glfwWindowShouldClose:
+          &rarr; glfwPollEvents()
+          &rarr; InputManager::Update()
+          &rarr; GameLoop::Update()   // If Play Mode: Lua scripts & Jolt physics tick
+          &rarr; DrawFrame()          // Multi-view Vulkan render passes & ImGui submission
+      &rarr; Cleanup()                // Flush GPU queues, destroy pipelines, shutdown singletons</code></pre>
+
+    <h3>The <code>DrawFrame()</code> Submission Sequence</h3>
+    <p>Each frame submitted to the GPU executes the following synchronized sequence:</p>
+    <ol>
+      <li><strong>Acquire Next Image</strong>: <code>vkAcquireNextImageKHR</code> retrieves a swapchain framebuffer image index.</li>
+      <li><strong>Buffer Synchronization &amp; Streaming</strong>:
+        <ul>
+          <li><code>WorldPartitionManager::Update()</code>: Updates camera distance/frustum priority and triggers <code>DirectStorageQueue</code> reads.</li>
+          <li><code>RayTracingManager::SyncScene()</code>: Rebuilds BLAS acceleration structures for modified geometry and updates the TLAS instance buffer.</li>
+          <li><code>MeshletManager::SyncScene()</code>: Clusters active meshes into meshlets and executes CPU/GPU frustum and backface cone culling.</li>
+          <li><code>CameraRelativeCoordinator</code>: Computes 64-bit double-precision camera offsets to eliminate vertex jitter.</li>
+        </ul>
+      </li>
+      <li><strong>Offscreen Multi-View Passes</strong>:
+        <ul>
+          <li><strong>View 0 (Editor Viewport)</strong>: Renders the active edit scene into <code>m_offscreen</code> (RGBA16F HDR).</li>
+          <li><strong>View 1 (Game / Play View)</strong>: Renders the active game camera scene into <code>m_cameraPreviewOffscreen</code>.</li>
+        </ul>
+      </li>
+      <li><strong>Shadow Mapping Pass</strong>: <code>m_pipeline.RenderShadowPass()</code> generates 4 directional sun cascades plus point/spot shadow maps.</li>
+      <li><strong>G-Buffer &amp; Occlusion Prepass</strong>: Writes linear depth and surface normals for SSAO, GTAO, and occlusion culling.</li>
+      <li><strong>Forward+ PBR Shading Pass</strong>: Evaluates clustered lighting, area lights (LTC), VXGI 3D voxel cone tracing, and hardware ray queries.</li>
+      <li><strong>Decals, Volumetrics &amp; Ocean Passes</strong>: Projects decals, ray-marches volumetric clouds and fog, renders ocean waves, and computes fluid foam particles.</li>
+      <li><strong>Post-Processing &amp; Temporal Upscaling</strong>: Evaluates Depth of Field, Motion Blur, Bloom down/up sampling, HDR Tone Mapping (ACES), and DLSS/FSR 3/XeSS temporal reconstruction.</li>
+      <li><strong>ImGui Editor Overlay Pass</strong>: Renders viewport dockspaces, gizmos (ImGuizmo), timeline sequencers, inspector panels, and menu bars directly into the swapchain command buffer.</li>
+      <li><strong>Present</strong>: <code>vkQueuePresentKHR</code> flips the presented image to the display.</li>
+    </ol>
+
+    <h2>2. Codebase Directory &amp; File-by-File Breakdown</h2>
+    <p>The codebase is organized into cleanly decoupled subsystems in <code>src/</code>:</p>
+
+    <table class="doc-table">
+      <thead>
+        <tr>
+          <th>Directory / File</th>
+          <th>Primary Classes / Structs</th>
+          <th>Architectural Responsibility</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>src/main.cpp</code></td>
+          <td><code>EngineApp</code></td>
+          <td>Application entry point, GLFW window lifecycle, Vulkan initialization orchestration, per-frame render loop (<code>DrawFrame</code>), and editor input routing.</td>
+        </tr>
+        <tr>
+          <td><code>src/Core/Camera.h / .cpp</code></td>
+          <td><code>Camera</code></td>
+          <td>Editor and spectator camera: view/projection matrix generation, smooth orbit, pan, zoom, FOV, and plane clipping math.</td>
+        </tr>
+        <tr>
+          <td><code>src/Core/InputManager.h / .cpp</code></td>
+          <td><code>InputManager</code></td>
+          <td>Raw keyboard, mouse, and gamepad polling, action/axis mapping bindings, and input serialization.</td>
+        </tr>
+        <tr>
+          <td><code>src/Core/UndoRedoManager.h / .cpp</code></td>
+          <td><code>UndoRedoManager</code></td>
+          <td>Full-featured Command pattern undo/redo stack capturing deep scene JSON snapshots with <kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd>.</td>
+        </tr>
+        <tr>
+          <td><code>src/Core/LargeWorldCoordinates.h / .cpp</code></td>
+          <td><code>CameraRelativeCoordinator</code></td>
+          <td>64-bit double precision coordinates (<code>glm::dvec3</code>) with camera-relative rendering translation isolation to prevent vertex jitter.</td>
+        </tr>
+        <tr>
+          <td><code>src/Renderer/VulkanContext.h / .cpp</code></td>
+          <td><code>VulkanContext</code></td>
+          <td>Vulkan instance, physical device selection, logical device creation, graphics/compute/present queue management, VMA memory allocators, and debug messengers.</td>
+        </tr>
+        <tr>
+          <td><code>src/Renderer/VulkanBuffer.h / .cpp</code></td>
+          <td><code>VulkanBuffer</code></td>
+          <td>Encapsulation of <code>VkBuffer</code> and <code>VkDeviceMemory</code> for vertex, index, uniform (UBO), and storage (SSBO) buffers with staging upload helpers.</td>
+        </tr>
+        <tr>
+          <td><code>src/Renderer/VulkanTexture.h / .cpp</code></td>
+          <td><code>VulkanTexture</code></td>
+          <td>Encapsulation of <code>VkImage</code>, <code>VkImageView</code>, and <code>VkSampler</code> for 2D textures, cubemaps, mipmaps, and BC1-BC7 block compression.</td>
+        </tr>
+        <tr>
+          <td><code>src/Renderer/VulkanPipeline.h / .cpp</code></td>
+          <td><code>VulkanPipeline</code></td>
+          <td>Master graphics pipeline manager: creates descriptor pool/layouts, shader modules, pipeline layouts, and bound pipeline state objects (PSO).</td>
+        </tr>
+        <tr>
+          <td><code>src/Renderer/VulkanOffscreen.h / .cpp</code></td>
+          <td><code>VulkanOffscreen</code></td>
+          <td>Manages offscreen HDR render targets (Color, Depth, Normals, Motion Vectors) and post-processing framebuffers.</td>
+        </tr>
+        <tr>
+          <td><code>src/Renderer/RayTracing/</code></td>
+          <td><code>RayTracingManager</code>, <code>VulkanRayTracing</code>, <code>MetalRayTracing</code></td>
+          <td>Cross-platform hardware ray tracing: builds Bottom-Level (BLAS) and Top-Level (TLAS) acceleration structures for RTAO, RTR, RTS, and RTGI.</td>
+        </tr>
+        <tr>
+          <td><code>src/Renderer/Meshlet/</code></td>
+          <td><code>MeshletManager</code>, <code>MeshletBuilder</code></td>
+          <td>Nanite-class geometry clustering (&le; 64 verts, &le; 126 tris) with bounding sphere frustum culling and normal cone backface culling via <code>VK_EXT_mesh_shader</code>.</td>
+        </tr>
+        <tr>
+          <td><code>src/Renderer/Pipeline/</code></td>
+          <td><code>VulkanPipelineCache</code></td>
+          <td>Binary pipeline cache persistence (<code>cache/pipeline_cache.bin</code>) utilizing <code>VkPipelineCache</code> to eliminate runtime shader compilation stutter.</td>
+        </tr>
+        <tr>
+          <td><code>src/Renderer/Upscaling/</code></td>
+          <td><code>TemporalUpscaler</code></td>
+          <td>Hardware temporal upscaling pipeline (DLSS 3.5, FSR 3.1, XeSS) with motion vector history, 16-phase Halton sub-pixel jitter, and RCAS sharpening.</td>
+        </tr>
+        <tr>
+          <td><code>src/Streaming/</code></td>
+          <td><code>WorldPartitionManager</code>, <code>DirectStorageQueue</code></td>
+          <td>Spatial sector hashing grid, camera distance/frustum priority queue, multithreaded unbuffered I/O, dynamic scene graph attachment, and memory budget eviction.</td>
+        </tr>
+        <tr>
+          <td><code>src/Scene/Scene.h / .cpp</code></td>
+          <td><code>Scene</code>, <code>SceneEnvironment</code></td>
+          <td>Central scene graph container: node hierarchy ownership, camera/light gathering, scene cloning (Play mode isolation), and JSON serialization.</td>
+        </tr>
+        <tr>
+          <td><code>src/Scene/Node.h / .cpp</code></td>
+          <td><code>Node</code>, <code>Transform</code></td>
+          <td>Base polymorphic node entity: ID, parenting, local/world transforms, signal-slot events, collision layers/masks, and material properties.</td>
+        </tr>
+        <tr>
+          <td><code>src/Scene/Nodes/3D/</code></td>
+          <td><code>MeshNode</code>, <code>CharacterNode</code>, <code>CameraNode</code>, <code>LightNode</code>, <code>ColliderNode</code>, etc.</td>
+          <td>Concrete 3D spatial node implementations with type-specific components (e.g. skinning armatures, light parameters, terrain splat maps).</td>
+        </tr>
+        <tr>
+          <td><code>src/Scene/Nodes/UI/</code></td>
+          <td><code>UINode</code>, <code>UICanvasNode</code>, <code>UIButtonNode</code>, <code>UITextNode</code>, etc.</td>
+          <td>Screen-space 2D UI hierarchy with responsive anchors, margins, layout containers (Box/Grid), and event handling.</td>
+        </tr>
+        <tr>
+          <td><code>src/Physics/PhysicsWorld.h / .cpp</code></td>
+          <td><code>PhysicsWorld</code></td>
+          <td>Jolt Physics integration: rigidbodies (Static, Dynamic, Kinematic), constraints, collision shapes, raycasts, character virtual controllers, and contact listeners.</td>
+        </tr>
+        <tr>
+          <td><code>src/Physics/XPBDClothSim.h / .cpp</code></td>
+          <td><code>XPBDClothSimulator</code>, <code>DynamicHairSimulator</code></td>
+          <td>Extended Position-Based Dynamics with physical compliance, structural/shear/bending springs, aerodynamic drag, and limb capsule collisions.</td>
+        </tr>
+        <tr>
+          <td><code>src/Animation/</code></td>
+          <td><code>Animation</code>, <code>Skeleton</code>, <code>IKSolver</code>, <code>MotionMatcher</code>, <code>FullBodyIKSolver</code></td>
+          <td>Skeletal armature evaluation, TwoBone IK, FABRIK, data-driven Motion Matching trajectory search, quintic inertialization, and terrain slope foot conforming.</td>
+        </tr>
+        <tr>
+          <td><code>src/Audio/</code></td>
+          <td><code>AudioEngine</code>, <code>AcousticRayTracer</code></td>
+          <td>3D spatial attenuation, DSP reverb zones, WAV loading/synthesis, geometric ray-traced diffraction, physical wall transmission loss, and doorway portaling.</td>
+        </tr>
+        <tr>
+          <td><code>src/Navigation/NavMesh.h / .cpp</code></td>
+          <td><code>NavMesh</code></td>
+          <td>Polygon navigation mesh generation, obstacle clipping, and A* pathfinding for AI agent navigation and waypoint patrol.</td>
+        </tr>
+        <tr>
+          <td><code>src/Networking/NetworkManager.h / .cpp</code></td>
+          <td><code>NetworkManager</code></td>
+          <td>Authoritative UDP/TCP networking, state replication packets, client-side prediction, authority shielding, and Remote Procedure Calls (RPCs).</td>
+        </tr>
+        <tr>
+          <td><code>src/Scripting/LuaScriptSystem.h / .cpp</code></td>
+          <td><code>LuaScriptSystem</code></td>
+          <td>Sol2 Lua 5.4 scripting engine exposing C++ engine APIs (Scene, Node, Transform, Input, Physics, Audio, Network) with lifecycle event dispatch.</td>
+        </tr>
+        <tr>
+          <td><code>src/UI/EditorUI.h / .cpp</code></td>
+          <td><code>EditorUI</code>, <code>NodeInspector</code></td>
+          <td>Comprehensive Dear ImGui docking editor interface: hierarchy tree, inspector property reflection, menu bars, profiler docks, and gizmo manipulators.</td>
+        </tr>
+        <tr>
+          <td><code>src/Monitoring/GameProfiler.h / .cpp</code></td>
+          <td><code>GameProfiler</code></td>
+          <td>Real-time CPU stage timing, GPU pass microsecond profiling, memory consumption telemetry, and orphan node diagnostics.</td>
+        </tr>
+        <tr>
+          <td><code>src/Export/LinuxExporter.h / .cpp</code></td>
+          <td><code>LinuxExporter</code></td>
+          <td>Packages standalone Linux/SteamOS distributions with Godot-style export templates (<code>templates/linux/TesseraGameRunner.x86_64</code>), turnkey POSIX <code>launch.sh</code>, FreeDesktop <code>.desktop</code> shortcuts, and optional Proton/Wine fallback.</td>
+        </tr>
+        <tr>
+          <td><code>src/Export/WebExporter.h / .cpp</code></td>
+          <td><code>WebExporter</code></td>
+          <td>Packages scenes, assets, and shaders into standalone HTML5/WebGL 2.0 bundles for web browser deployment.</td>
+        </tr>
+        <tr>
+          <td><code>tests/MasterTestSuite.cpp</code></td>
+          <td><code>TEST_CASE</code> suite (88 tests)</td>
+          <td>Headless automated unit test runner verifying all engine math, JSON, physics, serialization, ray tracing, meshlets, streaming, gameplay systems, and standalone Linux export.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>3. The Vulkan Rendering Pipeline In-Depth</h2>
+    <p>Tessera's rendering architecture lives primarily in <code>src/Renderer/VulkanPipeline.cpp</code> and <code>src/Renderer/VulkanContext.cpp</code>.</p>
+
+    <h3>UniformBufferObject (UBO) Memory Layout</h3>
+    <p>The global camera and environment properties are uploaded once per view to binding 0 using the following aligned struct:</p>
+    <pre><code class="language-cpp">struct UniformBufferObject {
+    glm::mat4 view;              // Camera view matrix
+    glm::mat4 proj;              // Camera projection matrix (Vulkan clip space)
+    glm::vec4 cameraPos;         // Camera world position (.xyz) + padding (.w)
+    glm::vec4 ambientColor;      // Ambient sky light intensity & colour
+    glm::vec4 sunDirection;      // Normalized direction to the primary sun light
+    glm::vec4 sunColor;          // Sun RGB radiance + intensity in .w
+    glm::vec4 fogColor;          // Distance fog color + density in .w
+    glm::vec4 timeParams;        // x = time (s), y = deltaTime, z = sin(time), w = frameIndex
+    glm::mat4 cascadeViewProj[4];// Cascaded Shadow Map split view-projection matrices
+    glm::vec4 cascadeSplits;     // Far depth split distances for cascades 0..3
+    int numLights;               // Active clustered dynamic lights count
+    int enableShadows;           // Shadow mapping master toggle
+    int enableGI;                // Global illumination master toggle
+    int padding;
+};</code></pre>
+
+    <h3>Push Constants Layout</h3>
+    <p>To avoid descriptor rebinding between draw calls, per-object parameters are passed directly via Vulkan Push Constants (&le; 128 bytes):</p>
+    <pre><code class="language-cpp">struct MeshPushConstants {
+    glm::mat4 modelMatrix;       // 64 bytes: Local-to-world model matrix
+    glm::vec4 baseColor;         // 16 bytes: Material diffuse/tint color
+    float roughness;             // 4 bytes: PBR microfacet roughness
+    float metallic;              // 4 bytes: PBR metallic factor
+    int materialFlags;           // 4 bytes: Bitfield (hasAlbedoMap, hasNormalMap, hasAOMap...)
+    uint32_t objectId;           // 4 bytes: Node ID for GPU viewport mouse-picking
+};</code></pre>
+
+    <h2>4. Shaders Catalog (<code>shaders/</code>)</h2>
+    <p>Shaders are written in GLSL (Vulkan-flavoured) and precompiled into SPIR-V (<code>.spv</code>) binaries via <code>glslc</code>. Runtime shader graph materials are compiled on demand.</p>
+
+    <table class="doc-table">
+      <thead>
+        <tr>
+          <th>Shader File</th>
+          <th>Stage</th>
+          <th>Pipeline Role</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>shader.vert</code></td>
+          <td>Vertex</td>
+          <td>Transforms vertices with skinning or model matrices, computes TBN tangent frames, and projects into camera-relative clip space.</td>
+        </tr>
+        <tr>
+          <td><code>shader.frag</code></td>
+          <td>Fragment</td>
+          <td>Master PBR lighting pass: Cook-Torrance BRDF (GGX D, Smith G, Schlick F), 4 cascade shadow PCF, clustered lights, LTC area lights, and VXGI cone tracing.</td>
+        </tr>
+        <tr>
+          <td><code>prepass.vert / .frag</code></td>
+          <td>Vert / Frag</td>
+          <td>Depth and surface normal prepass. Outputs linear view-space depth and world normals used by SSAO, GTAO, and contact shadows.</td>
+        </tr>
+        <tr>
+          <td><code>skinning.comp</code></td>
+          <td>Compute</td>
+          <td>High-performance GPU skeletal linear blend skinning. Evaluates bone armatures and writes skinned vertex buffers before rasterization passes.</td>
+        </tr>
+        <tr>
+          <td><code>shadow.vert / .frag</code></td>
+          <td>Vert / Frag</td>
+          <td>Cascaded shadow map depth capture pass for directional sun and point/spot omnidirectional shadow maps.</td>
+        </tr>
+        <tr>
+          <td><code>ssao.frag / ssao_blur.frag</code></td>
+          <td>Fragment</td>
+          <td>Horizon-based ambient occlusion sampling hemispherical normals followed by a depth-aware bilateral blur filter.</td>
+        </tr>
+        <tr>
+          <td><code>ssr.frag</code></td>
+          <td>Fragment</td>
+          <td>Screen-Space Reflections: hierarchical ray-marching against the G-buffer depth buffer with roughness cone jitter.</td>
+        </tr>
+        <tr>
+          <td><code>ocean.vert / .frag</code></td>
+          <td>Vert / Frag</td>
+          <td>Phillips spectrum ocean wave displacement, surface normal calculation, underwater refraction, foam cresting, and specular sun glints.</td>
+        </tr>
+        <tr>
+          <td><code>cloud_volume.frag</code></td>
+          <td>Fragment</td>
+          <td>Ray-marched 3D volumetric clouds with Henyey-Greenstein phase scattering, beer-lambert light extinction, and wind advection.</td>
+        </tr>
+        <tr>
+          <td><code>fluid_sim.comp / fluid_composite.frag</code></td>
+          <td>Compute / Frag</td>
+          <td>GPU Position-Based Fluid simulation: density constraints, surface smoothing, foam particle advection, and screen-space fluid composite.</td>
+        </tr>
+        <tr>
+          <td><code>taa.frag</code></td>
+          <td>Fragment</td>
+          <td>Temporal Anti-Aliasing with 16-phase Halton sub-pixel jitter, motion vector velocity reprojection, and Catmull-Rom history bicubic filtering.</td>
+        </tr>
+        <tr>
+          <td><code>bloom_down.frag / bloom_up.frag</code></td>
+          <td>Fragment</td>
+          <td>Dual-filtering 13-tap downsampling and 9-tap tent upsampling for thresholded HDR emissive bloom.</td>
+        </tr>
+        <tr>
+          <td><code>composite.frag</code></td>
+          <td>Fragment</td>
+          <td>Final post-process composite: ACES Filmic tonemapping, vignette, chromatic aberration, 35mm film grain, and LUT colour grading.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>5. Scene Graph, Node Lifecycle &amp; Hierarchy</h2>
+    <p>Every entity in a Tessera scene inherits from <code>Node</code> (defined in <code>src/Scene/Node.h</code>). The scene graph maintains ownership through <code>std::shared_ptr&lt;Node&gt;</code> in <code>m_nodes</code>.</p>
+
+    <h3>Transform Propagation Math</h3>
+    <p>Nodes store local <code>position</code>, <code>rotation</code> (Euler degrees), and <code>scale</code>. World matrices are evaluated hierarchically:</p>
+    <pre><code class="language-cpp">glm::mat4 Node::GetLocalTransformMatrix() const {
+    glm::mat4 mat = glm::translate(glm::mat4(1.0f), position);
+    mat = glm::rotate(mat, glm::radians(rotation.y), glm::vec3(0, 1, 0));
+    mat = glm::rotate(mat, glm::radians(rotation.x), glm::vec3(1, 0, 0));
+    mat = glm::rotate(mat, glm::radians(rotation.z), glm::vec3(0, 0, 1));
+    mat = glm::scale(mat, scale);
+    return mat;
+}
+
+glm::mat4 Node::GetWorldTransformMatrix(const Scene& scene) const {
+    if (parentId == 0) return GetLocalTransformMatrix();
+    auto parent = scene.GetNodeById(parentId);
+    if (!parent) return GetLocalTransformMatrix();
+    return parent->GetWorldTransformMatrix(scene) * GetLocalTransformMatrix();
+}</code></pre>
+
+    <h2>6. Engine Developer How-To Guides</h2>
+
+    <h3>Guide A: How to Add a New 3D Node Type</h3>
+    <ol>
+      <li>Create <code>src/Scene/Nodes/3D/MyNewNode.h</code> and <code>.cpp</code> inheriting from <code>Node</code>.</li>
+      <li>Set <code>nodeType = NodeType::Custom</code> (or add a new enum in <code>Node.h</code>).</li>
+      <li>Implement <code>Serialize()</code> and <code>Deserialize()</code> using <code>SimpleJson</code>.</li>
+      <li>Register creation factory in <code>src/Scene/SceneNodes.cpp</code> (e.g. <code>Scene::AddMyNewNode()</code>).</li>
+      <li>Expose inspector controls in <code>src/UI/NodeInspector.cpp</code> inside the node properties switch.</li>
+      <li>Add source file to <code>set(SOURCES)</code> and <code>set(HEADERS)</code> in <code>CMakeLists.txt</code>.</li>
+      <li>Add a unit test in <code>tests/MasterTestSuite.cpp</code> to verify lifecycle and serialization.</li>
+    </ol>
+
+    <h3>Guide B: How to Add a New Vulkan Render Pass</h3>
+    <ol>
+      <li>Create your GLSL shader in <code>shaders/my_effect.frag</code>.</li>
+      <li>Register shader compilation in <code>CMakeLists.txt</code> via <code>tessera_compile_shader(my_effect.frag my_effect_frag.spv)</code>.</li>
+      <li>Add pipeline creation in <code>VulkanPipeline::CreateGraphicsPipelines()</code> with target render pass and layout.</li>
+      <li>In <code>VulkanOffscreen.h</code>, declare any required intermediate color/depth attachments.</li>
+      <li>In <code>main.cpp</code> (<code>DrawFrame()</code>), bind the pipeline (<code>vkCmdBindPipeline</code>), push descriptors, and issue <code>vkCmdDraw()</code> between GPU profiler markers (<code>gpuBegin("My Effect")</code> / <code>gpuEnd()</code>).</li>
+    </ol>
+
+    <h3>Guide C: How to Expose a New Subsystem to Lua</h3>
+    <ol>
+      <li>Open <code>src/Scripting/LuaScriptSystem.cpp</code>.</li>
+      <li>In <code>Init()</code>, create a new Lua table binding using Sol2:
+        <pre><code class="language-cpp">auto myTable = m_lua.create_named_table("MySubsystem");
+myTable["do_something"] = [](float value) {
+    MySubsystem::Get().DoSomething(value);
+};</code></pre>
+      </li>
+      <li>Document the new API in <code>docs/systems-scripting.html</code>.</li>
+      <li>Add a unit test in <code>tests/MasterTestSuite.cpp</code> under <code>[LuaScripting]</code> verifying execution.</li>
+    </ol>
+
+    <h3>Guide D: How to Build and Run Unit Tests</h3>
+    <p>Tessera features an automated headless test suite with 87 tests verifying all engine math, serialization, physics, ray tracing, and streaming:</p>
+    <pre><code># Build test suite in Release mode:
+cmake --build build --config Release --target EngineTestSuite
+
+# Execute test suite:
+.\build\Release\EngineTestSuite.exe
+
+# Expected output:
+# RESULTS: 87 PASSED, 0 FAILED (~710 ms)</code></pre>
+
+    <div class="pagination">
+      <div></div>
+      <a href="index.html" class="pagination-card next">
+        <span class="pagination-label">Next &rarr;</span>
+        <span class="pagination-title">Engine Overview &amp; Quickstart</span>
+      </a>
+    </div>
+  </main>
+</body>
+</html>
+

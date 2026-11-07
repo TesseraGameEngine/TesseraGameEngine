@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Linux Build & Standalone Export Guide - Tessera Engine Docs</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="nav.js" defer></script>
+</head>
+<body>
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <h2>&#9881; Tessera Engine</h2>
+      <p>Official Developer Documentation</p>
+    </div>
+    <div class="search-box">
+      <input type="text" id="doc-search" placeholder="Filter documentation..." autocomplete="off">
+    </div>
+    <div class="sidebar-nav">
+      <div class="nav-group">
+        <div class="nav-group-title">Engine Internals & Architecture</div>
+        <a class="nav-item" href="engine-architecture.html">Engine Architecture & Contributor Guide</a>
+        <a class="nav-item active" href="linux-guide.html">Linux Build & Standalone Export</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Getting Started</div>
+        <a class="nav-item" href="index.html">Overview & Quickstart</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Node Reference</div>
+        <a class="nav-item" href="nodes-3d.html">3D Nodes & Entities</a>
+        <a class="nav-item" href="nodes-ui.html">2D UI Component Nodes</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Core Systems</div>
+        <a class="nav-item" href="systems-rendering.html">Rendering, PBR & LOD</a>
+        <a class="nav-item" href="systems-animation.html">Animation, Armatures & IK</a>
+        <a class="nav-item" href="systems-physics.html">Physics & Ragdolls</a>
+        <a class="nav-item" href="systems-audio.html">Audio Engine & Mixer</a>
+        <a class="nav-item" href="systems-navigation.html">Navigation & AI Patrol</a>
+        <a class="nav-item" href="systems-networking.html">Multiplayer & Authority</a>
+        <a class="nav-item" href="systems-scripting.html">Lua Scripting API</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Editor Reference</div>
+        <a class="nav-item" href="editor-menus.html">Main Menus & Shortcuts</a>
+        <a class="nav-item" href="editor-windows.html">Windows, Inspector & Modals</a>
+      </div>
+    </div>
+  </aside>
+
+  <main id="main-content">
+    <div class="breadcrumbs">
+      <a href="index.html">Docs</a> &gt; <span>Engine Internals</span> &gt; <span>Linux Build & Standalone Export Guide</span>
+    </div>
+
+    <h1>Linux Build & Standalone Export Guide</h1>
+    <p class="lead">Complete guide for building the Tessera Game Engine natively on Linux and packaging turnkey standalone games for Ubuntu, Debian, Fedora, Arch Linux, and Valve SteamOS / Steam Deck.</p>
+
+    <div class="callout callout-info">
+      <h4>&#9432; Cross-Platform Standalone Export</h4>
+      <p>You can export a standalone Linux game while running the Tessera Editor on <strong>Windows</strong> or <strong>Linux</strong>! The exporter leverages Godot-style precompiled export templates (<code>templates/linux/TesseraGameRunner.x86_64</code>) to generate turnkey packages with POSIX launchers and Steam Deck shortcuts.</p>
+    </div>
+
+    <h2>1. Native Linux Engine Compilation</h2>
+    <p>Tessera compiles natively on 64-bit Linux with GCC 11+ or Clang 14+ (C++20 standard), Vulkan 1.2, and X11/XCB or Wayland.</p>
+
+    <h3>1.1 Install System Dependencies</h3>
+    <p>Install the required C++ compilers, CMake, Vulkan developer libraries, and X11 windowing packages:</p>
+
+    <h4>Ubuntu / Debian / Linux Mint:</h4>
+    <pre><code>sudo apt update && sudo apt install -y \
+    build-essential cmake git curl zip unzip tar pkg-config \
+    autoconf autoconf-archive automake libtool libtool-bin \
+    libvulkan1 libvulkan-dev vulkan-tools mesa-vulkan-drivers \
+    libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev</code></pre>
+
+    <h4>Fedora / Red Hat / CentOS:</h4>
+    <pre><code>sudo dnf groupinstall "Development Tools"
+sudo dnf install -y cmake git vulkan-loader-devel vulkan-tools \
+    mesa-vulkan-drivers libX11-devel libXrandr-devel libXinerama-devel \
+    libXcursor-devel libXi-devel autoconf automake libtool</code></pre>
+
+    <h4>Arch Linux / Manjaro / SteamOS (Desktop Mode):</h4>
+    <pre><code>sudo pacman -S --needed base-devel cmake git vulkan-devel \
+    vulkan-tools vulkan-mesa-layers libx11 libxrandr libxinerama \
+    libxcursor libxi</code></pre>
+
+    <h3>1.2 Dependency Management with vcpkg</h3>
+    <p>Third-party libraries (GLFW, GLM, ImGui, ImGuizmo, Lua, Jolt Physics, and OpenFBX) are managed cleanly via Microsoft <code>vcpkg</code>:</p>
+    <pre><code># Bootstrap vcpkg in your user directory if not already installed
+git clone https://github.com/microsoft/vcpkg.git ~/vcpkg
+~/vcpkg/bootstrap-vcpkg.sh
+
+# Install required Linux libraries
+~/vcpkg/vcpkg install \
+    glfw3:x64-linux \
+    glm:x64-linux \
+    imgui[docking-experimental]:x64-linux \
+    imguizmo:x64-linux \
+    lua:x64-linux \
+    joltphysics:x64-linux \
+    unofficial-openfbx:x64-linux</code></pre>
+
+    <div class="callout callout-warning">
+      <h4>&#9888; Note on Header-Only STB</h4>
+      <p>Header-only image/font libraries are isolated under <code>thirdparty/stb/</code> in the repository, avoiding conflicts with system STB packages.</p>
+    </div>
+
+    <h3>1.3 Configuring and Building</h3>
+    <p>Run CMake targeting an isolated build folder (e.g., <code>build-linux</code>):</p>
+    <pre><code># 1. Configure with the vcpkg toolchain
+cmake -B build-linux -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=~/vcpkg/scripts/buildsystems/vcpkg.cmake
+
+# 2. Build the full editor executable
+cmake --build build-linux --target Tessera -j$(nproc)
+
+# 3. Build and run the 88-test offline test suite
+cmake --build build-linux --target EngineTestSuite -j$(nproc)
+./build-linux/EngineTestSuite</code></pre>
+
+    <div class="callout callout-info">
+      <h4>System Vulkan Loader Integration</h4>
+      <p>The engine's <code>CMakeLists.txt</code> automatically prioritizes Ubuntu/Debian's official system Vulkan loader (<code>/usr/lib/x86_64-linux-gnu/libvulkan.so</code>) over vcpkg's headless loader. This guarantees that <code>VK_KHR_xcb_surface</code>, <code>VK_KHR_xlib_surface</code>, and <code>VK_KHR_wayland_surface</code> windowing extensions are active for GLFW window presentation.</p>
+    </div>
+
+    <h3>1.4 Running Inside Virtual Machines (VMware / VirtualBox)</h3>
+    <p>Virtual machine hypervisors do not expose native hardware Vulkan drivers. Mesa provides <strong>Lavapipe</strong> (<code>lvp</code>), a high-performance CPU software rasterizer capable of executing the full Vulkan 1.2 pipeline:</p>
+    <pre><code>VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json ./build-linux/Tessera --scene scenes/main.scene</code></pre>
+
+    ---
+
+    <h2>2. Generating Export Templates</h2>
+    <p>Similar to Godot Engine, Tessera utilizes precompiled export templates. To generate the standalone Linux binary template:</p>
+    <pre><code>cmake --build build-linux --target linux_export_template</code></pre>
+    <p>This automatically copies the compiled binary to <code>templates/linux/TesseraGameRunner.x86_64</code>. Whenever a game is exported, this binary is bundled into the distribution package and renamed to <code>&lt;GameTitle&gt;.x86_64</code>.</p>
+
+    ---
+
+    <h2>3. Exporting a Standalone Linux Game</h2>
+
+    <h3>3.1 Using the Editor Modal (<kbd>Ctrl+B</kbd>)</h3>
+    <ol>
+      <li>Open your project or scene in the Tessera Editor.</li>
+      <li>Press <kbd>Ctrl</kbd> + <kbd>B</kbd> or choose <strong>File &rarr; Export Standalone Game...</strong></li>
+      <li>Set <strong>Target Platform</strong> to <code>Linux Standalone (x86_64 / SteamOS)</code>.</li>
+      <li>Specify your <strong>Game Title</strong> (e.g., <code>MyGame</code>) and <strong>Destination Folder</strong>.</li>
+      <li>Select your target display resolution:
+        <ul>
+          <li><strong>Steam Deck Native (1280x800 16:10)</strong></li>
+          <li><strong>720p HD (1280x720)</strong></li>
+          <li><strong>1080p Full HD (1920x1080)</strong></li>
+          <li><strong>1440p QHD (2560x1440)</strong></li>
+          <li><strong>4K Ultra HD (3840x2160)</strong></li>
+          <li><strong>Fullscreen Toggle</strong></li>
+        </ul>
+      </li>
+      <li>(Optional) Toggle <strong>Dual Proton / Wine Runner</strong> to bundle Windows player fallback binaries for hybrid testing.</li>
+      <li>Click <strong>Export Game</strong>.</li>
+    </ol>
+
+    <h3>3.2 Anatomy of an Exported Linux Package</h3>
+    <pre><code>exports/MyGame_Linux/
+&#9500;&#9472;&#9472; MyGame.x86_64       # Native Linux 64-bit ELF game binary (from template)
+&#9500;&#9472;&#9472; launch.sh                 # Turnkey POSIX shell script (auto-chmod, library path)
+&#9500;&#9472;&#9472; MyGame.desktop      # FreeDesktop application & Steam shortcut
+&#9500;&#9472;&#9472; game.agconfig             # Game boot manifest (title, resolution, starting scene)
+&#9500;&#9472;&#9472; input_bindings.json       # Gamepad, keyboard & mouse action bindings
+&#9500;&#9472;&#9472; README_LINUX.txt          # Turnkey player instructions & Steam Deck setup
+&#9500;&#9472;&#9472; shaders/                  # Precompiled SPIR-V Vulkan shaders (*.spv)
+&#9500;&#9472;&#9472; scenes/                   # Packaged scene hierarchy files (*.scene)
+&#9500;&#9472;&#9472; assets/                   # Textures, 3D models, audio, fonts
+&#9492;&#9472;&#9472; scripts/                  # Lua 5.4 gameplay scripts (*.lua)</code></pre>
+
+    <h3>3.3 Playing on Desktop Linux</h3>
+    <pre><code>cd exports/MyGame_Linux
+chmod +x launch.sh
+./launch.sh</code></pre>
+
+    <h3>3.4 Playing on Valve Steam Deck & SteamOS</h3>
+    <ol>
+      <li>Switch to <strong>Desktop Mode</strong> on your Steam Deck (or open the desktop Steam client).</li>
+      <li>In the top menu, click <strong>Games &rarr; Add a Non-Steam Game to My Library...</strong></li>
+      <li>Click <strong>Browse...</strong> and select <code>launch.sh</code> or <code>MyGame.x86_64</code> inside your exported game folder.</li>
+      <li>Click <strong>Add Selected Programs</strong>.</li>
+      <li>Switch back to <strong>Gaming Mode</strong>. Your game is now directly launchable with full gamepad mapping, suspend/resume, and MangoHud performance overlays!</li>
+    </ol>
+
+    <div class="pagination">
+      <a href="engine-architecture.html" class="pagination-card prev">
+        <span class="pagination-label">&larr; Previous</span>
+        <span class="pagination-title">Engine Architecture & Guide</span>
+      </a>
+      <a href="index.html" class="pagination-card next">
+        <span class="pagination-label">Next &rarr;</span>
+        <span class="pagination-title">Overview & Quickstart</span>
+      </a>
+    </div>
+  </main>
+</body>
+</html>
+

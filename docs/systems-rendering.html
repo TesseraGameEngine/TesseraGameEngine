@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+  <meta charset="UTF-8">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Rendering, PBR & LOD - Tessera Engine Documentation</title>
+
+  <link rel="stylesheet" href="style.css">
+
+  <script src="nav.js" defer></script>
+
+</head>
+
+<body>
+
+  <aside id="sidebar">
+
+    <div class="sidebar-header">
+
+      <h2>&#9881; Tessera Engine</h2>
+
+      <p>Official Developer Documentation</p>
+
+    </div>
+
+    <div class="search-box">
+
+      <input type="text" id="doc-search" placeholder="Filter documentation..." autocomplete="off">
+
+    </div>
+
+    <div class="sidebar-nav">
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Getting Started</div>
+
+    <a class="nav-item" href="index.html">Overview & Quickstart</a>
+
+  </div>
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Node Reference</div>
+
+    <a class="nav-item" href="nodes-3d.html">3D Nodes & Entities</a>
+
+    <a class="nav-item" href="nodes-ui.html">2D UI Component Nodes</a>
+
+  </div>
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Core Systems</div>
+
+    <a class="nav-item active" href="systems-rendering.html">Rendering, PBR & LOD</a>
+
+    <a class="nav-item" href="systems-animation.html">Animation, Armatures & IK</a>
+
+    <a class="nav-item" href="systems-physics.html">Physics & Ragdolls</a>
+
+    <a class="nav-item" href="systems-audio.html">Audio Engine & Mixer</a>
+
+    <a class="nav-item" href="systems-navigation.html">Navigation & AI Patrol</a>
+
+    <a class="nav-item" href="systems-networking.html">Multiplayer & Authority</a>
+
+    <a class="nav-item" href="systems-scripting.html">Lua Scripting API</a>
+
+  </div>
+
+  <div class="nav-group">
+
+    <div class="nav-group-title">Editor Reference</div>
+
+    <a class="nav-item" href="editor-menus.html">Main Menus & Shortcuts</a>
+
+    <a class="nav-item" href="editor-windows.html">Windows, Inspector & Modals</a>
+
+  </div>
+
+</div>
+
+
+
+  </aside>
+
+
+
+  <main id="main-content">
+
+    <div class="breadcrumbs">
+
+      <a href="index.html">Docs</a> &gt; <span>Core Systems</span> &gt; <span>Rendering, PBR & LOD</span>
+
+    </div>
+
+
+
+    
+
+    <h1>Rendering Pipeline, PBR Materials & LOD</h1>
+
+    <p class="lead">Tessera renders with a Forward+ renderer on a Vulkan 1.2 backend (<code>src/Renderer/</code>): physically based materials with multi-scattering GGX and Parallax Occlusion Mapping (POM), clustered lights including LTC Area Lights, cascaded and point-light shadows with screen-space contact shadows, image-based lighting with reflection probes, baked GI and <strong>Real-Time Voxel Global Illumination (VXGI)</strong>, a full HDR post-processing chain with GTAO + Specular Occlusion, GPU skinning and instancing, multi-material glTF/FBX submeshes, and in-engine Quadric Error Metric (QEM) Level of Detail (LOD) generation. The full architecture and development history of each feature is in <code>README.md</code> in the repository root.</p>
+
+
+
+    <h2>1. The Vulkan Rendering Architecture</h2>
+
+    <ul>
+
+      <li><strong>Vulkan 1.2 with render passes</strong>: classic <code>VkRenderPass</code> / framebuffer objects (not dynamic rendering).</li>
+
+      <li><strong>Two frames in flight</strong>: uniform, instance, cluster and light buffers have one region per frame and per view, selected with dynamic offsets, so the CPU never overwrites data the GPU is still reading.</li>
+
+      <li><strong>One HDR target per view</strong>: the editor viewport, the Game window / Camera Preview, up to two planar mirrors, and reflection-probe captures each render into their own 16-bit float target. Every view renders at the size it is displayed at.</li>
+
+      <li><strong>Polygon modes</strong>: Solid, Wireframe and Wire+Shaded.</li>
+
+    </ul>
+
+    <h3>Frame order (per view)</h3>
+
+    <ol>
+
+      <li>GPU skinning (compute shader <code>skinning.comp</code>)</li>
+
+      <li>Depth / normal / motion-vector prepass, then SSAO</li>
+
+      <li>Shadow maps: 4 sun cascades plus up to 4 shadowed point or spot lights</li>
+
+      <li>Sky (procedural or HDRI)</li>
+
+      <li>Opaque meshes: clustered lights, reflection probes, baked GI, volumetric fog</li>
+
+      <li>Scene-colour copy, then transparent meshes (sorted back to front, with refraction)</li>
+
+      <li>Screen-space reflections, then TAA or FXAA</li>
+
+      <li>Bloom, auto-exposure, depth of field, motion blur, lens flare</li>
+
+      <li>Composite: tone mapping, LUT and colour grading, vignette, grain, chromatic aberration</li>
+
+      <li>Editor overlay: grid and axes, drawn unjittered after post-processing so they stay sharp and never receive shadows</li>
+
+    </ol>
+
+
+
+    <h2>2. Physically Based Rendering (PBR) Materials</h2>
+
+    <p>Surface illumination follows the microfacet <strong>Cook-Torrance BRDF</strong> formulation:</p>
+
+    <pre><code>f(l, v) = (D(h) * G(l, v) * F(v, h)) / (4 * (n &middot; l) * (n &middot; v))</code></pre>
+
+    <ul>
+
+      <li><strong>D(h) - GGX Normal Distribution</strong>: Models surface microfacet roughness orientation distribution.</li>
+
+      <li><strong>G(l, v) - Smith Geometric Shadowing</strong>: Accounts for microfacet self-shadowing and masking.</li>
+
+      <li><strong>F(v, h) - Schlick Fresnel Approximation</strong>: Calculates reflectance change with viewing angle.</li>
+
+    </ul>
+
+
+
+    <h3>Supported PBR Texture Map Slots</h3>
+
+    <table>
+
+      <thead><tr><th>Texture Map Slot</th><th>Color Space</th><th>Channel Allocation</th><th>Description</th></tr></thead>
+
+      <tbody>
+
+        <tr><td><strong>Albedo / Diffuse</strong></td><td>sRGB</td><td>RGB: Base Color, A: Opacity</td><td>Surface albedo color unaffected by lighting.</td></tr>
+
+        <tr><td><strong>Normal Map</strong></td><td>Linear</td><td>RGB: Tangent Space (X, Y, Z)</td><td>Surface micro-relief perturbations using Gram-Schmidt orthogonalized tangent bases.</td></tr>
+
+        <tr><td><strong>Metallic Map</strong></td><td>Linear</td><td>R: Metallic (0 = Dielectric, 1 = Metal)</td><td>Controls surface electrical conductivity and specular reflectance.</td></tr>
+
+        <tr><td><strong>Roughness Map</strong></td><td>Linear</td><td>R: Roughness (0 = Smooth, 1 = Rough)</td><td>Controls microfacet scatter spread and specular highlight sharpness.</td></tr>
+
+        <tr><td><strong>Ambient Occlusion (AO)</strong></td><td>Linear</td><td>R: Occlusion Factor (0 to 1)</td><td>Precomputed ambient shadowing in crevices, scaled by the <code>AO Strength</code> slider.</td></tr>
+
+        <tr><td><strong>Emissive / Glow</strong></td><td>sRGB</td><td>RGB: Glow Color, HDR Multiplier</td><td>Self-illumination map amplified by <code>Emissive Intensity (HDR)</code> (0.0 to 50.0).</td></tr>
+
+        <tr><td><strong>Height / Parallax (POM)</strong></td><td>Linear</td><td>R: Surface Depth Displacements</td><td>View-adaptive 8&ndash;24 layer GPU Parallax Occlusion Mapping with linear Secant intersection refinement and 4-step tangent-space horizon self-shadowing, scaled by <code>Height Scale</code>.</td></tr>
+
+      </tbody>
+
+    </table>
+
+
+
+    <p>Colour maps are stored block-compressed (BC1/BC3, or BC7 with <code>--texture-compression=high</code>) and normal maps as BC5; compressed copies are cached in <code>cache/textures/</code>. </p>
+
+
+
+    <h3>Other material options (Inspector &rarr; Material)</h3>
+
+    <ul>
+
+      <li><strong>Alpha Cutoff</strong> and <strong>Double-Sided</strong> for foliage, fences and hair cards. Alpha below 1 without a cutoff makes the material transparent (glass, with <em>Refraction (IOR)</em>).</li>
+
+      <li><strong>Use Vertex Colours</strong>: multiplies glTF <code>COLOR_0</code> / FBX vertex colours into albedo.</li>
+
+      <li><strong>Detail maps</strong>: detail albedo and normal with <em>Detail Tiling</em> and <em>Detail Strength</em>.</li>
+
+      <li><strong>Triplanar Mapping</strong>: projects textures along the world axes for meshes without good UVs.</li>
+
+      <li><strong>Clear Coat</strong> and <strong>Clear Coat Roughness</strong>: a glossy layer on top (car paint, varnish, wet eyes).</li>
+
+      <li><strong>Mirror</strong>: turns a flat mesh into a planar mirror.</li>
+
+    </ul>
+
+
+
+    <h3>Material models</h3>
+
+    <table>
+
+      <thead><tr><th>Model</th><th>Use for</th><th>Settings</th></tr></thead>
+
+      <tbody>
+
+        <tr><td><strong>Standard</strong></td><td>Most surfaces</td><td>&mdash;</td></tr>
+
+        <tr><td><strong>Skin</strong></td><td>Faces and hands</td><td><em>Scatter Colour</em>, <em>Scatter Strength</em>, <em>Translucency</em>. An approximation of subsurface scattering (wrap lighting and backlit glow), not a screen-space blur.</td></tr>
+
+        <tr><td><strong>Hair</strong></td><td>Alpha-cutout hair cards with strands running along V</td><td><em>Highlight Tint</em>, <em>Highlight Shift</em> (Kajiya-Kay highlights)</td></tr>
+
+        <tr><td><strong>Eye</strong></td><td>Eyeballs whose UVs centre the iris at (0.5, 0.5)</td><td><em>Cornea IOR</em>, <em>Iris Radius (UV)</em>, <em>Iris Depth (UV)</em></td></tr>
+
+      </tbody>
+
+    </table>
+
+
+
+    <h2>3. Lights, Shadows & Global Illumination</h2>
+
+    <ul>
+
+      <li><strong>Clustered lighting &amp; Area Lights (LTC)</strong>: the view is split into a 16&times;9&times;24 grid and each cluster lists the lights that reach it. Up to 1,024 directional, point, spot, and rectangular <strong>Area Lights</strong> (<code>Area (Rect)</code>, evaluated via Heitz et al.'s Linearly Transformed Cosines / LTC with configurable width, height, and two-sided emission) per view.</li>
+      <li><strong>Temporal Upscaling &amp; Dynamic Resolution Scaling (DLSS 3.5, AMD FSR 3.1, Intel XeSS)</strong>: 
+Hardware-accelerated temporal upscaling pipeline with multi-frame history accumulation, high-precision motion vector reprojection, linear depth evaluation, and reactive mask generation. Supports Quality (1.5x), Balanced (1.7x), Performance (2.0x), and Ultra Performance (3.0x) scaling presets with RCAS (Robust Contrast-Adaptive Sharpening), delivering up to +300% GPU fillrate performance.</li>
+      <li><strong>Pre-Baked Pipeline State Cache (Zero Shader Stutter &amp; <code>VkPipelineCache</code>)</strong>: 
+Vulkan binary pipeline cache persistence (<code>cache/pipeline_cache.bin</code>). Compiles, pre-warms, and serializes graphics and compute pipelines directly to disk, completely eliminating runtime shader compilation micro-stutters during gameplay and scene streaming.</li>
+      <li><strong>Asynchronous World Partition &amp; DirectStorage Streaming</strong>: 
+Infinite spatial coordinate grid partitioning (<code>Streaming::WorldPartitionManager</code>) with multi-threaded priority queue I/O (<code>Streaming::DirectStorageQueue</code>). Dynamically attaches and detaches scene graph nodes and terrain chunks based on camera distance and 6-plane frustum visibility, with unbuffered fast-path reading and automatic memory budget enforcement for open-world games without loading screens.</li>
+      <li><strong>64-Bit Large World Coordinates &amp; Camera-Relative Rendering</strong>: 
+Double-precision 64-bit spatial coordinate system (<code>glm::dvec3</code>). Subtracts high-precision camera offsets on the CPU before uploading 32-bit matrices to GPU vertex stages, completely eliminating single-precision floating-point vertex jitter and polygon z-fighting at massive world distances (&gt; 100,000 meters).</li>
+      <li><strong>Meshlet GPU Virtualization (Nanite-Class Geometry &amp; <code>VK_EXT_mesh_shader</code>)</strong>: 
+Cross-platform cluster-based geometry virtualization. Geometry meshes are partitioned into compact <strong>meshlets</strong> (&le; 64 vertices and &le; 126 triangles) with micro-index buffers, local bounding spheres, and normal orientation cones:
+        <ul>
+          <li><strong>Cluster Frustum Culling</strong>: Spherical bounds tested against camera frustum planes to discard off-screen meshlets prior to rasterization.</li>
+          <li><strong>Cluster Backface Cone Culling</strong>: Normal orientation cones (apex, axis, cutoff) tested against view vectors to cull entire backfacing clusters, discarding 40&ndash;60% of primitives before rasterization.</li>
+          <li><strong>Mesh Shader Pipeline</strong>: Direct execution through Vulkan <code>VK_EXT_mesh_shader</code> (<code>vkCmdDrawMeshTasksEXT</code>) with seamless fallback to cluster culling.</li>
+        </ul>
+      </li>
+      <li><strong>Hardware Ray Tracing (Vulkan KHR &amp; Apple Metal MPS)</strong>: Cross-platform decoupled hardware ray tracing architecture supporting <code>VK_KHR_acceleration_structure</code> + <code>VK_KHR_ray_query</code> on Windows/Linux and Apple Metal <code>MTLAccelerationStructure</code> + <code>MPSRayIntersector</code> on macOS/iOS. Builds Bottom-Level Acceleration Structures (BLAS) for geometry meshes and Top-Level Acceleration Structures (TLAS) for scene instances:
+        <ul>
+          <li><strong>RTAO (Ray-Traced Ambient Occlusion)</strong>: True physical geometric ray-traced occlusion, eliminating screen-edge haloing and SSR occlusion gaps.</li>
+          <li><strong>RTR (Ray-Traced Reflections)</strong>: Full-scene glossy and mirror reflections that capture off-screen geometry with multi-bounce ray queries.</li>
+          <li><strong>RTS (Ray-Traced Shadows)</strong>: Distance-based penumbra softening and contact-hardening shadows without cascade boundary seams.</li>
+          <li><strong>RTGI (Ray-Traced Global Illumination)</strong>: Multi-bounce diffuse radiance gathered directly from scene BVHs.</li>
+        </ul>
+      </li>
+      <li><strong>Real-Time Voxel Global Illumination (VXGI)</strong>: a dynamic camera-centred <code>64&sup3;</code> RGBA16F 3D radiance volume with a 6-level mip pyramid (descriptor binding 40) voxelizes scene geometry and injects direct lighting, shadows, and emissive surfaces in real time. <code>shader.frag</code> traces 5 hemisphere cones for diffuse colour bleeding and voxel AO plus a roughness-driven specular cone for off-screen glossy reflections. Toggle and tune it in <strong>Rendering &rarr; Baked &amp; Dynamic Lighting (GI)</strong> or the top <strong>Render</strong> menu.</li>
+
+      <li><strong>Shadows &amp; Contact Shadows</strong>: 4 cascades for the sun (sized by <em>Shadow Distance</em>), plus up to 4 shadowed point or spot lights; soft PCF edges, alpha-cutout casters, and 8-step screen-space contact shadows that seal micro-contact gaps. Turn off <em>Cast Shadows</em> per mesh.</li>
+
+      <li><strong>Sky and HDRI</strong>: a procedural sky that follows the first directional light, or a loaded <code>.hdr</code> environment, lights the scene (ambient and reflections).</li>
+
+      <li><strong>Time of day, moon and clouds</strong> (Rendering &rarr; Procedural Sky): <em>Use Clock</em> moves the sun with the time and drives the first directional light (sunlight by day, moonlight by night); <em>Day Length</em> runs it in Play. The moon shows its phase, the stars turn, and a cloud layer (<em>Coverage</em>, <em>Opacity</em>, wind) drifts over, casting shadows on the ground. Scripts use the <code>Sky</code> table.</li>
+
+      <li><strong>Terrain, foliage and decals</strong>: paint up to four texture layers onto a terrain (or auto paint them from slope and height), scatter grass, flowers, bushes, trees, pines, rocks or models with the foliage brush (they sway in the wind, cast shadows and can be solid), and project decals onto anything (paint, stain or glow). Terrains are solid ground in Play.</li>
+
+      <li><strong>Weather</strong> (Rendering &rarr; Weather): presets (Clear, Cloudy, Overcast, Rain, Storm, Snow) blend the clouds, wind, fog, rain, snow and lightning. Rain and snow fall around the camera and stop at roofs; drops splash where they land; rain wets surfaces and fills puddles with raindrop rings (on the ocean too), snow settles on what faces up and banks against walls (<em>Snow Depth</em>); storms flash with lightning bolts and thunder follows. Under a roof everything stays dry. Scripts use the <code>Weather</code> table.</li>
+
+      <li><strong>Reflection probes</strong>: tick <em>Reflection Probe</em> on a node (up to 4 per scene). <em>Box Projection</em> lines reflections up with the room's walls. Keep probes outside solid objects.</li>
+
+      <li><strong>Baked lighting</strong>: lightmaps store sky light and bounce light per texel on static meshes (<em>Lightmap Static</em>), and a grid of light probes stores bounced light as L1 spherical harmonics for everything else, moving objects included. Direct light and shadows stay real time. See below.</li>
+
+    </ul>
+
+
+
+    <h3>Baking lighting</h3>
+
+    <ol>
+
+      <li>Optional: tick <em>GI Volume (Baked Lighting)</em> on a node and set <em>GI Volume Size</em>. Without one, the bake covers the whole scene.</li>
+
+      <li>Open <strong>Window &rarr; Rendering, GI &amp; Post-Processing &rarr; Baked Lighting (GI)</strong>, set <em>Probe Spacing (m)</em> and <em>Bounces</em> (1&ndash;4), and click <strong>Bake Lighting</strong>.</li>
+
+      <li>With <em>Bake Lightmaps</em> ticked (default), meshes marked <em>Lightmap Static</em> (Inspector &rarr; Material, on by default) get lightmaps first. <em>Lightmap Density</em> sets texels per metre, <em>Lightmap Quality</em> rays per texel. Untick <em>Lightmap Static</em> on anything that moves.</li>
+
+      <li>The results are saved next to the scene as <code>&lt;scene&gt;.lightmap</code> and <code>&lt;scene&gt;.gi</code>. Save the scene to keep the links.</li>
+
+      <li>Use <em>Use Baked Lighting</em>, <em>Baked Intensity</em> and <strong>Clear Bake</strong> to adjust or remove it. Re-bake after moving walls, lights or large objects.</li>
+
+    </ol>
+
+    <div class="callout callout-info">
+
+      <div class="callout-title">&#8505; Good to know</div>
+
+      <p>Lightmaps are made by a CPU path tracer that runs in the background; each object gets its own lightmap layout, so a wall made from a stretched cube gets enough texels. Terrain blocks and bounces light but isn't lightmapped itself. For real-time dynamic bounce light from moving lights and objects without baking, enable <strong>Real-Time Voxel GI (VXGI)</strong> in the same panel or from the top <strong>Render</strong> menu. Offline baking can also be run with <code>--bake-lighting</code> on the command line.</p>
+
+    </div>
+
+
+
+    <h2>4. Performance Features</h2>
+
+    <ul>
+
+      <li><strong>Frustum culling</strong> for all meshes, plus opt-in <strong>Occlusion Culling</strong> (Rendering window &rarr; Performance): hardware queries skip objects hidden behind others. Results are two frames old, so culling pauses during fast camera moves.</li>
+
+      <li><strong>Automatic instancing</strong>: identical meshes with identical materials are drawn in one call, in every pass.</li>
+
+      <li><strong>GPU skinning</strong>: characters are deformed in a compute shader. Last frame's pose is kept so TAA and motion blur follow moving limbs.</li>
+
+      <li><strong>Texture compression</strong>: automatic, cached in <code>cache/textures/</code>. <code>--texture-compression=off|standard|high</code> changes it.</li>
+
+    </ul>
+
+
+
+    <h2>5. Level of Detail (LOD) & Mesh Decimation</h2>
+
+    <p>Tessera features a two-phase Level of Detail system:</p>
+
+
+
+    <h3>Phase 1: Distance-Based LOD Switching & Draw Distance Culling</h3>
+
+    <ul>
+
+      <li><strong>Real-Time Camera Distance Tracking</strong>: Computes Euclidean distance <code>glm::distance(cameraPos, nodeWorldPos)</code> every frame.</li>
+
+      <li><strong>Distance Tiers</strong>: Switches active mesh key dynamically (e.g. <code>LOD0 &rarr; LOD1 &rarr; LOD2 &rarr; LOD3</code>).</li>
+
+      <li><strong>Max Draw Distance Culling</strong>: Meshes farther than <code>maxDrawDistance</code> are completely culled from the draw loop, saving CPU draw call submission and GPU rasterization bandwidth.</li>
+
+      <li><strong>LOD Preview Override</strong>: Dropdown in the Inspector allowing artists to force preview <code>Force LOD0</code>, <code>Force LOD1</code>, <code>Force LOD2</code>, or <code>Force LOD3</code> in the editor viewport regardless of camera distance.</li>
+
+    </ul>
+
+
+
+    <h3>Phase 2: In-Engine Automatic QEM Mesh Decimation</h3>
+
+    <p>Located directly in the Inspector (<code>src/Scene/MeshSimplifier.cpp</code>). Clicking <strong>Auto-Generate 3-Tier LODs (50% / 25% / 10%)</strong> simplifies your mesh without external software (like Blender):</p>
+
+    <ul>
+
+      <li><strong>Quadric Error Metric (QEM)</strong>: Edge-collapse decimation calculating symmetric 4x4 quadric distance matrices per vertex.</li>
+
+      <li><strong>Normal-Flip Prevention</strong>: Verifies face normal inversion before collapsing any edge to avoid geometric twisting.</li>
+
+      <li><strong>Boundary & UV Preservation</strong>: Heavily penalizes collapses along texture UV seams and open geometric edges.</li>
+
+      <li><strong>Automatic Tier Setup</strong>:
+
+        <ul>
+
+          <li><strong>LOD1</strong>: Decimated to 50% triangle count (switches at 25m).</li>
+
+          <li><strong>LOD2</strong>: Decimated to 25% triangle count (switches at 50m).</li>
+
+          <li><strong>LOD3</strong>: Decimated to 10% triangle count (switches at 80m).</li>
+
+        </ul>
+
+      </li>
+
+    </ul>
+
+
+
+    <h2>6. Post-Processing Effects Pipeline</h2>
+
+    <p>Accessible via <kbd>Shift+R</kbd> or <strong>Window &rarr; Rendering, GI & Post-Processing</strong>:</p>
+
+    <ul>
+
+      <li><strong>HDR Bloom</strong>: up to six downsample/upsample levels from the 16-bit scene image.</li>
+
+      <li><strong>Exposure</strong>: manual <em>HDR Exposure</em> plus automatic eye adaptation.</li>
+
+      <li><strong>Tone mapping</strong>: ACES filmic (or Reinhard).</li>
+
+      <li><strong>Anti-Aliasing</strong>: Off, FXAA or TAA (Temporal), chosen in <em>HDR &amp; Tonemapping</em>.</li>
+
+      <li><strong>Ground-Truth Ambient Occlusion (GTAO) &amp; Specular Occlusion</strong>: slice-based horizon search from the depth/normal prepass with cosine-weighted visibility integration, depth-aware blur, and Lagarde directional specular occlusion to prevent glowing rims in dark crevices.</li>
+
+      <li><strong>Screen-Space Reflections (SSR)</strong>: ray-marched against the depth buffer using per-texel roughness and metallic texture maps; falls back to probes, VXGI, HDRI or sky off-screen.</li>
+
+      <li><strong>Volumetric Light Scattering (God Rays)</strong> and <em>Volumetric Density</em>: ray-marched height fog with shadowed light shafts from the sun and local lights.</li>
+
+      <li><strong>Depth of field</strong>, <strong>motion blur</strong> (camera and per-object), <strong>lens flare</strong>.</li>
+
+      <li><strong>Colour grading</strong>: contrast, saturation, temperature and tint, plus a <em>Colour LUT</em> (<code>.cube</code> file or strip image) with <em>LUT Strength</em>.</li>
+
+      <li><strong>Vignette</strong>, <strong>film grain</strong> and <strong>Chromatic Aberration</strong>.</li>
+
+    </ul>
+
+
+
+    <h2>7. Visual Shader Graph Editor</h2>
+
+    <p>Accessible via <kbd>Shift+G</kbd> or <strong>Window &rarr; Visual Shader Graph Editor</strong>. Provides node-based material authoring:</p>
+
+    <ul>
+
+      <li><strong>Nodes</strong>: Constant, Vector, Texture Sampler, UV Tiling & Offset, Add, Multiply, Lerp, Dot, Cross, Sine, Fresnel.</li>
+
+      <li><strong>Master PBR Node</strong>: Pins for Base Color, Normal, Metallic, Roughness, AO, Emissive, and Alpha.</li>
+
+      <li><strong>Save / Save As... / Load...</strong> store graphs as files; <strong>Apply to Selected Object</strong> assigns the graph to the selected mesh.</li>
+
+      <li><strong>Runs in game</strong>: the first time a graph is drawn, the engine generates GLSL, compiles it with <code>glslc</code> from the Vulkan SDK, and caches the SPIR-V in <code>cache/shadergraphs/</code>. Graph materials get the same lights, shadows, probes and fog as built-in materials.</li>
+
+    </ul>
+
+
+
+    <h2>8. Particles &amp; VFX</h2>
+
+    <p>Particles are drawn in the transparent pass, one instanced draw per emitter (<code>VulkanPipeline::DrawParticles</code>, <code>shaders/particle.vert/.frag</code>). Each instance is a quad facing the camera: a sprite, or a segment of a trail or ribbon.</p>
+
+    <ul>
+
+      <li><strong>Blending</strong>: <em>Additive Glow</em> adds light (fire, sparks, magic); <em>Alpha Blend</em> covers what's behind (smoke, dust, rain), sorted back to front and lit by the sun (with its shadow and cloud shadows), sky and point and spot lights, with fog; <em>Self Glow</em> lights a sheet's bright parts (the fire in an explosion). Particles are depth-tested but don't write depth.</li>
+
+      <li><strong>Flipbooks</strong>: any texture as a sprite sheet (columns, rows, frames), played over each particle's life or at a fixed rate, from a random frame, cross-fading frames. Built-in animated sheets (fire, smoke, explosion, sparks: 8 x 8 frames of 128 px) are generated on a worker thread the first time an emitter uses one.</li>
+
+      <li><strong>Soft particles</strong>: sprites fade where they come close to the scene behind them (the prepass depth, which runs whenever a scene has soft particles) and near the camera.</li>
+
+      <li><strong>Shape</strong>: sprites turn by their rotation or stretch along their motion; trails (per particle, fading and tapering) and ribbons (through the particles in birth order) are strips of segments turned to face the camera along their length.</li>
+
+      <li><strong>Mesh particles</strong>: spheres or cubes, instanced from the same data (<code>particle_mesh.vert/.frag</code>), lit like rough surfaces and tumbling as they spin.</li>
+
+      <li><strong>Heat haze</strong> (<em>Distortion</em>): after everything else in the view, the scene is copied again and haze sprites lay a rippling, bent copy of it over itself.</li>
+
+      <li><strong>Collision</strong> (<code>ParticleColliders</code>): a ground plane, or the scene's meshes (boxes and spheres), terrain heightfields and water (oceans and liquids), swept along each step; bounce and friction, life lost per hit, die on hit, spawn on hit. The ocean's spray droplets use it too.</li>
+
+      <li><strong>GPU simulation</strong> (<code>VulkanParticleSim</code>, <code>shaders/particle_sim.comp</code>): emitters in GPU mode keep their particles on the GPU (up to 1,000,000). Four compute stages per frame simulate (forces, collision, trail points), spawn (into a ring of slots, plus hit spawns), advance the ring and write the quads that are drawn. Only the number alive and the hits come back to the CPU.</li>
+
+    </ul>
+
+    
+
+
+
+    <h2>8b. GPU Profiler &amp; Material Previews</h2>
+
+    <ul>
+
+      <li><strong>GPU Profiler</strong> (<code>VulkanGpuProfiler</code>): timestamp queries around every pass, nested (per view: shadows, probes, mirrors, prepass and SSAO, opaque, transparents and VFX, and each post effect), read back two frames later so it never stalls. Shown in Window &rarr; GPU Profiler and the Profiler's GPU tab; <code>--gpu-profile</code> logs it on exit. Renderer code times a block with <code>GpuProfileScope scope(cmd, "Name")</code>.</li>
+
+      <li><strong>Material previews</strong>: the object with a node's material rendered in a small studio scene (sky, key and rim lights) on its own view slot into a shared 256&times;256 target, then copied into a cached image per material for the Inspector and file browser.</li>
+
+    </ul>
+
+
+
+    <h2>9. Liquids &amp; Pouring</h2>
+
+    <ul>
+
+      <li><strong>Liquid Fill</strong> (Inspector &rarr; Material): a mesh inside a container is cut off at <em>Fill</em>, shows a flat top in <em>Surface Colour</em>, and sloshes (<em>Slosh</em>) when the container moves. Use a mesh slightly smaller than the glass.</li>
+
+      <li><strong>Pour Spout</strong> (Scene &rarr; Add Entity): a child of a jug at its lip, facing out of the opening. Tilting the jug past <em>Start Angle</em> pours a stream that arcs, narrows as it falls, splashes where it lands, fills the liquid it lands in and drains the <em>Source Liquid</em> (Play mode).</li>
+
+      <li><strong>Water</strong> and <strong>Glass</strong> presets in the Material section set see-through materials in one click.</li>
+
+      <li>The level keeps the true volume however a container is tipped; <em>Colour Depth</em> makes thicker liquid look deeper; streams send ripples across the surface. A spout with a <em>Source Liquid</em> pours once that liquid reaches it: put it on the rim.</li>
+
+      <li><strong>Fluid Volume</strong> (Scene &rarr; Add Entity): real simulated fluid in a box (Position Based Fluids on the GPU, up to 262,144 particles). It starts as a layer or a column (dam break), flows around solid objects, floats rigid bodies, fills Liquid containers, takes in poured liquid, and is drawn as one smooth, refractive surface with foam and spray, each volume in its own colour. <em>Particle Spacing</em> trades detail for speed; <strong>Reset Fluid</strong> starts it again.</li>
+
+    </ul>
+
+
+
+    <h2>10. Ocean</h2>
+
+    <p><strong>Scene &rarr; Add Entity &rarr; Ocean</strong> adds a water surface at the node's height. It follows the camera across its whole <em>Size</em>, so the sea reaches the horizon.</p>
+
+    <ul>
+
+      <li><strong>Waves</strong>: eight Gerstner waves spread around the <em>Wind Direction</em> (<em>Wave Height</em>, <em>Wavelength</em>, <em>Choppiness</em>, <em>Wave Speed</em>), plus small ripples in the shading.</li>
+
+      <li><strong>Water colour</strong>: shallow water is see-through and tinted by <em>Shallow Tint</em>; it darkens to <em>Deep Colour</em> with depth (<em>Clarity</em> = how far you can see into it). What's under the water is refracted by the waves.</li>
+
+      <li><strong>Reflections</strong>: the sky, HDRI or a reflection probe, by Fresnel, with sun glitter from every light (<em>Surface Roughness</em>).</li>
+
+      <li><strong>Foam</strong>: <em>Whitecaps</em> on sharp wave crests, and <em>Shore Foam Width</em> along beaches and around rocks and objects.</li>
+
+    </ul>
+
+    <div class="callout callout-info">
+
+      <div class="callout-title">&#8505; Spray, floating and underwater</div>
+
+      <p>Rocks and posts standing in the water throw spray when a crest hits them. Dynamic bodies with <em>Floats on Water</em> (Inspector &rarr; Physics) bob on the waves in Play mode. Below the surface, the view fogs into the water's colour, the sky shows through the surface overhead, and caustics play across everything under the water. Shadows fall on the water, spray bounces off what it hits and breaking crests throw animated splashes; in Play the surf washes and waves crash on rocks (<em>Sound Volume</em>). A camera right at the waterline sees above and below at once.</p>
+
+    </div>
+
+
+
+    <div class="pagination">
+
+  <a href="nodes-ui.html" class="pagination-card prev">
+
+    <span class="pagination-label">&larr; Previous</span>
+
+    <span class="pagination-title">2D UI Component Nodes</span>
+
+  </a>
+
+  <a href="systems-animation.html" class="pagination-card next">
+
+    <span class="pagination-label">Next &rarr;</span>
+
+    <span class="pagination-title">Animation, Armatures & IK</span>
+
+  </a>
+
+</div>
+
+
+
+  </main>
+
+</body>
+
+</html>
+

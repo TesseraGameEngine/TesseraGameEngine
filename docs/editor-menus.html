@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Main Menu Bar & Shortcuts - Tessera Engine Documentation</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="nav.js" defer></script>
+</head>
+<body>
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <h2>&#9881; Tessera Engine</h2>
+      <p>Official Developer Documentation</p>
+    </div>
+    <div class="search-box">
+      <input type="text" id="doc-search" placeholder="Filter documentation..." autocomplete="off">
+    </div>
+    <div class="sidebar-nav">
+  <div class="nav-group">
+    <div class="nav-group-title">Getting Started</div>
+    <a class="nav-item" href="index.html">Overview & Quickstart</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-group-title">Node Reference</div>
+    <a class="nav-item" href="nodes-3d.html">3D Nodes & Entities</a>
+    <a class="nav-item" href="nodes-ui.html">2D UI Component Nodes</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-group-title">Core Systems</div>
+    <a class="nav-item" href="systems-rendering.html">Rendering, PBR & LOD</a>
+    <a class="nav-item" href="systems-animation.html">Animation, Armatures & IK</a>
+    <a class="nav-item" href="systems-physics.html">Physics & Ragdolls</a>
+    <a class="nav-item" href="systems-audio.html">Audio Engine & Mixer</a>
+    <a class="nav-item" href="systems-navigation.html">Navigation & AI Patrol</a>
+    <a class="nav-item" href="systems-networking.html">Multiplayer & Authority</a>
+    <a class="nav-item" href="systems-scripting.html">Lua Scripting API</a>
+  </div>
+  <div class="nav-group">
+    <div class="nav-group-title">Editor Reference</div>
+    <a class="nav-item active" href="editor-menus.html">Main Menus & Shortcuts</a>
+    <a class="nav-item" href="editor-windows.html">Windows, Inspector & Modals</a>
+  </div>
+</div>
+
+  </aside>
+
+  <main id="main-content">
+    <div class="breadcrumbs">
+      <a href="index.html">Docs</a> &gt; <span>Editor Reference</span> &gt; <span>Main Menu Bar & Shortcuts</span>
+    </div>
+
+    
+    <h1>Main Menu Bar & Keyboard Shortcuts</h1>
+    <p class="lead">The Tessera Engine top menu bar (<code>src/UI/EditorUI.cpp:578</code>) provides access to project management, scene authoring, entity spawning, viewport camera modes, transform gizmos, and specialized feature windows.</p>
+
+    <h2>1. Menu Bar Breakdown</h2>
+
+    <h3>1.1 File Menu</h3>
+    <table>
+      <thead><tr><th>Menu Item</th><th>Shortcut</th><th>Action & Description</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Project Launcher / Hub...</strong></td><td>&mdash;</td><td>Opens the startup Project Hub to switch between recent projects or create a new workspace.</td></tr>
+        <tr><td><strong>New Project...</strong></td><td><kbd>Ctrl+N</kbd></td><td>Opens the New Project dialog to initialize a new project workspace directory and <code>.scene</code> file.</td></tr>
+        <tr><td><strong>Open Project...</strong></td><td><kbd>Ctrl+O</kbd></td><td>Opens the Windows file browser to select and load an existing project configuration.</td></tr>
+        <tr><td><strong>Save Project</strong></td><td><kbd>Ctrl+S</kbd></td><td>Saves the project, flushing scene files, project configs, and newly imported asset paths to disk.</td></tr>
+        <tr><td><strong>Save Project As...</strong></td><td>&mdash;</td><td>Duplicates the entire project directory into a new destination folder.</td></tr>
+        <tr><td><strong>Recent Projects</strong></td><td>&mdash;</td><td>Cascading submenu displaying the last 10 opened project paths for instantaneous one-click loading.</td></tr>
+        <tr><td><strong>Export Game (Windows & Web)...</strong></td><td><kbd>Ctrl+B</kbd></td><td>Opens the Game Exporter modal to package a standalone Windows executable (.exe), Linux Standalone (x86_64 / SteamOS), or Web / HTML5 (WebGL2) game.</td></tr>
+        <tr><td><strong>Project Input & Key Bindings...</strong></td><td><kbd>Ctrl+K</kbd></td><td>Opens the Project Input Settings modal to rebind keyboard, mouse, and gamepad input axes.</td></tr>
+        <tr><td><strong>Import 3D Model...</strong></td><td>&mdash;</td><td>Opens a native file picker for external 3D models (<code>.fbx</code>, <code>.gltf</code>, <code>.glb</code>, <code>.obj</code>) and imports them into the scene.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>1.2 Edit Menu</h3>
+    <table>
+      <thead><tr><th>Menu Item</th><th>Shortcut</th><th>Action & Description</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Undo [Action Name]</strong></td><td><kbd>Ctrl+Z</kbd></td><td>Reverts the last scene modification recorded by <code>Core::UndoRedoManager</code> (e.g. transforms, additions, deletions).</td></tr>
+        <tr><td><strong>Redo [Action Name]</strong></td><td><kbd>Ctrl+Y</kbd> / <kbd>Ctrl+Shift+Z</kbd></td><td>Re-applies the next action in the undo history stack.</td></tr>
+        <tr><td><strong>Copy Selected Node</strong></td><td><kbd>Ctrl+C</kbd></td><td>Serializes the selected node and all its children into the internal clipboard buffer.</td></tr>
+        <tr><td><strong>Paste Node</strong></td><td><kbd>Ctrl+V</kbd></td><td>Instantiates the clipboard node tree into the active scene as a new duplicate.</td></tr>
+        <tr><td><strong>Duplicate Selected Node</strong></td><td><kbd>Ctrl+D</kbd></td><td>Duplicates the selected node in place with a single keypress.</td></tr>
+        <tr><td><strong>Delete Selected Node</strong></td><td><kbd>Del</kbd></td><td>Removes the selected node and its child hierarchy from the scene graph.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>1.3 Scene Menu</h3>
+    <ul>
+      <li><strong>New Scene...</strong>: Prompts for a scene name and initializes a clean, empty level.</li>
+      <li><strong>Open Scene</strong>: Dropdown submenu listing all scenes found within the project's <code>scenes/</code> folder.</li>
+      <li><strong>Save Scene</strong>: Writes the active level's node graph to its <code>.tess</code> JSON file.</li>
+      <li><strong>Save Scene As...</strong>: Prompts for a new scene filename.</li>
+      <li><strong>Add Node / Entity...</strong> (<kbd>Ctrl+A</kbd>): Opens the searchable Quick Add palette containing all 30+ nodes.</li>
+      <li><strong>Add Primitive</strong>: Submenu for fast spawning of <em>Cube</em>, <em>Sphere</em>, <em>Cone</em>, <em>Cylinder</em>, or <em>Plane</em>.</li>
+      <li><strong>Add Entity</strong>: Submenu for <em>Camera</em>, <em>Point Light</em>, <em>Directional Light</em>, <em>Spot Light</em>, <em>Audio Source</em>, <em>Particle Emitter</em> (presets in the Inspector: fire, smoke, fog, sparkles, explosion, sparks, heat haze, ribbon, rain splashes), <em>Terrain</em>, <em>Fluid Volume</em>, <em>Pour Spout</em>, <em>Ocean</em>, <em>Decal Projector</em>, <em>Spline</em>, or <em>Empty Group</em>.</li>
+      <li><strong>Add In-Game Video Screen...</strong>: Quick-spawn presets for 3D surfaces and cutaways:
+        <ul>
+          <li><strong>Living Room TV Set (16:9)</strong>: 16:9 widescreen television playing procedural TV News with Doppler radar and stock ticker.</li>
+          <li><strong>Cinema Projection Screen (2.39:1)</strong>: Ultrawide movie screen playing vintage 35mm countdown and film reel.</li>
+          <li><strong>Smartphone / Mobile Screen (9:16)</strong>: Vertical mobile phone display with OS status bar and music equalizer.</li>
+          <li><strong>CCTV Security Monitor</strong>: 4:3 monochrome night-vision camera feed with timestamp and motion tracking box.</li>
+          <li><strong>Retro CRT Color Bars</strong>: 4:3 vintage tube television with SMPTE color test bars and analog VHS tracking noise.</li>
+          <li><strong>Sci-Fi Holographic Radar</strong>: 1:1 circular sweep radar display with detected blips and telemetry readouts.</li>
+          <li><strong>2D UI Video Player Node</strong>: Screen-space UI video player widget with interactive click-to-pause.</li>
+          <li><strong>Test Fullscreen Cutaway Video</strong>: Triggers a high-priority fullscreen video transmission overlay (<kbd>Space</kbd> to skip).</li>
+          <li><strong>Test Picture-in-Picture (PiP) Video</strong>: Triggers a corner PiP transmission overlay while maintaining gameplay.</li>
+        </ul>
+      </li>
+      <li><strong>Add 2D UI Component</strong>: Submenu organizing Containers, Basic Text, Controls, Media, and Vector Shapes.</li>
+      <li><strong>Add Collider</strong>: Submenu for <em>Box Collider</em>, <em>Sphere Collider</em>, and <em>Capsule Collider</em>.</li>
+      <li><strong>Reset Scene to Default</strong>: Resets the scene to the default starter template (sun light, floor plane, camera).</li>
+      <li><strong>Clear All</strong>: Deletes all nodes from the scene.</li>
+    </ul>
+
+    <h3>1.4 Camera Menu</h3>
+    <ul>
+      <li><strong>Reset View</strong>: Snaps the editor camera to origin coordinates <code>(0, 2, 5)</code> looking forward.</li>
+    </ul>
+
+    <h3>1.5 Gizmo Menu</h3>
+    <ul>
+      <li><strong>Translate</strong> (<kbd>W</kbd>): Activates the 3-axis position translation gizmo.</li>
+      <li><strong>Rotate</strong> (<kbd>E</kbd>): Activates the 3-axis rotational ring gizmo.</li>
+      <li><strong>Scale</strong> (<kbd>R</kbd>): Activates the 3-axis scaling box gizmo.</li>
+      <li><strong>World Coordinates</strong> vs <strong>Local Coordinates</strong>: Toggles coordinate frame orientation.</li>
+    </ul>
+
+    <h3>1.7 Help Menu</h3>
+    <ul>
+      <li><strong>Open HTML Documentation...</strong>: Launches your default web browser and opens this offline documentation suite directly from <code>docs/index.html</code>.</li>
+    </ul>
+
+        <h3>1.6 Window Menu</h3>
+    <ul>
+      <li><strong>Scene Hierarchy Panel</strong>: Toggles the left scene graph entity tree.</li>
+      <li><strong>Node Property Inspector</strong>: Toggles the right property inspector dock.</li>
+      <li><strong>Project File Viewer</strong>: Toggles the dockable workspace disk explorer.</li>
+      <li><strong>Performance & Resource Profiler</strong> (<kbd>Shift+F</kbd>): Toggles live RAM/VRAM tracking, CPU/GPU stage profilers, and orphan node repair.</li>
+      <li><strong>GPU Profiler</strong> (<kbd>Ctrl+9</kbd>): measured GPU time of every pass, nested, with a frame-time graph.</li>
+      <li><strong>Enable Temporal Upscaling (FSR 3 / DLSS)</strong>: Quick toggle in the <strong>Render</strong> menu to activate temporal resolution scaling, motion vector reconstruction, and RCAS sharpening.</li>
+      <li><strong>Enable Meshlet GPU Virtualization</strong>: Quick toggle in the <strong>Render</strong> menu to activate GPU cluster virtualization, meshlet frustum culling, and normal cone backface culling.</li>
+      <li><strong>Enable Hardware Ray Tracing (Vulkan / Metal)</strong>: Quick toggle in the <strong>Render</strong> menu to activate hardware ray-traced ambient occlusion (RTAO), reflections (RTR), shadows (RTS), and global illumination (RTGI).</li>
+      <li><strong>Rendering, GI & Post-Processing</strong> (<kbd>Shift+R</kbd>): Toggles the rendering panel: tone mapping and anti-aliasing, shadows, sky (time of day, moon, clouds), weather and HDRI, Baked &amp; Dynamic Lighting (GI &amp; Real-Time Voxel GI / VXGI), Performance (occlusion culling), colour grading and LUTs, GTAO, SSR, volumetric fog, and camera effects. Also accessible via the top-level <strong>Render</strong> menu for quick one-click VXGI toggles.</li>
+      <li><strong>Visual Shader Graph Editor</strong> (<kbd>Shift+G</kbd>): Toggles the node-based Shader Graph canvas (Save, Save As..., Load..., Apply to Selected Object).</li>
+      <li><strong>Audio Mixer & Reverb Zones</strong> (<kbd>Shift+A</kbd>): Toggles the 4-channel audio mixer and DSP panel.</li>
+      <li><strong>Navigation & NavMesh Baker</strong> (<kbd>Shift+N</kbd>): Toggles the NavMesh generator and path visualizer.</li>
+      <li><strong>Multiplayer & Networking</strong> (<kbd>Shift+P</kbd>): Toggles the Client-Server connection and authority panel.</li>
+      <li><strong>Animation State Machine Graph</strong> (<kbd>Shift+M</kbd>): Toggles the visual animation graph canvas.</li>
+      <li><strong>Cutscene &amp; Cinematic Sequencer</strong> (<kbd>Shift+C</kbd>): Toggles the in-engine cutscene sequencer (location triggers, multi-shot camera choreography, character walk-to-mark &amp; animation transitions, Sepia/B&amp;W/Noir/Vignette/DoF camera effects, audio/silent subtitles, and skippable playback).</li>
+      <li><strong>3D Ruler & Measurement Tool</strong> (<kbd>M</kbd>): Toggles the 3D tape measure and precision dimension tool in the viewport and opens the measurement window.</li>
+    </ul>
+
+
+
+    <h2>2. Global Keyboard Shortcuts Cheatsheet</h2>
+    <table>
+      <thead><tr><th>Shortcut</th><th>Category</th><th>Function</th></tr></thead>
+      <tbody>
+        <tr><td><kbd>Ctrl+N</kbd></td><td>File</td><td>New Project dialog</td></tr>
+        <tr><td><kbd>Ctrl+O</kbd></td><td>File</td><td>Open Project file browser</td></tr>
+        <tr><td><kbd>Ctrl+S</kbd></td><td>File</td><td>Save Project & Scene</td></tr>
+        <tr><td><kbd>Ctrl+B</kbd></td><td>Build</td><td>Export Standalone Game modal</td></tr>
+        <tr><td><kbd>Ctrl+K</kbd></td><td>Settings</td><td>Project Input & Key Bindings modal</td></tr>
+        <tr><td><kbd>Ctrl+A</kbd></td><td>Scene</td><td>Open Quick Add Node Palette modal</td></tr>
+        <tr><td><kbd>Ctrl+Z</kbd></td><td>Edit</td><td>Undo last action</td></tr>
+        <tr><td><kbd>Ctrl+Y</kbd></td><td>Edit</td><td>Redo last action</td></tr>
+        <tr><td><kbd>Ctrl+C</kbd></td><td>Edit</td><td>Copy selected node</td></tr>
+        <tr><td><kbd>Ctrl+V</kbd></td><td>Edit</td><td>Paste node from clipboard</td></tr>
+        <tr><td><kbd>Ctrl+D</kbd></td><td>Edit</td><td>Duplicate selected node</td></tr>
+        <tr><td><kbd>Del</kbd></td><td>Edit</td><td>Delete selected node</td></tr>
+        <tr><td><kbd>F</kbd></td><td>Viewport</td><td>Focus and frame camera on selected node</td></tr>
+        <tr><td><kbd>W</kbd></td><td>Gizmo</td><td>Activate Translate gizmo</td></tr>
+        <tr><td><kbd>E</kbd></td><td>Gizmo</td><td>Activate Rotate gizmo</td></tr>
+        <tr><td><kbd>R</kbd></td><td>Gizmo</td><td>Activate Scale gizmo</td></tr>
+        <tr><td><kbd>F5</kbd></td><td>Play</td><td>Start / Pause Game Mode simulation</td></tr>
+        <tr><td><kbd>Esc</kbd></td><td>Play</td><td>Stop Game Mode and return to Editor</td></tr>
+        <tr><td><kbd>F6</kbd></td><td>Play</td><td>Step Physics simulation by one frame</td></tr>
+        <tr><td><kbd>Shift+R</kbd></td><td>Window</td><td>Toggle Environment & Post-Processing</td></tr>
+        <tr><td><kbd>Shift+G</kbd></td><td>Window</td><td>Toggle Visual Shader Graph</td></tr>
+        <tr><td><kbd>Shift+A</kbd></td><td>Window</td><td>Toggle Audio Mixer & DSP</td></tr>
+        <tr><td><kbd>Shift+N</kbd></td><td>Window</td><td>Toggle NavMesh Baker & Pathfinding</td></tr>
+        <tr><td><kbd>Shift+P</kbd></td><td>Window</td><td>Toggle Multiplayer & Networking</td></tr>
+        <tr><td><kbd>Shift+M</kbd></td><td>Window</td><td>Toggle Animation State Machine Graph</td></tr>
+        <tr><td><kbd>Shift+C</kbd></td><td>Window</td><td>Toggle Cutscene &amp; Cinematic Sequencer</td></tr>
+        <tr><td><kbd>Space</kbd> / <kbd>Enter</kbd> / <kbd>Backspace</kbd></td><td>Cutscene</td><td>Skip active cutscene and fast-forward actors to final marks</td></tr>
+        <tr><td><kbd>Space</kbd> / <kbd>Enter</kbd> / <kbd>Esc</kbd></td><td>Video</td><td>Skip active full-screen or PiP video cutaway transmission</td></tr>
+        <tr><td><kbd>M</kbd></td><td>Tools</td><td>Toggle 3D Ruler & Measurement Tool in Viewport</td></tr>
+      </tbody>
+    </table>
+    
+
+    <div class="pagination">
+  <a href="systems-scripting.html" class="pagination-card prev">
+    <span class="pagination-label">&larr; Previous</span>
+    <span class="pagination-title">Lua Scripting API Reference</span>
+  </a>
+  <a href="editor-windows.html" class="pagination-card next">
+    <span class="pagination-label">Next &rarr;</span>
+    <span class="pagination-title">Editor Windows, Inspector & Modals</span>
+  </a>
+</div>
+
+  </main>
+</body>
+</html>

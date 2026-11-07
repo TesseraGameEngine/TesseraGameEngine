@@ -1,0 +1,443 @@
+{
+  "activeCameraId": 3,
+  "name": "ShowcaseMain",
+  "nextId": 18,
+  "nodes": [
+    {
+      "children": [],
+      "color": [0.35, 0.55, 0.45, 1.0],
+      "customMeshName": "",
+      "id": 1,
+      "materialName": "",
+      "metallic": 0.05,
+      "name": "Ground Plane",
+      "nodeType": "Mesh",
+      "parentId": 0,
+      "roughness": 0.8,
+      "shapeType": "Plane",
+      "texturePath": "",
+      "transform": {
+        "position": [0, 0, 0],
+        "rotation": [0, 0, 0],
+        "scale": [15, 1, 15]
+      }
+    },
+    {
+      "children": [],
+      "color": [0.2, 0.85, 0.3, 0.5],
+      "collider": {
+        "bounciness": 0.0,
+        "center": [0, 0, 0],
+        "friction": 0.8,
+        "height": 0.2,
+        "isTrigger": false,
+        "radius": 0.5,
+        "size": [30, 0.2, 30],
+        "type": "Box"
+      },
+      "customMeshName": "",
+      "id": 2,
+      "materialName": "",
+      "metallic": 0,
+      "name": "Ground Collider",
+      "nodeType": "Collider",
+      "parentId": 1,
+      "roughness": 0.5,
+      "shapeType": "Cube",
+      "texturePath": "",
+      "transform": {
+        "position": [0, -0.1, 0],
+        "rotation": [0, 0, 0],
+        "scale": [1, 1, 1]
+      }
+    },
+    {
+      "camera": {
+        "far": 200,
+        "fov": 60,
+        "near": 0.1
+      },
+      "children": [],
+      "color": [0.2, 0.8, 0.95, 1],
+      "customMeshName": "",
+      "id": 3,
+      "materialName": "",
+      "metallic": 0,
+      "name": "Main Camera",
+      "nodeType": "Camera",
+      "parentId": 0,
+      "roughness": 0.5,
+      "shapeType": "Cone",
+      "texturePath": "",
+      "transform": {
+        "position": [0, 4.5, 9.5],
+        "rotation": [-20, 0, 0],
+        "scale": [0.4, 0.4, 0.6]
+      }
+    },
+    {
+      "children": [],
+      "color": [1.0, 0.95, 0.85, 1],
+      "customMeshName": "",
+      "id": 4,
+      "light": {
+        "color": [1.0, 0.95, 0.85],
+        "intensity": 2.2,
+        "range": 35,
+        "type": "Point"
+      },
+      "materialName": "",
+      "metallic": 0,
+      "name": "Sun Point Light",
+      "nodeType": "Light",
+      "parentId": 0,
+      "roughness": 0.5,
+      "shapeType": "Sphere",
+      "texturePath": "",
+      "transform": {
+        "position": [4, 6, 4],
+        "rotation": [0, 0, 0],
+        "scale": [0.3, 0.3, 0.3]
+      }
+    },
+    {
+      "children": [],
+      "color": [0.2, 0.6, 1.0, 1],
+      "customMeshName": "",
+      "id": 5,
+      "light": {
+        "color": [0.2, 0.6, 1.0],
+        "intensity": 1.5,
+        "range": 50,
+        "type": "Directional"
+      },
+      "materialName": "",
+      "metallic": 0,
+      "name": "Sky Directional Light",
+      "nodeType": "Light",
+      "parentId": 0,
+      "roughness": 0.5,
+      "shapeType": "Cone",
+      "texturePath": "",
+      "transform": {
+        "position": [-5, 8, -5],
+        "rotation": [-45, 30, 0],
+        "scale": [0.3, 0.3, 0.3]
+      }
+    },
+    {
+      "children": [7],
+      "color": [0.95, 0.35, 0.15, 1],
+      "customMeshName": "",
+      "id": 6,
+      "materialName": "",
+      "metallic": 0.2,
+      "name": "Player",
+      "nodeType": "Mesh",
+      "parentId": 0,
+      "roughness": 0.4,
+      "scriptPath": "scripts/PlayerCharacter.lua",
+      "shapeType": "Cube",
+      "texturePath": "",
+      "transform": {
+        "position": [0, 0.5, 0],
+        "rotation": [0, 0, 0],
+        "scale": [1.0, 1.0, 1.0]
+      }
+    },
+    {
+      "children": [],
+      "color": [0.2, 0.9, 0.4, 0.4],
+      "collider": {
+        "bounciness": 0.1,
+        "center": [0, 0, 0],
+        "friction": 0.5,
+        "height": 1.0,
+        "isTrigger": false,
+        "radius": 0.5,
+        "size": [1.0, 1.0, 1.0],
+        "type": "Box"
+      },
+      "customMeshName": "",
+      "id": 7,
+      "materialName": "",
+      "metallic": 0,
+      "name": "Player Box Collider",
+      "nodeType": "Collider",
+      "parentId": 6,
+      "roughness": 0.5,
+      "shapeType": "Cube",
+      "texturePath": "",
+      "transform": {
+        "position": [0, 0, 0],
+        "rotation": [0, 0, 0],
+        "scale": [1, 1, 1]
+      }
+    },
+    {
+      "children": [],
+      "color": [0.95, 0.8, 0.2, 1],
+      "customMeshName": "",
+      "id": 8,
+      "materialName": "",
+      "metallic": 0.8,
+      "name": "Rotating Gem Sphere",
+      "nodeType": "Mesh",
+      "parentId": 0,
+      "roughness": 0.2,
+      "scriptPath": "scripts/OrbiterCollectible.lua",
+      "shapeType": "Sphere",
+      "texturePath": "",
+      "transform": {
+        "position": [3.0, 1.2, -2.0],
+        "rotation": [0, 0, 0],
+        "scale": [0.8, 0.8, 0.8]
+      }
+    },
+    {
+      "children": [],
+      "color": [0.75, 0.2, 0.85, 1],
+      "customMeshName": "",
+      "id": 9,
+      "materialName": "",
+      "metallic": 0.5,
+      "name": "Floating Cylinder Pillar",
+      "nodeType": "Mesh",
+      "parentId": 0,
+      "roughness": 0.3,
+      "shapeType": "Cylinder",
+      "texturePath": "",
+      "transform": {
+        "position": [-3.5, 1.5, -2.0],
+        "rotation": [0, 0, 0],
+        "scale": [0.7, 1.5, 0.7]
+      }
+    },
+    {
+      "children": [],
+      "color": [0.2, 0.8, 0.7, 1],
+      "customMeshName": "",
+      "id": 10,
+      "materialName": "",
+      "metallic": 0.3,
+      "name": "Crystal Cone",
+      "nodeType": "Mesh",
+      "parentId": 0,
+      "roughness": 0.2,
+      "shapeType": "Cone",
+      "texturePath": "",
+      "transform": {
+        "position": [-3.5, 3.6, -2.0],
+        "rotation": [180, 0, 0],
+        "scale": [0.6, 0.8, 0.6]
+      }
+    },
+    {
+      "boundsMax": [2.5, 2.0, 1.8],
+      "boundsMin": [-2.5, 0.0, -1.8],
+      "children": [],
+      "color": [0.85, 0.85, 0.9, 1],
+      "customMeshName": "teapot.obj",
+      "id": 11,
+      "materialName": "",
+      "metallic": 0.6,
+      "name": "Custom Model Teapot",
+      "nodeType": "Mesh",
+      "parentId": 0,
+      "roughness": 0.25,
+      "shapeType": "Custom",
+      "texturePath": "",
+      "transform": {
+        "position": [0.0, 0.8, -4.5],
+        "rotation": [0, 25, 0],
+        "scale": [0.6, 0.6, 0.6]
+      },
+      "triangleCount": 1200,
+      "vertexCount": 3600
+    },
+    {
+      "children": [13, 14, 15, 16],
+      "color": [0.1, 0.1, 0.1, 0.8],
+      "customMeshName": "",
+      "id": 12,
+      "materialName": "",
+      "metallic": 0,
+      "name": "In-Game HUD Canvas",
+      "nodeType": "UI_Canvas",
+      "parentId": 0,
+      "roughness": 0.5,
+      "shapeType": "Cube",
+      "texturePath": "",
+      "transform": {
+        "position": [0, 0, 0],
+        "rotation": [0, 0, 0],
+        "scale": [1, 1, 1]
+      },
+      "ui": {
+        "action": "",
+        "anchor": "Top-Left",
+        "color": [0.1, 0.1, 0.1, 0.75],
+        "fontSize": 14.0,
+        "hoverColor": [0.2, 0.2, 0.2, 0.8],
+        "position": [16, 16],
+        "pressColor": [0.05, 0.05, 0.05, 0.9],
+        "progress": 1.0,
+        "size": [280, 130],
+        "text": "",
+        "textColor": [1, 1, 1, 1],
+        "visible": true
+      }
+    },
+    {
+      "children": [],
+      "color": [0.85, 0.2, 0.2, 1],
+      "customMeshName": "",
+      "id": 13,
+      "materialName": "",
+      "metallic": 0,
+      "name": "Health Bar",
+      "nodeType": "UI_ProgressBar",
+      "parentId": 12,
+      "roughness": 0.5,
+      "shapeType": "Cube",
+      "texturePath": "",
+      "transform": {
+        "position": [0, 0, 0],
+        "rotation": [0, 0, 0],
+        "scale": [1, 1, 1]
+      },
+      "ui": {
+        "action": "",
+        "anchor": "Top-Left",
+        "color": [0.85, 0.2, 0.2, 0.9],
+        "fontSize": 13.0,
+        "hoverColor": [0.95, 0.3, 0.3, 1],
+        "position": [24, 28],
+        "pressColor": [0.7, 0.1, 0.1, 1],
+        "progress": 1.0,
+        "size": [220, 20],
+        "text": "HEALTH 100%",
+        "textColor": [1, 1, 1, 1],
+        "visible": true
+      }
+    },
+    {
+      "children": [],
+      "color": [0.2, 0.75, 0.35, 1],
+      "customMeshName": "",
+      "id": 14,
+      "materialName": "",
+      "metallic": 0,
+      "name": "Stamina Bar",
+      "nodeType": "UI_ProgressBar",
+      "parentId": 12,
+      "roughness": 0.5,
+      "shapeType": "Cube",
+      "texturePath": "",
+      "transform": {
+        "position": [0, 0, 0],
+        "rotation": [0, 0, 0],
+        "scale": [1, 1, 1]
+      },
+      "ui": {
+        "action": "",
+        "anchor": "Top-Left",
+        "color": [0.2, 0.75, 0.35, 0.9],
+        "fontSize": 13.0,
+        "hoverColor": [0.3, 0.85, 0.45, 1],
+        "position": [24, 56],
+        "pressColor": [0.15, 0.6, 0.25, 1],
+        "progress": 1.0,
+        "size": [220, 16],
+        "text": "STAMINA 100%",
+        "textColor": [1, 1, 1, 1],
+        "visible": true
+      }
+    },
+    {
+      "children": [],
+      "color": [1, 1, 1, 1],
+      "customMeshName": "",
+      "id": 15,
+      "materialName": "",
+      "metallic": 0,
+      "name": "Score Text",
+      "nodeType": "UI_Text",
+      "parentId": 12,
+      "roughness": 0.5,
+      "shapeType": "Cube",
+      "texturePath": "",
+      "transform": {
+        "position": [0, 0, 0],
+        "rotation": [0, 0, 0],
+        "scale": [1, 1, 1]
+      },
+      "ui": {
+        "action": "",
+        "anchor": "Top-Left",
+        "color": [0, 0, 0, 0],
+        "fontSize": 15.0,
+        "hoverColor": [1, 1, 1, 1],
+        "position": [24, 82],
+        "pressColor": [1, 1, 1, 1],
+        "progress": 0.0,
+        "size": [220, 22],
+        "text": "Score: 0 | WASD: Move | Space: Jump",
+        "textColor": [1.0, 0.9, 0.2, 1.0],
+        "visible": true
+      }
+    },
+    {
+      "children": [],
+      "color": [0.25, 0.4, 0.65, 0.9],
+      "customMeshName": "",
+      "id": 16,
+      "materialName": "",
+      "metallic": 0,
+      "name": "Action Button",
+      "nodeType": "UI_Button",
+      "parentId": 12,
+      "roughness": 0.5,
+      "shapeType": "Cube",
+      "texturePath": "",
+      "transform": {
+        "position": [0, 0, 0],
+        "rotation": [0, 0, 0],
+        "scale": [1, 1, 1]
+      },
+      "ui": {
+        "action": "OpenMenu",
+        "anchor": "Top-Left",
+        "color": [0.25, 0.4, 0.65, 0.9],
+        "fontSize": 13.0,
+        "hoverColor": [0.35, 0.55, 0.85, 1.0],
+        "position": [24, 110],
+        "pressColor": [0.15, 0.25, 0.45, 1.0],
+        "progress": 0.0,
+        "size": [100, 24],
+        "text": "Menu",
+        "textColor": [1, 1, 1, 1],
+        "visible": true
+      }
+    },
+    {
+      "children": [],
+      "color": [0.8, 0.8, 0.8, 0.5],
+      "customMeshName": "",
+      "id": 17,
+      "materialName": "",
+      "metallic": 0,
+      "name": "Level Props Pivot",
+      "nodeType": "Empty",
+      "parentId": 0,
+      "roughness": 0.5,
+      "shapeType": "Cube",
+      "texturePath": "",
+      "transform": {
+        "position": [0, 0, 0],
+        "rotation": [0, 0, 0],
+        "scale": [1, 1, 1]
+      }
+    }
+  ]
+}

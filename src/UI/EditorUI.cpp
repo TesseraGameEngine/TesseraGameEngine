@@ -6063,17 +6063,29 @@ bool EditorUI::ExportGame(Scene& scene, const std::string& destinationDir, const
 #endif
         fs::path exeDir = exePath.parent_path();
 
+        // Resolve Windows GameRunner executable (from templates/windows, local build, or current exe)
+        fs::path winRunner = "templates/windows/TesseraGameRunner.exe";
+        if (!fs::exists(winRunner)) winRunner = "templates/windows/" + gameTitle + ".exe";
+        if (!fs::exists(winRunner)) winRunner = "templates/windows/Tessera.exe";
+        if (!fs::exists(winRunner) && exePath.extension() == ".exe") winRunner = exePath;
+        if (!fs::exists(winRunner)) winRunner = exeDir / "Tessera.exe";
+        if (!fs::exists(winRunner)) winRunner = "build/Release/Tessera.exe";
+        if (!fs::exists(winRunner)) winRunner = "build/Debug/Tessera.exe";
+
+        if (!fs::exists(winRunner)) {
+            m_exportStatusMessage = "Export failed: Windows export template (templates/windows/TesseraGameRunner.exe) not found.";
+            std::cerr << "[Exporter] " << m_exportStatusMessage << std::endl;
+            return false;
+        }
+
         if (embedInExe) {
             // Find StandaloneBootstrapper.exe
-            fs::path bootstrapper = exeDir / "StandaloneBootstrapper.exe";
+            fs::path bootstrapper = "templates/windows/StandaloneBootstrapper.exe";
+            if (!fs::exists(bootstrapper)) bootstrapper = exeDir / "StandaloneBootstrapper.exe";
+            if (!fs::exists(bootstrapper)) bootstrapper = "build/Release/StandaloneBootstrapper.exe";
+            if (!fs::exists(bootstrapper)) bootstrapper = "build/Debug/StandaloneBootstrapper.exe";
             if (!fs::exists(bootstrapper)) {
-                bootstrapper = "build/Debug/StandaloneBootstrapper.exe";
-            }
-            if (!fs::exists(bootstrapper)) {
-                bootstrapper = "build/Release/StandaloneBootstrapper.exe";
-            }
-            if (!fs::exists(bootstrapper)) {
-                m_exportStatusMessage = "Export failed: StandaloneBootstrapper.exe not found. Please build the engine solution.";
+                m_exportStatusMessage = "Export failed: StandaloneBootstrapper.exe not found (checked templates/windows and build).";
                 std::cerr << "[Exporter] " << m_exportStatusMessage << std::endl;
                 return false;
             }
@@ -6085,7 +6097,7 @@ bool EditorUI::ExportGame(Scene& scene, const std::string& destinationDir, const
             fs::create_directories(stagingDir);
 
             // A. Copy engine executable as GameRunner.exe
-            fs::copy_file(exePath, stagingDir / "GameRunner.exe", fs::copy_options::overwrite_existing);
+            fs::copy_file(winRunner, stagingDir / "GameRunner.exe", fs::copy_options::overwrite_existing);
 
             // B. Copy all runtime DLLs (deflate.dll, glfw3.dll, vulkan-1.dll, etc.)
             auto copyDlls = [&](const fs::path& dir) {
@@ -6098,10 +6110,11 @@ bool EditorUI::ExportGame(Scene& scene, const std::string& destinationDir, const
                     }
                 }
             };
+            copyDlls("templates/windows");
+            copyDlls("thirdparty/bin");
             copyDlls(exeDir);
-            if (fs::exists("build/Debug")) {
-                copyDlls("build/Debug");
-            }
+            if (fs::exists("build/Release")) copyDlls("build/Release");
+            if (fs::exists("build/Debug")) copyDlls("build/Debug");
 
             // C. Copy Shaders
             fs::create_directories(stagingDir / "shaders");
@@ -6245,7 +6258,7 @@ bool EditorUI::ExportGame(Scene& scene, const std::string& destinationDir, const
         } else {
             // Folder export mode (loose files)
             fs::path targetExe = dest / (gameTitle + ".exe");
-            fs::copy_file(exePath, targetExe, fs::copy_options::overwrite_existing);
+            fs::copy_file(winRunner, targetExe, fs::copy_options::overwrite_existing);
 
             auto copyDllsFrom = [&](const fs::path& dir) {
                 if (fs::exists(dir) && fs::is_directory(dir)) {
@@ -6257,10 +6270,11 @@ bool EditorUI::ExportGame(Scene& scene, const std::string& destinationDir, const
                     }
                 }
             };
+            copyDllsFrom("templates/windows");
+            copyDllsFrom("thirdparty/bin");
             copyDllsFrom(exeDir);
-            if (fs::exists("build/Debug")) {
-                copyDllsFrom("build/Debug");
-            }
+            if (fs::exists("build/Release")) copyDllsFrom("build/Release");
+            if (fs::exists("build/Debug")) copyDllsFrom("build/Debug");
 
             // Copy Shaders
             fs::create_directories(dest / "shaders");

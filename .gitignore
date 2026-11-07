@@ -20,8 +20,11 @@ out/
 !thirdparty/**/*.lib
 !thirdparty/**/*.dll
 
-# Standalone Export Templates (Binaries are generated locally)
-templates/**/*.exe
+# Standalone Export Templates: Keep official pre-bundled Linux & Windows runner templates
+!templates/linux/TesseraGameRunner.x86_64
+!templates/windows/TesseraGameRunner.exe
+!templates/windows/StandaloneBootstrapper.exe
+!templates/windows/*.dll
 !templates/**/.gitkeep
 
 # Exported Standalone Games and Distributions

@@ -376,6 +376,22 @@ if(WIN32)
     add_executable(StandaloneBootstrapper WIN32 src/Standalone/BootstrapperMain.cpp)
     set_property(TARGET StandaloneBootstrapper PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     target_link_libraries(StandaloneBootstrapper PRIVATE shell32 ole32)
+
+    # Optional target: Export Templates for Windows (templates/windows/)
+    add_custom_target(windows_export_template
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_SOURCE_DIR}/templates/windows"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:Tessera>"
+            "${CMAKE_CURRENT_SOURCE_DIR}/templates/windows/TesseraGameRunner.exe"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:StandaloneBootstrapper>"
+            "${CMAKE_CURRENT_SOURCE_DIR}/templates/windows/StandaloneBootstrapper.exe"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${THIRDPARTY_DIR}/bin"
+            "${CMAKE_CURRENT_SOURCE_DIR}/templates/windows"
+        DEPENDS Tessera StandaloneBootstrapper
+        COMMENT "Installing Windows Standalone Export Templates (templates/windows/)"
+    )
 endif()
 
 # Copy shaders to output directory for debugging

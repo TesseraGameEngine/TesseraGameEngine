@@ -184,6 +184,14 @@ cmake --build build --config Release --target EngineTestSuite
 .\build\Release\Tessera.exe
 ```
 
+### 2.3 Generating the Windows Standalone Export Template
+
+To update the precompiled Windows export template and bootstrapper (used by developers building on Linux):
+```powershell
+cmake --build build --config Release --target windows_export_template
+```
+This updates `templates/windows/TesseraGameRunner.exe`, `templates/windows/StandaloneBootstrapper.exe`, and bundles runtime DLLs in `templates/windows/`.
+
 ---
 
 ## 3. How to Export a Standalone Linux Game

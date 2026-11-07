@@ -470,8 +470,9 @@ Open **File → Export Game (Windows & Web)...** (<kbd>Ctrl+B</kbd>):
    - **Dual Proton / Wine Pass-Through Fallback**: Optionally packages Windows fallback binaries and runtime DLLs for hybrid Wine/Proton testing.
    - **Manifest & Input Mappings**: Exports `game.agconfig` (resolution, fullscreen mode, starting scene) and `input_bindings.json` (keyboard, mouse, gamepad).
 
-2. **Windows Single-File Executable (`.exe`)**:
-   - Packs `GameRunner.exe`, `StandaloneBootstrapper.exe`, SPIR-V shaders, `.scene` files, assets, and DLLs into a single self-extracting executable (`AGYPACK1` bundle trailer) that unpacks into `%LOCALAPPDATA%\TesseraGames\<Title>_<hash>\` on first run and launches instantaneously on subsequent runs.
+2. **Windows Single-File Executable (`.exe`) & Folder Distribution**:
+   - **Cross-Platform Export from Linux**: Pre-bundles `templates/windows/TesseraGameRunner.exe` and `templates/windows/StandaloneBootstrapper.exe` with runtime DLLs, enabling developers on **Linux** to export native Windows `.exe` games directly without needing Windows or Wine.
+   - **Single-File Self-Extracting Bundle**: Packs `GameRunner.exe`, `StandaloneBootstrapper.exe`, SPIR-V shaders, `.scene` files, assets, and DLLs into a single self-extracting executable (`AGYPACK1` bundle trailer) that unpacks into `%LOCALAPPDATA%\TesseraGames\<Title>_<hash>\` on first run and launches instantaneously on subsequent runs.
 
 3. **Web / HTML5 (`WebGL 2.0`)**:
    - Exports `index.html` (with inline scene JSON to bypass `file://` CORS restrictions), `tessera_web.js`, mobile touch joystick controls, and `serve.py` / `start_server.bat` for 1-click local browser testing.

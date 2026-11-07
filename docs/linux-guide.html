@@ -186,6 +186,34 @@ chmod +x launch.sh
       <li>Switch back to <strong>Gaming Mode</strong>. Your game is now directly launchable with full gamepad mapping, suspend/resume, and MangoHud performance overlays!</li>
     </ol>
 
+    ---
+
+    <h2>4. Cross-Exporting Windows Games from Linux</h2>
+    <p>Linux developers can export ready-to-run Windows standalone games (single-file self-extracting <code>.exe</code> or directory bundles) directly from the Tessera Editor running on Linux, without needing Wine, MinGW, or a Windows virtual machine.</p>
+
+    <h3>4.1 Windows Export Templates</h3>
+    <p>The engine ships with precompiled Windows templates under <code>templates/windows/</code>:</p>
+    <ul>
+      <li><code>templates/windows/TesseraGameRunner.exe</code> - Standalone Windows game runtime.</li>
+      <li><code>templates/windows/StandaloneBootstrapper.exe</code> - Single-file launcher that extracts game payloads with the <code>AGYPACK1</code> signature.</li>
+      <li><code>templates/windows/*.dll</code> - Pre-bundled Windows runtime dependencies (GLFW, Jolt Physics, Lua, Vulkan Loader, libdeflate).</li>
+    </ul>
+
+    <h3>4.2 Exporting for Windows</h3>
+    <ol>
+      <li>In the Tessera Editor on Linux, press <kbd>Ctrl</kbd> + <kbd>B</kbd> (<strong>File &rarr; Export Standalone Game...</strong>).</li>
+      <li>Select <strong>Target Platform</strong>: <code>Windows Standalone (.exe)</code>.</li>
+      <li>Check <strong>Package as Single Executable</strong> if you want a single portable <code>.exe</code>.</li>
+      <li>Click <strong>Export Game</strong>. The resulting <code>exports/&lt;GameTitle&gt;_Windows/</code> package is ready to distribute to Windows gamers.</li>
+    </ol>
+
+    <div class="callout callout-info">
+      <h4>Updating Windows Templates</h4>
+      <p>Windows templates only need to be rebuilt when you modify low-level engine C++ code (e.g., adding new C++ engine systems or modifying shaders). When building on Windows, run:</p>
+      <pre><code>cmake --build build --config Release --target windows_export_template</code></pre>
+      <p>This refreshes the binaries in <code>templates/windows/</code> for all contributors.</p>
+    </div>
+
     <div class="pagination">
       <a href="engine-architecture.html" class="pagination-card prev">
         <span class="pagination-label">&larr; Previous</span>

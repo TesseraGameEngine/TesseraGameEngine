@@ -85,7 +85,7 @@ void MetalRayTracing::DestroyBLAS(RayTracingMeshHandle handle) {
     }
 }
 
-bool MetalRayTracing::BuildTLAS(const std::vector<RayTracingInstance>& instances) {
+bool MetalRayTracing::BuildTLAS(const std::vector<RayTracingInstance>& instances, uint32_t /*context*/) {
     auto start = std::chrono::high_resolution_clock::now();
 
     m_stats.activeTLASInstances = static_cast<uint32_t>(instances.size());

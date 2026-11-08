@@ -1,6 +1,13 @@
-#version 450
+#version 460
 
 #extension GL_GOOGLE_include_directive : require
+#ifdef TESSERA_RT
+// Hardware ray tracing variant (frag_rt.spv): see rt_common.glsl
+#extension GL_EXT_ray_query : require
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference_uvec2 : require
+#extension GL_EXT_nonuniform_qualifier : require
+#endif
 
 #include "common_ubo.glsl"
 #include "lights_common.glsl"
@@ -36,6 +43,9 @@ layout(binding = 38) uniform sampler2D terrainLayer3;
 #include "volumetric_common.glsl"
 #include "water_common.glsl"
 #include "weather_common.glsl"
+#ifdef TESSERA_RT
+#include "rt_common.glsl"
+#endif
 
 layout(location = 0) in vec3 fragNormal;
 layout(location = 1) in vec3 fragPosition;
@@ -708,6 +718,23 @@ void main() {
             // Shadow-mapped lights: the sun via cascades, point/spot lights via the local array
             // (see VulkanPipeline::RenderShadowPass)
             float shadow = 1.0;
+#ifdef TESSERA_RT
+            // Ray-traced shadows: soft (sun disc / bulb size), alpha-tested through foliage, and
+            // not limited to the shadow map's distance or resolution
+            bool rtShadowed = false;
+            if (RTShadowsOn() && lightList.lights[i].spotAnglesAndShadow.z > 0.5) {
+                if (lightType < 0.5) {
+                    shadow = RTDirectionalShadow(fragPosition, normalize(geomNormal), L);
+                    rtShadowed = true;
+                } else if (length(lightPos - ubo.cameraPos.xyz) < ubo.rtParams2.w) {
+                    shadow = RTLocalShadow(fragPosition, normalize(geomNormal), lightPos, 0.05);
+                    rtShadowed = true;
+                }
+            }
+            if (rtShadowed) {
+                // done
+            } else
+#endif
             if (ubo.shadowParams.x > 0.5 && i == int(ubo.shadowParams.y + 0.5)) {
                 shadow = SampleShadow(fragPosition, normalize(geomNormal), L, lightList.lights[i].spotAnglesAndShadow.w);
                 if (shadow > 0.01 && (ubo.postProcessParams.y > 0.001 || ubo.postProcessParams.z > 0.001)) {
@@ -844,6 +871,43 @@ void main() {
                 prefiltered = mix(prefiltered, vxgiSpec.rgb * ubo.vxgiParams.y, specBlend);
             }
         }
+#ifdef TESSERA_RT
+        // Ray-traced reflections for glossy surfaces: what the reflection ray actually hits, lit
+        // by the sun (with its own shadow ray) and the sky; the environment fills in on a miss
+        if (RTReflectionsOn() && roughness <= ubo.rtParams.w) {
+            // Glossy (not mirror) surfaces jitter the ray within a roughness cone; TAA averages it
+            float a = roughness * roughness;
+            vec3 rDir = R;
+            if (a > 0.001) {
+                float r1 = RTNoise(gl_FragCoord.xy, 13.7);
+                float r2 = RTNoise(gl_FragCoord.xy, 27.1);
+                vec3 up = abs(R.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
+                vec3 t = normalize(cross(up, R));
+                vec3 b = cross(R, t);
+                float spread = a * 0.6 * sqrt(r1);
+                rDir = normalize(R + (t * cos(6.2831853 * r2) + b * sin(6.2831853 * r2)) * spread);
+                if (dot(rDir, N) <= 0.0) rDir = R;
+            }
+            // The sun's light (first directional light), for lighting what the ray hits
+            vec3 sunL = sunDir;
+            vec3 sunRad = vec3(0.0);
+            for (int k = 0; k < ubo.numLights && k < 16; ++k) {
+                if (lightList.lights[k].position.w < 0.5) {
+                    sunL = normalize(lightList.lights[k].position.xyz);
+                    sunRad = lightList.lights[k].color.rgb * lightList.lights[k].color.a;
+                    if (proceduralSky && dot(sunL, sunDir) > 0.9999) sunRad *= SkySunTransmittance(sunL);
+                    break;
+                }
+            }
+            vec3 rtRadiance;
+            float rtHitDist;
+            if (RTTraceReflection(fragPosition, normalize(geomNormal), rDir, sunL, sunRad, giStrength, rtRadiance, rtHitDist)) {
+                float fade = 1.0 - smoothstep(ubo.rtParams.w * 0.7, ubo.rtParams.w, roughness);
+                // prefiltered is scaled by giStrength below; the hit radiance is already absolute
+                prefiltered = mix(prefiltered, rtRadiance / max(giStrength, 0.05), fade);
+            }
+        }
+#endif
         vec3 diffuseIBL = irradiance * albedo.rgb * (kD + Fms * Ems * (1.0 - metallic));
         vec3 specularIBL = prefiltered * envBRDF + irradiance * Fms * Ems * metallic;
         if (model == MODEL_HAIR) specularIBL *= 0.3; // strands reflect the environment far less than a mirror-like sheet
@@ -884,6 +948,10 @@ void main() {
         materialAO = mix(1.0, aoSample, clamp(pc.aoStrength, 0.0, 1.0));
     }
     float ao = ssao * materialAO * graphAO;
+#ifdef TESSERA_RT
+    // Ray-traced AO replaces the screen-space estimate (sees occluders off screen and behind)
+    if (RTAOOn()) ao = RTAmbientOcclusion(fragPosition, N, normalize(geomNormal)) * materialAO * graphAO;
+#endif
     float specAO = clamp(pow(NdotV + ao, exp2(-16.0 * roughness - 1.0)) - 1.0 + ao, 0.0, 1.0);
     ambient = max(ambient - ambientSpecular, vec3(0.0)) * ao + ambientSpecular * specAO;
     ambientSpecular *= specAO;

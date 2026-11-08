@@ -35,6 +35,16 @@ public:
     // 1.0 when anisotropic filtering is unsupported
     float GetMaxSamplerAnisotropy() const { return m_maxSamplerAnisotropy; }
 
+    // Hardware ray tracing (VK_KHR_acceleration_structure + VK_KHR_ray_query), enabled at device
+    // creation when the GPU supports it. Buffer device addresses come with it.
+    bool SupportsRayQuery() const { return m_supportsRayQuery; }
+    bool SupportsBufferDeviceAddress() const { return m_supportsBufferDeviceAddress; }
+    // Bindless sampled-image arrays (descriptor indexing): used by the ray tracing alpha test
+    bool SupportsDescriptorIndexing() const { return m_supportsDescriptorIndexing; }
+    uint32_t GetMinASScratchAlignment() const { return m_minASScratchAlignment; }
+    // Set before Init() to refuse ray tracing (e.g. --no-raytracing), so the fallback path can be tested
+    void SetRayTracingAllowed(bool allowed) { m_rayTracingAllowed = allowed; }
+
     uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) const;
     VkFormat FindSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features) const;
     VkFormat FindDepthFormat() const;
@@ -54,6 +64,14 @@ private:
 
     QueueFamilyIndices FindQueueFamilies(VkPhysicalDevice device) const;
     bool CheckDeviceExtensionSupport(VkPhysicalDevice device) const;
+    bool DeviceHasExtension(VkPhysicalDevice device, const char* name) const;
+    bool DeviceSupportsRayQuery(VkPhysicalDevice device) const;
+
+    bool m_supportsRayQuery{false};
+    bool m_supportsBufferDeviceAddress{false};
+    bool m_supportsDescriptorIndexing{false};
+    bool m_rayTracingAllowed{true};
+    uint32_t m_minASScratchAlignment{256};
 
     VkInstance m_instance{VK_NULL_HANDLE};
     VkSurfaceKHR m_surface{VK_NULL_HANDLE};

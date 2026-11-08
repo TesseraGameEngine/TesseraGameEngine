@@ -94,8 +94,23 @@ if(GLSLC_EXECUTABLE)
         set(SPV_SHADERS ${SPV_SHADERS} "${out}" PARENT_SCOPE)
     endfunction()
 
+    # Hardware ray tracing variant of the forward shader (ray query; only used when the GPU supports it)
+    function(tessera_compile_shader_rt source spv_name)
+        set(src "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${source}")
+        set(out "${CMAKE_CURRENT_BINARY_DIR}/shaders/${spv_name}")
+        add_custom_command(
+            OUTPUT "${out}"
+            COMMAND ${GLSLC_EXECUTABLE} --target-env=vulkan1.2 -DTESSERA_RT=1 "${src}" -o "${out}"
+            COMMAND ${CMAKE_COMMAND} -E copy "${out}" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${spv_name}"
+            DEPENDS "${src}" ${SHADER_INCLUDES} "${CMAKE_CURRENT_SOURCE_DIR}/shaders/rt_common.glsl"
+            COMMENT "Compiling ray tracing shader ${source} to SPIR-V"
+        )
+        set(SPV_SHADERS ${SPV_SHADERS} "${out}" PARENT_SCOPE)
+    endfunction()
+
     tessera_compile_shader(shader.vert vert.spv)
     tessera_compile_shader(shader.frag frag.spv)
+    tessera_compile_shader_rt(shader.frag frag_rt.spv)
     tessera_compile_shader(shadow.vert shadow_vert.spv)
     tessera_compile_shader(shadow.frag shadow_frag.spv)
     tessera_compile_shader(sky.vert sky_vert.spv)
@@ -503,6 +518,8 @@ add_executable(EngineTestSuite
     src/Renderer/RayTracing/MetalRayTracing.cpp
     src/Renderer/RayTracing/VulkanRayTracing.cpp
     src/Renderer/RayTracing/RayTracingManager.cpp
+    src/Renderer/VulkanContext.cpp
+    src/Renderer/VulkanBuffer.cpp
     src/Renderer/Meshlet/MeshletBuilder.cpp
     src/Renderer/Meshlet/MeshletManager.cpp
     src/Renderer/Pipeline/VulkanPipelineCache.cpp

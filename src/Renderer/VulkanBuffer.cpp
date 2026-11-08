@@ -26,6 +26,14 @@ void VulkanBufferUtils::CreateBuffer(VkDeviceSize size, VkBufferUsageFlags usage
     allocInfo.allocationSize = memRequirements.size;
     allocInfo.memoryTypeIndex = ctx.FindMemoryType(memRequirements.memoryTypeBits, properties);
 
+    // Buffers read through a device address (ray tracing geometry, acceleration structures,
+    // scratch) need memory allocated with the device-address flag
+    VkMemoryAllocateFlagsInfo flagsInfo{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO};
+    if (usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) {
+        flagsInfo.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+        allocInfo.pNext = &flagsInfo;
+    }
+
     if (vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
         throw std::runtime_error("Failed to allocate buffer memory!");
     }

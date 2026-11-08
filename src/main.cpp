@@ -135,6 +135,9 @@ struct GameConfig {
                 cfg.bakeLighting = true;
             } else if (arg == "--gpu-profile") {
                 cfg.gpuProfileLog = true;
+            } else if (arg == "--no-raytracing") {
+                // Use the rasterised fallback (shadow maps, SSR) even on ray tracing GPUs
+                VulkanContext::Get().SetRayTracingAllowed(false);
             } else if (arg == "--no-texture-compression" || arg == "--texture-compression=off") {
                 // Load material textures as plain RGBA8 (for comparing quality or debugging)
                 VulkanTexture::SetCompressionQuality(VulkanTexture::CompressionQuality::Off);
@@ -350,6 +353,26 @@ private:
         m_materialPreviewTarget.Init(kMaterialPreviewSize, kMaterialPreviewSize);
         InitMaterialPreviewScene();
         LOG("InitRendererAndOffscreen(): step 3 m_pipeline.Init()");
+        // Hardware ray tracing: the pipelines need its descriptor set layout (set 1) at creation
+        if (auto* vkRT = dynamic_cast<Graphics::RayTracing::VulkanRayTracing*>(Graphics::RayTracing::RayTracingManager::Get().GetBackend())) {
+            if (vkRT->IsSupported()) {
+                m_pipeline.SetRayTracingSetLayout(vkRT->GetDescriptorSetLayout());
+                vkRT->SetTextureResolver([this](const std::string& path, VkImageView& view, VkSampler& sampler) {
+                    auto tex = m_pipeline.GetOrLoadTexture(path);
+                    if (!tex) return false;
+                    view = tex->GetImageView();
+                    sampler = tex->GetSampler();
+                    return view != VK_NULL_HANDLE && sampler != VK_NULL_HANDLE;
+                });
+                // On by default where the GPU supports it: ray-traced shadows and reflections
+                auto& rtSettings = vkRT->GetSettings();
+                rtSettings.enableHardwareRT = true;
+                rtSettings.enableRTS = true;
+                rtSettings.enableRTR = true;
+                rtSettings.enableRTAO = false;
+                rtSettings.enableRTGI = false;
+            }
+        }
         m_pipeline.Init(m_offscreen.GetRenderPass(), m_offscreen.GetPrepassRenderPass(), "shaders/vert.spv", "shaders/frag.spv");
         m_skinning.Init();
         // Mixed sound output (thunder, surf and crashes overlap each other and other sounds)
@@ -1067,6 +1090,13 @@ private:
             return GetAvailableModels();
         });
 
+        // CPU copies of the primitives: ray tracing builds its acceleration structures from them
+        m_cpuPrimitives[ShapeType::Cube] = MeshGenerator::CreateCube(1.0f);
+        m_cpuPrimitives[ShapeType::Sphere] = MeshGenerator::CreateSphere(0.5f);
+        m_cpuPrimitives[ShapeType::Cone] = MeshGenerator::CreateCone(0.5f, 1.0f);
+        m_cpuPrimitives[ShapeType::Cylinder] = MeshGenerator::CreateCylinder(0.5f, 1.0f);
+        m_cpuPrimitives[ShapeType::Plane] = MeshGenerator::CreatePlane(2.0f);
+        m_cpuPrimitives[ShapeType::Quad] = MeshGenerator::CreateQuad(1.0f);
         m_meshes[ShapeType::Cube] = VulkanBufferUtils::UploadMesh(MeshGenerator::CreateCube(1.0f));
         m_meshes[ShapeType::Sphere] = VulkanBufferUtils::UploadMesh(MeshGenerator::CreateSphere(0.5f));
         m_meshes[ShapeType::Cone] = VulkanBufferUtils::UploadMesh(MeshGenerator::CreateCone(0.5f, 1.0f));
@@ -2825,14 +2855,23 @@ private:
                 ubo.giVolumeSize = glm::vec4(m_bakedGI.size, std::max(env.bakedGIIntensity, 0.0f));
                 ubo.giVolumeDims = glm::vec4(glm::vec3(m_bakedGI.dims), 0.0f);
             }
-            auto& rt = Graphics::RayTracing::RayTracingManager::Get();
-            auto& rtSettings = rt.GetSettings();
-            const bool rtgiActive = rtSettings.enableHardwareRT && rtSettings.enableRTGI;
-            if (m_vxgi.ready && (env.vxgiEnabled || rtgiActive)) {
-                const float effectiveIntensity = rtgiActive ? std::max(env.vxgiIntensity, rtSettings.rtgiIntensity) : env.vxgiIntensity;
-                ubo.vxgiParams = glm::vec4(1.0f, std::max(effectiveIntensity, 0.0f), m_vxgi.extent,
+            if (m_vxgi.ready && env.vxgiEnabled) {
+                ubo.vxgiParams = glm::vec4(1.0f, std::max(env.vxgiIntensity, 0.0f), m_vxgi.extent,
                                            static_cast<float>(VulkanVXGIVolume::kMipLevels - 1));
                 ubo.vxgiCenter = glm::vec4(m_vxgi.minCorner, m_vxgi.voxelSize);
+            }
+            {
+                // Hardware ray tracing (read only by the ray-traced pipelines, which are used
+                // only for views that have a TLAS this frame)
+                const auto& rtSettings = Graphics::RayTracing::RayTracingManager::Get().GetSettings();
+                const bool rtOn = rtSettings.enableHardwareRT && Graphics::RayTracing::RayTracingManager::Get().IsHardwareRayTracingSupported();
+                ubo.rtParams = glm::vec4(rtOn && rtSettings.enableRTS ? 1.0f : 0.0f,
+                                         rtOn && rtSettings.enableRTR ? 1.0f : 0.0f,
+                                         rtOn && rtSettings.enableRTAO ? 1.0f : 0.0f,
+                                         rtSettings.rtrRoughnessThreshold);
+                // The sun's disc is ~0.27 degrees across; the penumbra scale widens it
+                ubo.rtParams2 = glm::vec4(0.00465f * 2.0f * std::max(rtSettings.rtsPenumbraScale, 0.0f),
+                                          rtSettings.rtaoRadius, 600.0f, 80.0f);
             }
             ubo.timeParams.w = static_cast<float>(m_taaFrameIndex % 1024); // steps temporal noise each frame
             // The ocean around the camera: caustics below it, and the underwater view
@@ -3063,8 +3102,11 @@ private:
             settings.motionBlur = env.motionBlur;
             auto& rt = Graphics::RayTracing::RayTracingManager::Get();
             auto& rtSettings = rt.GetSettings();
-            const bool rtrActive = rtSettings.enableHardwareRT && rtSettings.enableRTR;
-            settings.ssrStrength = rtrActive ? std::max(env.ssrIntensity, 1.0f) : env.ssrIntensity;
+            // Ray-traced reflections are already in the shaded image: screen-space reflections
+            // would add a second, screen-limited copy on top
+            const bool rtrActive = rtSettings.enableHardwareRT && rtSettings.enableRTR && rt.IsHardwareRayTracingSupported() &&
+                                   m_pipeline.HasRayTracingPipelines();
+            settings.ssrStrength = rtrActive ? 0.0f : env.ssrIntensity;
             settings.ssrMaxDistance = env.ssrMaxDistance;
             settings.ssrThickness = env.ssrThickness;
             settings.frameIndex = m_taaFrameIndex;
@@ -3085,7 +3127,10 @@ private:
                         if (it != m_customMeshes.end()) {
                             it->second.Cleanup(VulkanContext::Get().GetDevice());
                         }
-                        m_customMeshes[key] = VulkanBufferUtils::UploadMesh(tNode->GenerateMeshData());
+                        // Kept on the CPU too: ray tracing builds the terrain's BLAS from it (and
+                        // rebuilds it when the data changes)
+                        m_terrainCpuMeshes[key] = tNode->GenerateMeshData();
+                        m_customMeshes[key] = VulkanBufferUtils::UploadMesh(m_terrainCpuMeshes[key]);
                         tNode->customMeshName = key;
                         tNode->isMeshDirty = false;
                         tNode->NotifyHeightsChanged(); // foliage follows the ground
@@ -3108,6 +3153,51 @@ private:
         };
         UpdateTerrainMeshes(activePlayScene);
         UpdateTerrainMeshes(m_scene);
+
+        // Hardware ray tracing: acceleration structures of the scenes shown this frame, built on
+        // the GPU before any view renders. The game view (and its mirror / probe views) trace the
+        // play scene; the editor views trace the edited scene (the same one when not playing).
+        {
+            auto& rtMgr = Graphics::RayTracing::RayTracingManager::Get();
+            auto* vkRT = dynamic_cast<Graphics::RayTracing::VulkanRayTracing*>(rtMgr.GetBackend());
+            for (int v = 0; v < VulkanPipeline::kViewCount; ++v) m_pipeline.SetViewRayTracing(v, VK_NULL_HANDLE);
+            if (vkRT && vkRT->IsSupported()) {
+                const bool rtOn = rtMgr.GetSettings().enableHardwareRT && m_pipeline.HasRayTracingPipelines();
+                const bool sameScene = &activePlayScene == &m_scene;
+                const bool editorShown = !m_gameConfig.isStandaloneGame;
+                constexpr float kRTRange = 1500.0f; // instances further than this from the camera are left out
+                auto meshResolver = [this](const Node& node, std::string& key, const MeshData*& data) {
+                    return ResolveRayTracingMesh(node, key, data);
+                };
+                auto materialResolver = [this](const Node& node, Graphics::RayTracing::RayTracingInstance& inst) {
+                    ResolveRayTracingMaterial(node, inst);
+                };
+                if (rtOn) {
+                    auto gameCam = activePlayScene.GetActiveCamera();
+                    const glm::vec3 gameFocus = gameCam ? gameCam->GetWorldPosition(activePlayScene) : m_camera.GetPosition();
+                    rtMgr.SyncScene(activePlayScene, 1, meshResolver, materialResolver, gameFocus, kRTRange);
+                    if (editorShown && !sameScene) {
+                        rtMgr.SyncScene(m_scene, 0, meshResolver, materialResolver, m_camera.GetPosition(), kRTRange);
+                    } else {
+                        rtMgr.ClearContext(0);
+                    }
+                } else {
+                    rtMgr.ClearContext(0);
+                    rtMgr.ClearContext(1);
+                }
+                vkRT->RecordFrame(cmd, m_currentFrame);
+                if (rtOn) {
+                    const VkDescriptorSet gameSet = vkRT->GetDescriptorSet(1);
+                    const VkDescriptorSet editorSet = sameScene ? gameSet : vkRT->GetDescriptorSet(0);
+                    m_pipeline.SetViewRayTracing(VulkanPipeline::kViewPreview, gameSet);
+                    m_pipeline.SetViewRayTracing(VulkanPipeline::kViewPreviewMirror, gameSet);
+                    m_pipeline.SetViewRayTracing(VulkanPipeline::kViewPreviewProbe, gameSet);
+                    m_pipeline.SetViewRayTracing(VulkanPipeline::kViewEditor, editorSet);
+                    m_pipeline.SetViewRayTracing(VulkanPipeline::kViewEditorMirror, editorSet);
+                    m_pipeline.SetViewRayTracing(VulkanPipeline::kViewEditorProbe, editorSet);
+                }
+            }
+        }
 
         auto activeCam = activePlayScene.GetActiveCamera();
         if (activeCam) {
@@ -3226,8 +3316,6 @@ private:
         fillViewUBO(activeViewportScene, 0, editorUnjitteredViewProj, editorUbo);
         editorUbo.timeParams.x = static_cast<float>(glfwGetTime());
 
-        // Synchronize scene acceleration structures (BLAS/TLAS) for Ray Tracing
-        Graphics::RayTracing::RayTracingManager::Get().SyncScene(activeViewportScene);
 
         // Synchronize and cull Meshlet GPU Virtualization clusters
         // Synchronize and cull Meshlet GPU Virtualization clusters
@@ -3689,6 +3777,9 @@ private:
         m_particleSim.Cleanup();
         m_gpuProfiler.Cleanup();
         Graphics::Meshlet::MeshletManager::Get().Shutdown();
+        // Acceleration structures and their buffers belong to the device: free them now, not in
+        // the singleton's destructor (which runs after the device is gone)
+        Graphics::RayTracing::RayTracingManager::Get().Shutdown();
         Graphics::Pipeline::VulkanPipelineCache::Get().Shutdown();
         Graphics::Upscaling::TemporalUpscaler::Get().Shutdown();
         Streaming::WorldPartitionManager::GetInstance().Shutdown();
@@ -3832,6 +3923,55 @@ private:
     std::map<ShapeType, GPUMesh> m_meshes;
     std::map<std::string, GPUMesh> m_customMeshes;
     std::map<std::string, LoadedMesh> m_cpuMeshes;
+    // CPU copies for ray tracing BLAS builds: built-in primitives and generated terrain meshes
+    std::map<ShapeType, MeshData> m_cpuPrimitives;
+    std::map<std::string, MeshData> m_terrainCpuMeshes;
+
+    // Ray tracing geometry for a node: the mesh it draws at full detail (imported models, terrain
+    // tiles, primitives). Skinned characters use their bind pose.
+    bool ResolveRayTracingMesh(const Node& node, std::string& key, const MeshData*& data) {
+        if (node.nodeType == NodeType::Terrain) {
+            auto it = m_terrainCpuMeshes.find(node.customMeshName);
+            if (it == m_terrainCpuMeshes.end()) return false;
+            key = "terrain:" + it->first;
+            data = &it->second;
+            return true;
+        }
+        if (node.type == ShapeType::Custom) {
+            auto it = m_cpuMeshes.find(node.customMeshName);
+            if (it == m_cpuMeshes.end()) {
+                it = m_cpuMeshes.find(std::filesystem::path(node.customMeshName).filename().string());
+            }
+            if (it == m_cpuMeshes.end()) return false;
+            key = "mesh:" + it->first;
+            data = &it->second.meshData;
+            return true;
+        }
+        auto it = m_cpuPrimitives.find(node.type);
+        if (it == m_cpuPrimitives.end()) return false;
+        key = "prim:" + std::to_string(static_cast<int>(node.type));
+        data = &it->second;
+        return true;
+    }
+
+    // Surface data for shading ray hits: the node's material, with the albedo texture (its own,
+    // or its first textured submesh's) for colour and alpha-tested cutouts
+    void ResolveRayTracingMaterial(const Node& node, Graphics::RayTracing::RayTracingInstance& inst) {
+        std::string albedo = node.texturePath;
+        if (albedo.empty() && node.type == ShapeType::Custom) {
+            auto it = m_cpuMeshes.find(node.customMeshName);
+            if (it != m_cpuMeshes.end()) {
+                if (!it->second.diffuseTexturePath.empty()) albedo = it->second.diffuseTexturePath;
+                for (const auto& sub : it->second.meshData.submeshes) {
+                    if (!albedo.empty()) break;
+                    albedo = sub.diffuseTexturePath;
+                }
+            }
+        }
+        // Terrain is painted from layers (no single albedo texture): its tint stands in
+        if (node.nodeType == NodeType::Terrain) albedo.clear();
+        inst.albedoTexture = albedo;
+    }
     GPUMesh m_gridMesh;
     GPUMesh m_axesMesh;
     VulkanOffscreen m_offscreen;

@@ -58,6 +58,8 @@ layout(binding = 0) uniform UniformBufferObject {
     vec4 waterline[4];            // camera half in the water: the surface's height on screen (NDC y) at 16 points across (NDC x -1..1)
     vec4 vxgiParams;              // VXGI: x = 1 when active, y = intensity, z = volume world extent (m), w = max mip level
     vec4 vxgiCenter;              // VXGI: xyz = volume min corner in world space, w = base voxel size (m)
+    vec4 rtParams;                // ray tracing: x = shadows, y = reflections, z = ambient occlusion (1 = on), w = reflection roughness cutoff
+    vec4 rtParams2;               // x = sun disc angular radius (radians), y = AO radius (m), z = max reflection distance (m), w = max shadowed local light distance (m)
     // Lights live in a storage buffer with per-cluster lists (lights_common.glsl); numLights counts them
 } ubo;
 

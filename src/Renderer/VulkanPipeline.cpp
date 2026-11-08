@@ -173,6 +173,18 @@ void VulkanPipeline::Cleanup() {
         vkDestroyPipeline(device, m_graphicsPipelineTransparent, nullptr);
         m_graphicsPipelineTransparent = VK_NULL_HANDLE;
     }
+    if (m_graphicsPipelineRT != VK_NULL_HANDLE) {
+        vkDestroyPipeline(device, m_graphicsPipelineRT, nullptr);
+        m_graphicsPipelineRT = VK_NULL_HANDLE;
+    }
+    if (m_graphicsPipelineTransparentRT != VK_NULL_HANDLE) {
+        vkDestroyPipeline(device, m_graphicsPipelineTransparentRT, nullptr);
+        m_graphicsPipelineTransparentRT = VK_NULL_HANDLE;
+    }
+    if (m_emptySetLayout != VK_NULL_HANDLE) {
+        vkDestroyDescriptorSetLayout(device, m_emptySetLayout, nullptr);
+        m_emptySetLayout = VK_NULL_HANDLE;
+    }
     if (m_pipelineLayout != VK_NULL_HANDLE) {
         vkDestroyPipelineLayout(device, m_pipelineLayout, nullptr);
         m_pipelineLayout = VK_NULL_HANDLE;
@@ -302,6 +314,28 @@ void VulkanPipeline::BindMaterialSet(VkCommandBuffer cmd, VkPipelineLayout layou
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &set, 4, offsets);
 }
 
+void VulkanPipeline::SetViewRayTracing(int viewSlot, VkDescriptorSet set) {
+    if (viewSlot < 0 || viewSlot >= kViewCount) return;
+    m_viewRTSets[viewSlot] = (m_graphicsPipelineRT != VK_NULL_HANDLE) ? set : VK_NULL_HANDLE;
+}
+
+void VulkanPipeline::BindForwardPipeline(VkCommandBuffer cmd, VkPipeline pipeline) const {
+    VkPipeline bound = pipeline;
+    const VkDescriptorSet rtSet = (m_activeRTView >= 0) ? m_viewRTSets[m_activeRTView] : VK_NULL_HANDLE;
+    if (rtSet != VK_NULL_HANDLE) {
+        if (pipeline == m_graphicsPipeline && m_graphicsPipelineRT != VK_NULL_HANDLE) {
+            bound = m_graphicsPipelineRT;
+        } else if (pipeline == m_graphicsPipelineTransparent && m_graphicsPipelineTransparentRT != VK_NULL_HANDLE) {
+            bound = m_graphicsPipelineTransparentRT;
+        }
+    }
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, bound);
+    if (bound != pipeline) {
+        // Set 1 may have been disturbed by a pipeline with a different layout (decals, particles)
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 1, 1, &rtSet, 0, nullptr);
+    }
+}
+
 void VulkanPipeline::BeginFrame(uint32_t frameInFlight) {
     m_frameIndex = frameInFlight % kFramesInFlight;
     ++m_frameCounter;
@@ -395,7 +429,7 @@ void VulkanPipeline::DrawLiquidStreams(VkCommandBuffer cmd, int viewSlot, const 
     auto cylinder = meshes.find(ShapeType::Cylinder);
     if (m_liquidStreams.empty() || cylinder == meshes.end() || cylinder->second.indexCount == 0) return;
     VkPipeline pipeline = (m_graphicsPipelineTransparent != VK_NULL_HANDLE) ? m_graphicsPipelineTransparent : m_graphicsPipeline;
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+    BindForwardPipeline(cmd, pipeline);
     BindMaterialSet(cmd, m_pipelineLayout, m_descriptorSets[viewSlot]);
     VkBuffer vertexBuffers[] = { cylinder->second.vertexBuffer };
     VkDeviceSize offsets[] = { 0 };
@@ -1854,10 +1888,24 @@ void VulkanPipeline::CreateGraphicsPipeline(VkRenderPass renderPass, const std::
     pushConstantRange.offset = 0;
     pushConstantRange.size = sizeof(PushConstantData);
 
+    // Set 1 is the ray tracing set (VulkanRayTracing) when the GPU supports it, otherwise an
+    // empty placeholder; every scene pipeline shares this layout either way
+    VkDescriptorSetLayout set1Layout = m_rtSetLayout;
+    if (set1Layout == VK_NULL_HANDLE) {
+        if (m_emptySetLayout == VK_NULL_HANDLE) {
+            VkDescriptorSetLayoutCreateInfo emptyInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+            if (vkCreateDescriptorSetLayout(device, &emptyInfo, nullptr, &m_emptySetLayout) != VK_SUCCESS) {
+                throw std::runtime_error("Failed to create empty descriptor set layout!");
+            }
+        }
+        set1Layout = m_emptySetLayout;
+    }
+    const VkDescriptorSetLayout sceneSetLayouts[2] = { m_descriptorSetLayout, set1Layout };
+
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
-    pipelineLayoutInfo.pSetLayouts = &m_descriptorSetLayout;
+    pipelineLayoutInfo.setLayoutCount = 2;
+    pipelineLayoutInfo.pSetLayouts = sceneSetLayouts;
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
@@ -1920,6 +1968,39 @@ void VulkanPipeline::CreateGraphicsPipeline(VkRenderPass renderPass, const std::
 
         if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &transparentInfo, nullptr, &m_graphicsPipelineTransparent) != VK_SUCCESS) {
             m_graphicsPipelineTransparent = VK_NULL_HANDLE; // falls back to the solid pipeline
+        }
+
+        // 1b1. Ray-traced variants: same state, the ray query fragment shader (frag_rt.spv)
+        if (m_rtSetLayout != VK_NULL_HANDLE) {
+            std::string rtFragPath = fragShaderPath;
+            const size_t dot = rtFragPath.rfind(".spv");
+            if (dot != std::string::npos) rtFragPath.insert(dot, "_rt");
+            if (rtFragPath.find("frag_rt.spv") == std::string::npos) {
+                const size_t slash = fragShaderPath.find_last_of("/\\");
+                rtFragPath = (slash != std::string::npos ? fragShaderPath.substr(0, slash + 1) : std::string()) + "frag_rt.spv";
+            }
+            std::vector<char> rtCode;
+            try { rtCode = ReadFile(rtFragPath); } catch (...) { rtCode.clear(); }
+            if (!rtCode.empty()) {
+                VkShaderModule rtFragModule = CreateShaderModule(rtCode);
+                VkPipelineShaderStageCreateInfo rtStages[2] = { vertShaderStageInfo, fragShaderStageInfo };
+                rtStages[1].module = rtFragModule;
+                VkGraphicsPipelineCreateInfo rtInfo = pipelineInfo;
+                rtInfo.pStages = rtStages;
+                if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &rtInfo, nullptr, &m_graphicsPipelineRT) != VK_SUCCESS) {
+                    m_graphicsPipelineRT = VK_NULL_HANDLE;
+                }
+                VkGraphicsPipelineCreateInfo rtTransparentInfo = transparentInfo;
+                rtTransparentInfo.pStages = rtStages;
+                if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &rtTransparentInfo, nullptr, &m_graphicsPipelineTransparentRT) != VK_SUCCESS) {
+                    m_graphicsPipelineTransparentRT = VK_NULL_HANDLE;
+                }
+                vkDestroyShaderModule(device, rtFragModule, nullptr);
+                std::cout << "[VulkanPipeline] Ray-traced forward pipelines "
+                          << (m_graphicsPipelineRT != VK_NULL_HANDLE ? "created" : "FAILED") << " (" << rtFragPath << ")" << std::endl;
+            } else {
+                std::cerr << "[VulkanPipeline] " << rtFragPath << " not found: hardware ray tracing effects disabled" << std::endl;
+            }
         }
     }
 
@@ -2090,6 +2171,13 @@ void VulkanPipeline::RenderScene(VkCommandBuffer cmd, const Scene& scene,
                                  const glm::vec3& cameraPos, ScenePhase phase) {
     if (scene.GetNodes().empty()) return;
 
+    // Forward draws in this view use the ray-traced pipelines when it has a TLAS this frame
+    struct ActiveRTViewScope {
+        int& active;
+        ActiveRTViewScope(int& a, int view) : active(a) { active = view; }
+        ~ActiveRTViewScope() { active = -1; }
+    } rtScope(m_activeRTView, viewSlot);
+
     const int uboIdx = viewSlot;
     const glm::mat4 viewProj = m_lastUBO[uboIdx].proj * m_lastUBO[uboIdx].view;
     // Mirror and probe-capture views: no mirror surfaces (they would need their own reflection)
@@ -2157,7 +2245,7 @@ void VulkanPipeline::RenderScene(VkCommandBuffer cmd, const Scene& scene,
     // Helper lambda to draw nodes
     auto DrawNodes = [&](const std::vector<std::shared_ptr<Node>>& nodeList, VkPipeline pipeline,
                          const std::optional<glm::vec4>& overrideColor, bool includeColliders = true, bool onlyColliders = false) {
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+        BindForwardPipeline(cmd, pipeline);
 
         std::vector<DrawBatch> batches;
         std::unordered_map<std::string, size_t> batchIndex;
@@ -2377,7 +2465,7 @@ void VulkanPipeline::RenderScene(VkCommandBuffer cmd, const Scene& scene,
                     vkCmdBindVertexBuffers(cmd, 0, 1, graphVertexBuffers, graphOffsets);
                     vkCmdBindIndexBuffer(cmd, mesh.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
                     vkCmdDrawIndexed(cmd, mesh.indexCount, 1, 0, 0, 0);
-                    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+                    BindForwardPipeline(cmd, pipeline);
                     continue;
                 }
             }

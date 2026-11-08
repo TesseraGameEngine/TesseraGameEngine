@@ -25,8 +25,9 @@ public:
     virtual RayTracingMeshHandle CreateBLAS(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices) = 0;
     virtual void DestroyBLAS(RayTracingMeshHandle handle) = 0;
 
-    // Top-Level Acceleration Structure (TLAS) for scene instances
-    virtual bool BuildTLAS(const std::vector<RayTracingInstance>& instances) = 0;
+    // Top-Level Acceleration Structure (TLAS) for scene instances. `context` selects which of the
+    // kRTContextCount scenes this is (0 = editor scene, 1 = play / game scene).
+    virtual bool BuildTLAS(const std::vector<RayTracingInstance>& instances, uint32_t context) = 0;
 
     // Settings & Diagnostics
     virtual RayTracingSettings& GetSettings() = 0;

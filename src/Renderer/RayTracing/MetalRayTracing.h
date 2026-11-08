@@ -32,7 +32,7 @@ public:
     RayTracingMeshHandle CreateBLAS(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices) override;
     void DestroyBLAS(RayTracingMeshHandle handle) override;
 
-    bool BuildTLAS(const std::vector<RayTracingInstance>& instances) override;
+    bool BuildTLAS(const std::vector<RayTracingInstance>& instances, uint32_t context) override;
 
     RayTracingSettings& GetSettings() override { return m_settings; }
     const RayTracingSettings& GetSettings() const override { return m_settings; }

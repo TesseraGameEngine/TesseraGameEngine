@@ -47,6 +47,11 @@ scratch/
 *.py
 *.pyc
 __pycache__/
+# ...except the engine's own tool scripts (asset fetching, scene generation)
+!tools/*.py
+
+# Downloaded third-party assets (CC0, fetched by tools/fetch_assets.py; not committed)
+assets/external/
 
 # Visual Studio, VS Code & IDE Files
 .vs/

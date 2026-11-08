@@ -31,6 +31,7 @@
 #include "Renderer/Upscaling/TemporalUpscaler.h"
 #include "Core/LargeWorldCoordinates.h"
 #include "Renderer/RayTracing/MetalRayTracing.h"
+#include "Renderer/RayTracing/VulkanRayTracing.h"
 #include "Localization/Localization.h"
 #include "Localization/GameLocalization.h"
 #include <sol/sol.hpp>
@@ -4208,6 +4209,126 @@ TEST_CASE(RoadmapRayTracing, VulkanAndMetalHardwareRayTracing) {
 
     // Revert to default backend for subsequent engine passes
     rtManager.Initialize(RayTracingBackendType::Vulkan_KHR);
+}
+
+// ============================================================================
+// Ray tracing scene sync: real geometry per node, rebuilds on change, contexts
+// ============================================================================
+namespace {
+// Records what the manager hands to a backend
+class RecordingRTBackend : public Graphics::RayTracing::IRayTracingBackend {
+public:
+    Graphics::RayTracing::RayTracingSettings settings;
+    std::vector<size_t> createdVertexCounts;
+    int destroyed{0};
+    std::vector<Graphics::RayTracing::RayTracingInstance> lastInstances[Graphics::RayTracing::kRTContextCount];
+    uint32_t nextHandle{1};
+
+    Graphics::RayTracing::RayTracingBackendType GetType() const override { return Graphics::RayTracing::RayTracingBackendType::Hybrid_Software; }
+    const char* GetName() const override { return "Recording"; }
+    bool IsSupported() const override { return true; }
+    bool Initialize() override { return true; }
+    void Shutdown() override {}
+    Graphics::RayTracing::RayTracingMeshHandle CreateBLAS(const std::vector<Vertex>& v, const std::vector<uint32_t>&) override {
+        createdVertexCounts.push_back(v.size());
+        return nextHandle++;
+    }
+    void DestroyBLAS(Graphics::RayTracing::RayTracingMeshHandle) override { ++destroyed; }
+    bool BuildTLAS(const std::vector<Graphics::RayTracing::RayTracingInstance>& instances, uint32_t context) override {
+        lastInstances[context] = instances;
+        return true;
+    }
+    Graphics::RayTracing::RayTracingSettings& GetSettings() override { return settings; }
+    const Graphics::RayTracing::RayTracingSettings& GetSettings() const override { return settings; }
+    Graphics::RayTracing::RayTracingStats GetStats() const override { return {}; }
+};
+} // namespace
+
+TEST_CASE(RoadmapRayTracing, SceneSyncUsesRealGeometryAndContexts) {
+    using namespace Graphics::RayTracing;
+    auto& rtManager = RayTracingManager::Get();
+    auto recorder = std::make_unique<RecordingRTBackend>();
+    RecordingRTBackend* rec = recorder.get();
+    rtManager.SetBackend(std::move(recorder));
+
+    Scene scene;
+    scene.Clear();
+    auto model = scene.AddNode(ShapeType::Custom, "ImportedModel");
+    model->customMeshName = "models/rock.glb";
+    auto leaves = scene.AddNode(ShapeType::Custom, "Leaves");
+    leaves->customMeshName = "models/rock.glb";
+    leaves->alphaCutoff = 0.5f;
+    auto ocean = scene.AddNode(ShapeType::Plane, "Ocean");
+    ocean->isOcean = true;
+    auto glass = scene.AddNode(ShapeType::Cube, "Glass");
+    glass->color.a = 0.3f;
+    auto farCube = scene.AddNode(ShapeType::Cube, "FarAway");
+    farCube->position = glm::vec3(5000.0f, 0.0f, 0.0f);
+
+    // A 4-vertex "imported" mesh (a quad), not a cube
+    MeshData rock;
+    rock.vertices.resize(4);
+    rock.vertices[1].pos = glm::vec3(1, 0, 0);
+    rock.vertices[2].pos = glm::vec3(1, 0, 1);
+    rock.vertices[3].pos = glm::vec3(0, 0, 1);
+    rock.indices = {0, 1, 2, 0, 2, 3};
+    const MeshData* currentRock = &rock;
+    RayTracingManager::MeshResolver resolver = [&](const Node& node, std::string& key, const MeshData*& data) {
+        if (node.type != ShapeType::Custom) return false;
+        key = "mesh:" + node.customMeshName;
+        data = currentRock;
+        return true;
+    };
+    RayTracingManager::MaterialResolver material = [](const Node& node, RayTracingInstance& inst) {
+        if (node.name == "Leaves") inst.albedoTexture = "leaves.png";
+    };
+
+    // 1. Without a resolver, imported meshes are left out (never replaced by a cube)
+    rtManager.SyncScene(scene, 0);
+    for (const auto& inst : rec->lastInstances[0]) {
+        ASSERT_TRUE(inst.nodeId != model->id);
+    }
+
+    // 2. With the resolver: one BLAS with the mesh's own 4 vertices, shared by both nodes; the
+    //    ocean, see-through glass and far-away cube (outside 1 km) are left out
+    rec->createdVertexCounts.clear();
+    rtManager.SyncScene(scene, 1, resolver, material, glm::vec3(0.0f), 1000.0f);
+    ASSERT_EQ(rec->createdVertexCounts.size(), static_cast<size_t>(1));
+    ASSERT_EQ(rec->createdVertexCounts[0], static_cast<size_t>(4));
+    ASSERT_EQ(rec->lastInstances[1].size(), static_cast<size_t>(2));
+    bool sawLeaves = false;
+    for (const auto& inst : rec->lastInstances[1]) {
+        if (inst.nodeId == leaves->id) {
+            sawLeaves = true;
+            ASSERT_TRUE(!inst.isOpaque);                   // alpha-tested
+            ASSERT_EQ(inst.mask, kRTMaskFoliage);
+        } else {
+            ASSERT_EQ(inst.nodeId, model->id);
+            ASSERT_TRUE(inst.isOpaque);
+        }
+    }
+    ASSERT_TRUE(sawLeaves);
+
+    // 3. Same key, unchanged data: no rebuild
+    rtManager.SyncScene(scene, 1, resolver, material, glm::vec3(0.0f), 1000.0f);
+    ASSERT_EQ(rec->createdVertexCounts.size(), static_cast<size_t>(1));
+    ASSERT_EQ(rec->destroyed, 0);
+
+    // 4. The mesh changes (re-import / sculpt): the old BLAS goes, a new one is built
+    MeshData rock2 = rock;
+    rock2.vertices.push_back(Vertex{});
+    rock2.indices.insert(rock2.indices.end(), {0, 3, 4});
+    currentRock = &rock2;
+    rtManager.SyncScene(scene, 1, resolver, material, glm::vec3(0.0f), 1000.0f);
+    ASSERT_EQ(rec->destroyed, 1);
+    ASSERT_EQ(rec->createdVertexCounts.size(), static_cast<size_t>(2));
+    ASSERT_EQ(rec->createdVertexCounts[1], static_cast<size_t>(5));
+
+    // 5. Clearing a context empties only that context
+    rtManager.ClearContext(1);
+    ASSERT_TRUE(rec->lastInstances[1].empty());
+
+    rtManager.SetBackend(std::make_unique<VulkanRayTracing>());
 }
 
 // ============================================================================

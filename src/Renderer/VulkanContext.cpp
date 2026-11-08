@@ -3,6 +3,7 @@
 #include <set>
 #include <cstring>
 #include <stdexcept>
+#include <algorithm>
 
 VulkanContext& VulkanContext::Get() {
     static VulkanContext instance;
@@ -172,6 +173,34 @@ bool VulkanContext::CheckDeviceExtensionSupport(VkPhysicalDevice device) const {
     return requiredExtensions.empty();
 }
 
+bool VulkanContext::DeviceHasExtension(VkPhysicalDevice device, const char* name) const {
+    uint32_t extensionCount = 0;
+    vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
+    std::vector<VkExtensionProperties> availableExtensions(extensionCount);
+    vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
+    for (const auto& ext : availableExtensions) {
+        if (std::strcmp(ext.extensionName, name) == 0) return true;
+    }
+    return false;
+}
+
+bool VulkanContext::DeviceSupportsRayQuery(VkPhysicalDevice device) const {
+    if (!DeviceHasExtension(device, VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME) ||
+        !DeviceHasExtension(device, VK_KHR_RAY_QUERY_EXTENSION_NAME) ||
+        !DeviceHasExtension(device, VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME)) {
+        return false;
+    }
+    VkPhysicalDeviceRayQueryFeaturesKHR rq{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR};
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR as{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR};
+    VkPhysicalDeviceVulkan12Features v12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
+    as.pNext = &rq;
+    v12.pNext = &as;
+    VkPhysicalDeviceFeatures2 f2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+    f2.pNext = &v12;
+    vkGetPhysicalDeviceFeatures2(device, &f2);
+    return rq.rayQuery && as.accelerationStructure && v12.bufferDeviceAddress;
+}
+
 void VulkanContext::PickPhysicalDevice() {
     uint32_t deviceCount = 0;
     vkEnumeratePhysicalDevices(m_instance, &deviceCount, nullptr);
@@ -181,14 +210,25 @@ void VulkanContext::PickPhysicalDevice() {
     std::vector<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(m_instance, &deviceCount, devices.data());
 
+    // Score every usable GPU: a discrete GPU beats an integrated one, and hardware ray tracing
+    // breaks ties (laptops and desktops with an iGPU list both)
+    int bestScore = -1;
     for (const auto& device : devices) {
         QueueFamilyIndices indices = FindQueueFamilies(device);
         bool extensionsSupported = CheckDeviceExtensionSupport(device);
+        if (!indices.isComplete() || !extensionsSupported) continue;
 
-        if (indices.isComplete() && extensionsSupported) {
+        VkPhysicalDeviceProperties props{};
+        vkGetPhysicalDeviceProperties(device, &props);
+        int score = 0;
+        if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) score += 1000;
+        else if (props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) score += 100;
+        if (DeviceSupportsRayQuery(device)) score += 500;
+        std::cout << "[VulkanContext] GPU candidate: " << props.deviceName << " (score " << score << ")" << std::endl;
+        if (score > bestScore) {
+            bestScore = score;
             m_physicalDevice = device;
             m_queueIndices = indices;
-            break;
         }
     }
 
@@ -233,17 +273,73 @@ void VulkanContext::CreateLogicalDevice() {
     m_supportsTextureCompressionBC = supportedFeatures.textureCompressionBC == VK_TRUE;
     deviceFeatures.textureCompressionBC = supportedFeatures.textureCompressionBC;
 
+    // Optional features go through a VkPhysicalDeviceFeatures2 chain (core 1.2 + ray tracing)
+    VkPhysicalDeviceVulkan12Features supported12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
+    {
+        VkPhysicalDeviceFeatures2 query{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+        query.pNext = &supported12;
+        vkGetPhysicalDeviceFeatures2(m_physicalDevice, &query);
+    }
+
+    std::vector<const char*> extensions(m_deviceExtensions.begin(), m_deviceExtensions.end());
+
+    VkPhysicalDeviceVulkan12Features enable12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR enableAS{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR};
+    VkPhysicalDeviceRayQueryFeaturesKHR enableRQ{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR};
+
+    m_supportsDescriptorIndexing = supported12.descriptorIndexing && supported12.runtimeDescriptorArray &&
+                                   supported12.descriptorBindingPartiallyBound &&
+                                   supported12.descriptorBindingVariableDescriptorCount &&
+                                   supported12.shaderSampledImageArrayNonUniformIndexing;
+    m_supportsRayQuery = m_rayTracingAllowed && m_supportsDescriptorIndexing && DeviceSupportsRayQuery(m_physicalDevice);
+
+    void* featureChain = nullptr;
+    if (m_supportsRayQuery) {
+        enable12.bufferDeviceAddress = VK_TRUE;
+        enable12.descriptorIndexing = VK_TRUE;
+        enable12.runtimeDescriptorArray = VK_TRUE;
+        enable12.descriptorBindingPartiallyBound = VK_TRUE;
+        enable12.descriptorBindingVariableDescriptorCount = VK_TRUE;
+        enable12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+        enableAS.accelerationStructure = VK_TRUE;
+        enableRQ.rayQuery = VK_TRUE;
+        enable12.pNext = &enableAS;
+        enableAS.pNext = &enableRQ;
+        featureChain = &enable12;
+        extensions.push_back(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+        extensions.push_back(VK_KHR_RAY_QUERY_EXTENSION_NAME);
+        extensions.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+        m_supportsBufferDeviceAddress = true;
+
+        VkPhysicalDeviceAccelerationStructurePropertiesKHR asProps{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR};
+        VkPhysicalDeviceProperties2 props2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
+        props2.pNext = &asProps;
+        vkGetPhysicalDeviceProperties2(m_physicalDevice, &props2);
+        m_minASScratchAlignment = std::max<uint32_t>(asProps.minAccelerationStructureScratchOffsetAlignment, 1u);
+    }
+
+    VkPhysicalDeviceFeatures2 features2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+    features2.features = deviceFeatures;
+    features2.pNext = featureChain;
+
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+    createInfo.pNext = &features2;
     createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
     createInfo.pQueueCreateInfos = queueCreateInfos.data();
-    createInfo.pEnabledFeatures = &deviceFeatures;
-    createInfo.enabledExtensionCount = static_cast<uint32_t>(m_deviceExtensions.size());
-    createInfo.ppEnabledExtensionNames = m_deviceExtensions.data();
+    createInfo.pEnabledFeatures = nullptr; // given by features2
+    createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
+    createInfo.ppEnabledExtensionNames = extensions.data();
     createInfo.enabledLayerCount = 0;
 
     if (vkCreateDevice(m_physicalDevice, &createInfo, nullptr, &m_device) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create logical device!");
+    }
+    {
+        VkPhysicalDeviceProperties props{};
+        vkGetPhysicalDeviceProperties(m_physicalDevice, &props);
+        std::cout << "[VulkanContext] Using GPU: " << props.deviceName
+                  << (m_supportsRayQuery ? " (hardware ray tracing: ray query enabled)" : " (no hardware ray tracing)") << std::endl;
     }
 
     vkGetDeviceQueue(m_device, m_queueIndices.graphicsFamily.value(), 0, &m_graphicsQueue);

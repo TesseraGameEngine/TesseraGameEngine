@@ -64,6 +64,9 @@ struct UniformBufferObject {
     glm::vec4 waterline[4]{};                                 // camera half in the water: the surface's height on screen (NDC y) at 16 points across (NDC x -1..1)
     glm::vec4 vxgiParams{0.0f};                               // VXGI: x = 1 when active, y = intensity, z = volume world extent (m), w = max mip level
     glm::vec4 vxgiCenter{0.0f};                               // VXGI: xyz = volume min corner in world space, w = base voxel size (m)
+    // Hardware ray tracing (shaders/rt_common.glsl, only read by the ray tracing shader variant)
+    glm::vec4 rtParams{0.0f};                                 // x = RT shadows, y = RT reflections, z = RT ambient occlusion (1 = on), w = reflection roughness cutoff
+    glm::vec4 rtParams2{0.0f};                                // x = sun disc angular radius (radians, soft shadows), y = AO radius (m), z = max reflection distance (m), w = max shadowed local light distance (m)
     // Lights are uploaded separately (VulkanPipeline::SetViewLights) with no fixed limit
 };
 

@@ -1161,14 +1161,8 @@ void EditorUI::RenderMainMenuBar(Scene& scene, Camera& camera, Gameplay::GameLoo
             auto& upscaler = Graphics::Upscaling::TemporalUpscaler::Get();
             auto& upscalerSettings = upscaler.GetSettings();
             ImGui::MenuItem(TR("Enable Temporal Upscaling (FSR 3 / DLSS)"), nullptr, &upscalerSettings.enableUpscaling);
-            if (ImGui::MenuItem(TR("Enable Hardware Ray Tracing (Vulkan / Metal)"), nullptr, &rtSettings.enableHardwareRT)) {
-                if (rtSettings.enableHardwareRT) {
-                    rtSettings.enableRTGI = true;
-                    rtSettings.enableRTAO = true;
-                    rtSettings.enableRTR = true;
-                    env.vxgiEnabled = true;
-                }
-            }
+            ImGui::MenuItem(TR("Enable Hardware Ray Tracing (Vulkan / Metal)"), nullptr, &rtSettings.enableHardwareRT,
+                            rt.IsHardwareRayTracingSupported());
             ImGui::MenuItem(TR("Enable Voxel Global Illumination (VXGI)"), nullptr, &env.vxgiEnabled);
             ImGui::MenuItem(TR("Enable Spherical Harmonics Sky GI"), nullptr, &env.enableGI);
             ImGui::MenuItem(TR("Enable Realtime Shadows & CSM"), nullptr, &env.enableShadows);
@@ -6404,56 +6398,42 @@ void EditorUI::RenderEnvironmentAndPostProcessWindow(Scene& scene) {
             ImGui::TextDisabled("The first shadow-casting directional light gets 4 cascades; up to 4 more\nshadow-casting point / spot lights (nearest the camera) get shadow maps too.");
         }
         if (ImGui::CollapsingHeader("Hardware Ray Tracing (Vulkan / Metal)", ImGuiTreeNodeFlags_DefaultOpen)) {
+            // The acceleration structures are built by the renderer each frame (main.cpp); this
+            // panel only shows and changes the settings
             auto& rt = Graphics::RayTracing::RayTracingManager::Get();
-            rt.SyncScene(scene);
             auto& rtSettings = rt.GetSettings();
             auto rtStats = rt.GetStats();
 
-            if (ImGui::Checkbox("Enable Hardware Ray Tracing", &rtSettings.enableHardwareRT)) {
-                if (rtSettings.enableHardwareRT) {
-                    rtSettings.enableRTGI = true;
-                    rtSettings.enableRTAO = true;
-                    rtSettings.enableRTR = true;
-                    auto& env = scene.GetEnvironment();
-                    env.vxgiEnabled = true;
-                }
-            }
+            if (!rtStats.supported) ImGui::BeginDisabled();
+            ImGui::Checkbox("Enable Hardware Ray Tracing", &rtSettings.enableHardwareRT);
+            if (!rtStats.supported) ImGui::EndDisabled();
             ImGui::SameLine();
             if (rtStats.supported) {
-                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.4f, 1.0f), "[ACTIVE: %s]", rt.GetBackend()->GetName());
+                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.4f, 1.0f), "[ACTIVE: %s]", rtStats.deviceName.c_str());
             } else {
-                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "[%s]", rtStats.deviceName.c_str());
+                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "[Not supported on %s: shadow maps + SSR]", rtStats.deviceName.c_str());
             }
 
-            if (rtSettings.enableHardwareRT) {
+            if (rtSettings.enableHardwareRT && rtStats.supported) {
                 ImGui::Indent(10.0f);
-                ImGui::Checkbox("Ray-Traced Ambient Occlusion (RTAO)", &rtSettings.enableRTAO);
-                if (rtSettings.enableRTAO) {
-                    ImGui::SliderFloat("RTAO Radius", &rtSettings.rtaoRadius, 0.5f, 10.0f, "%.1f m");
-                    ImGui::SliderInt("RTAO Samples", &rtSettings.rtaoSamples, 1, 16);
+                ImGui::Checkbox("Ray-Traced Shadows", &rtSettings.enableRTS);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Sun and nearby point / spot lights cast ray-traced shadows:\nsoft edges from the light's size, no distance limit, light through leaf gaps.");
+                if (rtSettings.enableRTS) {
+                    ImGui::SliderFloat("Penumbra Softness", &rtSettings.rtsPenumbraScale, 0.0f, 5.0f, "%.1f");
                 }
 
-                ImGui::Checkbox("Ray-Traced Reflections (RTR)", &rtSettings.enableRTR);
+                ImGui::Checkbox("Ray-Traced Reflections", &rtSettings.enableRTR);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Glossy surfaces reflect what a ray actually hits (off screen too);\nreplaces screen-space reflections.");
                 if (rtSettings.enableRTR) {
-                    ImGui::SliderInt("RTR Max Bounces", &rtSettings.rtrMaxBounces, 1, 4);
                     ImGui::SliderFloat("Roughness Cutoff", &rtSettings.rtrRoughnessThreshold, 0.05f, 1.0f, "%.2f");
                 }
 
-                ImGui::Checkbox("Ray-Traced Shadows (RTS)", &rtSettings.enableRTS);
-                if (rtSettings.enableRTS) {
-                    ImGui::SliderInt("RTS Light Samples", &rtSettings.rtsLightSamples, 1, 8);
-                    ImGui::SliderFloat("Penumbra Softness", &rtSettings.rtsPenumbraScale, 0.1f, 5.0f, "%.1f");
+                ImGui::Checkbox("Ray-Traced Ambient Occlusion", &rtSettings.enableRTAO);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Replaces screen-space AO (one ray per pixel, smoothed by TAA).");
+                if (rtSettings.enableRTAO) {
+                    ImGui::SliderFloat("RTAO Radius", &rtSettings.rtaoRadius, 0.25f, 10.0f, "%.2f m");
                 }
-
-                if (ImGui::Checkbox("Ray-Traced Global Illumination (RTGI)", &rtSettings.enableRTGI)) {
-                    if (rtSettings.enableRTGI) {
-                        scene.GetEnvironment().vxgiEnabled = true;
-                    }
-                }
-                if (rtSettings.enableRTGI) {
-                    ImGui::SliderInt("RTGI Bounces", &rtSettings.rtgiBounces, 1, 4);
-                    ImGui::SliderFloat("RTGI Radiance Scale", &rtSettings.rtgiIntensity, 0.1f, 10.0f, "%.1f");
-                }
+                ImGui::TextDisabled("Indirect diffuse light comes from VXGI / baked GI.");
 
                 ImGui::Separator();
                 if (rtStats.bvhMemoryBytes < 1024ULL * 1024ULL) {

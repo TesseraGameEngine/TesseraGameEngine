@@ -25,7 +25,23 @@ struct RayTracingInstance {
     uint32_t customId{0};
     uint8_t mask{0xFF};
     bool isOpaque{true};
+
+    // Surface description used to shade ray hits (reflections) and alpha-test shadow rays
+    glm::vec3 albedo{0.8f};
+    float roughness{0.5f};
+    float metallic{0.0f};
+    glm::vec3 emissive{0.0f};     // already multiplied by intensity
+    std::string albedoTexture;    // empty = none; its alpha is the cutout mask when alphaCutoff > 0
+    float alphaCutoff{0.0f};
 };
+
+// Instance mask bits (ray queries pick which instances they see)
+constexpr uint8_t kRTMaskOpaque = 0x01;      // ordinary geometry
+constexpr uint8_t kRTMaskFoliage = 0x02;     // alpha-tested plants and leaves
+constexpr uint8_t kRTMaskNoReflect = 0x04;   // casts shadows but is skipped by reflection rays
+
+// Number of independent scenes that can be ray traced in one frame (editor scene + play scene)
+constexpr uint32_t kRTContextCount = 2;
 
 struct RayTracingSettings {
     bool enableHardwareRT{false};      // Master toggle for hardware ray tracing

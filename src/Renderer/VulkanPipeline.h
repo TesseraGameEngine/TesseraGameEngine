@@ -231,6 +231,14 @@ public:
     // the lights and rebuilds the view's clustered light lists for that UBO's camera.
     void SetViewLights(int viewSlot, const std::vector<LightData>& lights);
 
+    // Hardware ray tracing. The layout of descriptor set 1 (VulkanRayTracing) must be given
+    // before Init so the scene pipeline layout includes it; ray-traced variants of the forward
+    // pipelines (frag_rt.spv) are then created. Each frame, SetViewRayTracing gives a view the
+    // set to trace against (VK_NULL_HANDLE = draw that view with the rasterised fallback).
+    void SetRayTracingSetLayout(VkDescriptorSetLayout layout) { m_rtSetLayout = layout; }
+    void SetViewRayTracing(int viewSlot, VkDescriptorSet set);
+    bool HasRayTracingPipelines() const { return m_graphicsPipelineRT != VK_NULL_HANDLE; }
+
     // Occlusion culling for the main views (kViewEditor / kViewPreview). Each frame the bounding
     // box of every visible opaque object is tested against the depth buffer with a hardware
     // query; objects whose box was completely hidden in the results from two frames ago are
@@ -366,6 +374,16 @@ private:
     VkPipeline m_graphicsPipelineParticlesAlpha{VK_NULL_HANDLE};
     // Sorted transparent surfaces: depth test on, depth write off, premultiplied alpha
     VkPipeline m_graphicsPipelineTransparent{VK_NULL_HANDLE};
+    // Ray-traced variants (same state, frag_rt.spv) and set 1
+    VkPipeline m_graphicsPipelineRT{VK_NULL_HANDLE};
+    VkPipeline m_graphicsPipelineTransparentRT{VK_NULL_HANDLE};
+    VkDescriptorSetLayout m_rtSetLayout{VK_NULL_HANDLE};       // owned by VulkanRayTracing
+    VkDescriptorSetLayout m_emptySetLayout{VK_NULL_HANDLE};    // set 1 placeholder without ray tracing
+    VkDescriptorSet m_viewRTSets[kViewCount]{};
+    int m_activeRTView{-1};                                     // view RenderScene is drawing with RT
+    // Binds a forward-shaded pipeline for the view being rendered: its ray-traced variant (and
+    // set 1) when that view traces rays this frame
+    void BindForwardPipeline(VkCommandBuffer cmd, VkPipeline pipeline) const;
     UniformBufferObject m_lastUBO[kViewCount]{};
 
     VkDescriptorPool m_descriptorPool{VK_NULL_HANDLE};

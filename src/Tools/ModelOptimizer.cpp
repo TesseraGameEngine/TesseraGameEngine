@@ -355,7 +355,7 @@ bool OptimizeLoaded(const JsonValue& source, const LoadedMesh& mesh, const std::
     bool hasCards = false;
     for (const auto& p : parts) hasCards = hasCards || (p.cards && Tris(p) > 0);
     std::vector<uint32_t> targets = !lodTriangleTargets.empty() ? lodTriangleTargets
-                                  : hasCards ? std::vector<uint32_t>{400000, 80000, 16000}
+                                  : hasCards ? std::vector<uint32_t>{900000, 180000, 40000}
                                              : std::vector<uint32_t>{150000, 30000, 6000};
     uint32_t previous = sourceTris;
     for (size_t lod = 0; lod < targets.size(); ++lod) {

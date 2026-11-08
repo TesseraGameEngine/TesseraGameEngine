@@ -35,6 +35,21 @@ function OnUpdate(self, dt)
         print("[Player] " .. (flying and "Flying" or "Walking"))
     end
 
+    -- Number keys: jump to the world's viewpoints
+    local views = { "View: Camp", "View: Pier", "View: Forest", "View: Hilltop", "View: Cliffs", "View: Overview" }
+    for i, name in ipairs(views) do
+        if Input.IsPressed(tostring(i)) then
+            local spot = Scene.FindNode(name)
+            if spot then
+                self.position.x, self.position.y, self.position.z = spot.position.x, spot.position.y, spot.position.z
+                self.rotation.x, self.rotation.y = spot.rotation.x, spot.rotation.y
+                local ground = Terrain.GetHeight(self.position.x, self.position.z)
+                flying = ground ~= nil and (self.position.y - math.max(ground, 0.0)) > 20.0
+                print("[Player] " .. name)
+            end
+        end
+    end
+
     -- Mouse look (right button held)
     if Input.IsMouseDown(1) then
         local dx, dy = Input.GetMouseDelta()

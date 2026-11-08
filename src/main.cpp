@@ -4136,6 +4136,17 @@ private:
 
     void UpdateWorldStreaming() {
         ++m_streamFrame;
+        if (!Scripting::LuaScriptSystem::Get().GetStreamingStatsProvider()) {
+            Scripting::LuaScriptSystem::Get().SetStreamingStatsProvider([this]() {
+                const Streaming::WorldStreamer* s = m_playStreamer ? m_playStreamer.get() : &m_editorStreamer;
+                const auto st = s->GetStats();
+                return std::vector<std::pair<std::string, double>>{
+                    { "sectors", st.totalSectors }, { "active", st.activeSectors }, { "loading", st.loadingSectors },
+                    { "ready", st.readySectors }, { "nodes", st.activeNodes }, { "streamedIn", st.sectorsStreamedIn },
+                    { "streamedOut", st.sectorsStreamedOut }, { "mbRead", st.bytesRead / (1024.0 * 1024.0) },
+                    { "lastMs", st.lastActivateMs }, { "maxMs", st.maxActivateMs } };
+            });
+        }
         const bool standalone = m_gameConfig.isStandaloneGame;
         if (!standalone && m_scene.GetFilePath() != m_worldBoundScenePath) RebindEditorWorld();
         if (!standalone && m_editorStreamer.IsOpen()) {
@@ -4186,6 +4197,16 @@ private:
             return true;
         }
         if (node.type == ShapeType::Custom) {
+            // Models with levels of detail trace against their first reduced level: shadows and
+            // reflections don't need full detail, and dense scans would cost ~5x the BVH memory
+            if (!node.lodLevels.empty() && !node.lodLevels[0].meshKey.empty()) {
+                auto lod = m_cpuMeshes.find(node.lodLevels[0].meshKey);
+                if (lod != m_cpuMeshes.end()) {
+                    key = "mesh:" + lod->first;
+                    data = &lod->second.meshData;
+                    return true;
+                }
+            }
             auto it = m_cpuMeshes.find(node.customMeshName);
             if (it == m_cpuMeshes.end()) {
                 it = m_cpuMeshes.find(std::filesystem::path(node.customMeshName).filename().string());
@@ -4206,7 +4227,10 @@ private:
     // node's, with the albedo texture for colour and alpha-tested cutouts
     void ResolveRayTracingMaterial(const Node& node, int submesh, Graphics::RayTracing::RayTracingInstance& inst) {
         if (submesh >= 0 && node.type == ShapeType::Custom && node.texturePath.empty()) {
-            auto it = m_cpuMeshes.find(node.customMeshName);
+            // The same mesh ResolveRayTracingMesh traced (its first LOD when it has levels)
+            auto it = m_cpuMeshes.end();
+            if (!node.lodLevels.empty() && !node.lodLevels[0].meshKey.empty()) it = m_cpuMeshes.find(node.lodLevels[0].meshKey);
+            if (it == m_cpuMeshes.end()) it = m_cpuMeshes.find(node.customMeshName);
             if (it != m_cpuMeshes.end() && submesh < static_cast<int>(it->second.meshData.submeshes.size())) {
                 const SubmeshSection& sub = it->second.meshData.submeshes[submesh];
                 inst.albedo = glm::vec3(sub.diffuseColor);

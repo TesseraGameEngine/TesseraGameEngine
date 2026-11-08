@@ -2,6 +2,9 @@
 
 #include <string>
 #include <memory>
+#include <functional>
+#include <utility>
+#include <vector>
 #include "Scene/Scene.h"
 #include <sol/sol.hpp>
 
@@ -57,6 +60,12 @@ public:
     bool IsInputActive() const { return m_inputActive; }
 
     void SetLocalPeerId(uint32_t id) { m_localPeerId = id; }
+
+    // World streaming statistics for scripts (Streaming.GetStats): set by the engine, which
+    // owns the streamers. Values: name -> number.
+    using StatsProvider = std::function<std::vector<std::pair<std::string, double>>()>;
+    void SetStreamingStatsProvider(StatsProvider provider) { m_streamingStats = std::move(provider); }
+    const StatsProvider& GetStreamingStatsProvider() const { return m_streamingStats; }
     uint32_t GetLocalPeerId() const { return m_localPeerId; }
 
 private:
@@ -71,6 +80,7 @@ private:
     Scene* m_currentScene{nullptr};
     std::string m_projectRoot{""};
     std::map<uint32_t, NodeScriptInstance> m_instances;
+    StatsProvider m_streamingStats;
 };
 
 } // namespace Scripting

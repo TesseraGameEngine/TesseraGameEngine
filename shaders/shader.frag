@@ -488,12 +488,21 @@ void main() {
         vec2 metres = splatUV * ext.terrainParams.yz;
         vec3 layerColor[4];
         float layerHeight[4];
+        // Layer textures follow the world (not the tile), so neighbouring terrain tiles line up;
+        // a second, rotated and larger sample blended in by a slow noise breaks up the tiling
+        vec2 worldXZ = fragPosition.xz;
+        float macro = smoothstep(0.32, 0.68, WeatherNoise(worldXZ * 0.021) * 0.65 + WeatherNoise(worldXZ * 0.067) * 0.35);
+        const mat2 kLayerRot = mat2(0.8, -0.6, 0.6, 0.8);
         for (int i = 0; i < 4; ++i) {
-            vec2 layerUV = metres / max(ext.terrainTiling[i], 1e-3);
+            vec2 layerUV = worldXZ / max(ext.terrainTiling[i], 1e-3);
+            vec2 layerUV2 = kLayerRot * layerUV * 0.43 + vec2(0.37, 0.71);
             vec3 c = ext.terrainTint[i].rgb;
             if ((textured & (1 << i)) != 0) {
-                vec3 t = i == 0 ? texture(terrainLayer0, layerUV).rgb : i == 1 ? texture(terrainLayer1, layerUV).rgb
-                       : i == 2 ? texture(terrainLayer2, layerUV).rgb : texture(terrainLayer3, layerUV).rgb;
+                vec3 t1 = i == 0 ? texture(terrainLayer0, layerUV).rgb : i == 1 ? texture(terrainLayer1, layerUV).rgb
+                        : i == 2 ? texture(terrainLayer2, layerUV).rgb : texture(terrainLayer3, layerUV).rgb;
+                vec3 t2 = i == 0 ? texture(terrainLayer0, layerUV2).rgb : i == 1 ? texture(terrainLayer1, layerUV2).rgb
+                        : i == 2 ? texture(terrainLayer2, layerUV2).rgb : texture(terrainLayer3, layerUV2).rgb;
+                vec3 t = mix(t1, t2, macro * 0.85) * mix(0.9, 1.1, WeatherNoise(worldXZ * 0.013 + float(i) * 7.1));
                 c *= t;
                 layerHeight[i] = dot(t, vec3(0.3, 0.5, 0.2));
             } else {

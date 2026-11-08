@@ -7,10 +7,12 @@
 #include "Scene/Weather.h"
 #include "Scene/Nodes/3D/TerrainNode.h"
 #include "Video/VideoPlayer.h"
+#include "Renderer/RayTracing/RayTracingManager.h"
 #include <lua.hpp>
 #include <imgui.h>
 #include <algorithm>
 #include <cmath>
+#include <cctype>
 #include <iostream>
 #include <fstream>
 #include <filesystem>
@@ -97,6 +99,9 @@ static bool CheckImGuiKey(const char* keyName, int checkType /* 0: Down, 1: Pres
         key = ImGuiKey_LeftArrow;
     } else if (s == "RIGHT" || s == "ARROWRIGHT") {
         key = ImGuiKey_RightArrow;
+    } else if (s.size() >= 2 && s.size() <= 3 && s[0] == 'F' && std::isdigit(static_cast<unsigned char>(s[1]))) {
+        const int n = std::atoi(s.c_str() + 1);
+        if (n >= 1 && n <= 12) key = static_cast<ImGuiKey>(ImGuiKey_F1 + (n - 1));
     }
 
     if (key == ImGuiKey_None) return false;
@@ -2563,6 +2568,80 @@ static int Lua_Video_IsCutawayPlaying(lua_State* L) {
     return 1;
 }
 
+// ---- Render: hardware ray tracing switches and frame statistics ----
+static bool* RTFeature(Graphics::RayTracing::RayTracingSettings& s, const std::string& name) {
+    if (name == "all" || name == "rt" || name == "raytracing") return &s.enableHardwareRT;
+    if (name == "shadows") return &s.enableRTS;
+    if (name == "reflections") return &s.enableRTR;
+    if (name == "ao" || name == "occlusion") return &s.enableRTAO;
+    return nullptr;
+}
+// Render.SetRayTracing(feature, on): feature "all", "shadows", "reflections" or "ao"
+static int Lua_Render_SetRayTracing(lua_State* L) {
+    const std::string feature = luaL_checkstring(L, 1);
+    const bool on = lua_toboolean(L, 2) != 0;
+    if (bool* flag = RTFeature(Graphics::RayTracing::RayTracingManager::Get().GetSettings(), feature)) *flag = on;
+    return 0;
+}
+// Render.GetRayTracing(feature) -> on (false where the GPU can't ray trace)
+static int Lua_Render_GetRayTracing(lua_State* L) {
+    const std::string feature = luaL_optstring(L, 1, "all");
+    auto& rt = Graphics::RayTracing::RayTracingManager::Get();
+    bool* flag = RTFeature(rt.GetSettings(), feature);
+    lua_pushboolean(L, flag && *flag && rt.IsHardwareRayTracingSupported() && rt.GetSettings().enableHardwareRT);
+    return 1;
+}
+// Render.GetRayTracingStats() -> { supported, blas, instances, memoryMB, buildMs, device }
+static int Lua_Render_GetRayTracingStats(lua_State* L) {
+    const auto stats = Graphics::RayTracing::RayTracingManager::Get().GetStats();
+    lua_newtable(L);
+    lua_pushboolean(L, stats.supported); lua_setfield(L, -2, "supported");
+    lua_pushinteger(L, stats.totalBLASCount); lua_setfield(L, -2, "blas");
+    lua_pushinteger(L, stats.activeTLASInstances); lua_setfield(L, -2, "instances");
+    lua_pushnumber(L, static_cast<double>(stats.bvhMemoryBytes) / (1024.0 * 1024.0)); lua_setfield(L, -2, "memoryMB");
+    lua_pushnumber(L, stats.lastBuildTimeMs); lua_setfield(L, -2, "buildMs");
+    lua_pushstring(L, stats.deviceName.c_str()); lua_setfield(L, -2, "device");
+    return 1;
+}
+// Render.GetFPS() -> frames per second (averaged)
+static int Lua_Render_GetFPS(lua_State* L) {
+    lua_pushnumber(L, ImGui::GetCurrentContext() ? ImGui::GetIO().Framerate : 0.0f);
+    return 1;
+}
+// Streaming.GetStats() -> { sectors, active, loading, ready, nodes, streamedIn, streamedOut, mbRead, lastMs, maxMs }
+static int Lua_Streaming_GetStats(lua_State* L) {
+    lua_newtable(L);
+    const auto& provider = LuaScriptSystem::Get().GetStreamingStatsProvider();
+    if (!provider) return 1;
+    for (const auto& [name, value] : provider()) {
+        lua_pushnumber(L, value);
+        lua_setfield(L, -2, name.c_str());
+    }
+    return 1;
+}
+// NodeAPI.SetLight(id, intensity [, r, g, b]) / NodeAPI.GetLight(id) -> intensity, r, g, b
+static int Lua_SetLight(lua_State* L) {
+    if (!s_instance || !s_instance->GetCurrentScene()) return 0;
+    auto node = s_instance->GetCurrentScene()->GetNodeById(static_cast<uint32_t>(luaL_checkinteger(L, 1)));
+    if (!node || node->nodeType != NodeType::Light) return 0;
+    node->lightIntensity = static_cast<float>(luaL_checknumber(L, 2));
+    if (lua_gettop(L) >= 5) {
+        node->lightColor = glm::vec3(static_cast<float>(luaL_checknumber(L, 3)), static_cast<float>(luaL_checknumber(L, 4)),
+                                     static_cast<float>(luaL_checknumber(L, 5)));
+    }
+    return 0;
+}
+static int Lua_GetLight(lua_State* L) {
+    if (!s_instance || !s_instance->GetCurrentScene()) return 0;
+    auto node = s_instance->GetCurrentScene()->GetNodeById(static_cast<uint32_t>(luaL_checkinteger(L, 1)));
+    if (!node || node->nodeType != NodeType::Light) return 0;
+    lua_pushnumber(L, node->lightIntensity);
+    lua_pushnumber(L, node->lightColor.r);
+    lua_pushnumber(L, node->lightColor.g);
+    lua_pushnumber(L, node->lightColor.b);
+    return 4;
+}
+
 void LuaScriptSystem::RegisterEngineAPI() {
     if (!L) return;
 
@@ -2718,7 +2797,22 @@ void LuaScriptSystem::RegisterEngineAPI() {
     lua_setfield(L, -2, "SetAnimState");
     lua_pushcfunction(L, Lua_GetAnimState);
     lua_setfield(L, -2, "GetAnimState");
+    lua_pushcfunction(L, Lua_SetLight); lua_setfield(L, -2, "SetLight");
+    lua_pushcfunction(L, Lua_GetLight); lua_setfield(L, -2, "GetLight");
     lua_setglobal(L, "NodeAPI");
+
+    // Render: ray tracing switches, statistics
+    lua_newtable(L);
+    lua_pushcfunction(L, Lua_Render_SetRayTracing); lua_setfield(L, -2, "SetRayTracing");
+    lua_pushcfunction(L, Lua_Render_GetRayTracing); lua_setfield(L, -2, "GetRayTracing");
+    lua_pushcfunction(L, Lua_Render_GetRayTracingStats); lua_setfield(L, -2, "GetRayTracingStats");
+    lua_pushcfunction(L, Lua_Render_GetFPS); lua_setfield(L, -2, "GetFPS");
+    lua_setglobal(L, "Render");
+
+    // Streaming: world streaming statistics
+    lua_newtable(L);
+    lua_pushcfunction(L, Lua_Streaming_GetStats); lua_setfield(L, -2, "GetStats");
+    lua_setglobal(L, "Streaming");
 
     // Multiplayer & Network table
     lua_newtable(L);

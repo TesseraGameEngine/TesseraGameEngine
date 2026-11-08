@@ -50,7 +50,8 @@ A high-performance, modern, photorealistic 3D Game Engine and Editor built from 
    - [6.1 Asset Pipeline (glTF/GLB, FBX, OBJ, BC1–BC7 Textures)](#61-asset-pipeline-gltfglb-fbx-obj-bc1bc7-textures)
    - [6.2 Animation Timeline, Skeletal Rigging & IK](#62-animation-timeline-skeletal-rigging--ik)
    - [6.3 Standalone Multi-Platform Packaging (Windows, Linux / SteamOS & Web)](#63-standalone-multi-platform-packaging-windows-linux--steamos--web)
-   - [6.4 Step-by-Step Developer Tutorials](#64-step-by-step-developer-tutorials)
+   - [6.4 Headland: Open-World Showcase](#64-headland-open-world-showcase)
+   - [6.5 Step-by-Step Developer Tutorials](#65-step-by-step-developer-tutorials)
 7. [Industry Engine Comparison (Tessera vs. Godot 4 vs. Unity vs. UE5)](#7-industry-engine-comparison-tessera-vs-godot-4-vs-unity-vs-ue5)
 8. [Development History & Strategic Roadmap](#8-development-history--strategic-roadmap)
    - [8.1 Completed Rendering & Photorealism Milestones (Phases 1–31)](#81-completed-rendering--photorealism-milestones-phases-131)
@@ -151,6 +152,11 @@ cmake --build build-linux --target linux_export_template
 | `--scene=<file>` (editor) | Open `<file>` in the editor at startup without modifying the active project |
 | `--select=<node name>` | Select the named node at startup; an editor `--screenshot` also saves its studio material preview as `<name>_material.png` |
 | `--gpu-profile` | Log averaged GPU timestamp pass timings on exit |
+| `--scene=<file>.world` (with `--game`) | Play a streamed open world: its base scene loads, sectors stream in around the player |
+| `--start-at=<node name>` | (`--game`) The camera starts at that node's position and rotation (e.g. `"View: Overview"`) |
+| `--no-raytracing` | Use the rasterised fallback (shadow maps, SSR) even on a GPU with hardware ray tracing |
+| `--optimize-model=<file.gltf>` / `--optimize-models=<dir>` | Offline: real-scale LOD chains from heavy scanned models (no window; see `tools/README.md`) |
+| `--build-world=<dir>` | Offline: generate the Headland showcase world (no window; see `tools/README.md`) |
 
 ### 1.4 Running the Unit Test Suite
 
@@ -504,7 +510,22 @@ Open **File → Export Game (Windows & Web)...** (<kbd>Ctrl+B</kbd>):
 3. **Web / HTML5 (`WebGL 2.0`)**:
    - Exports `index.html` (with inline scene JSON to bypass `file://` CORS restrictions), `tessera_web.js`, mobile touch joystick controls, and `serve.py` / `start_server.bat` for 1-click local browser testing.
 
-### 6.4 Step-by-Step Developer Tutorials
+### 6.4 Headland: Open-World Showcase
+
+A ~1.5 km coastal island built from CC0 scanned assets (Poly Haven): streamed in 128 m sectors, lit by the physical sky and volumetric clouds, with hardware ray-traced shadows and reflections, a Gerstner ocean, real-scale trees / rocks / props with LODs, a fishing camp with firelight, and a scripted HUD. Build it with `tools/fetch_assets.py`, `Tessera --optimize-models` and `Tessera --build-world` (see [`tools/README.md`](tools/README.md)), then play `--game --scene=projects/Headland/scenes/headland.world`.
+
+Lua APIs added for it (in addition to those registered in `LuaScriptSystem::RegisterEngineAPI`):
+
+| Function | Returns / effect |
+| :--- | :--- |
+| `Render.SetRayTracing(feature, on)` / `Render.GetRayTracing(feature)` | `feature`: `"all"`, `"shadows"`, `"reflections"`, `"ao"` |
+| `Render.GetRayTracingStats()` | `{ supported, blas, instances, memoryMB, buildMs, device }` |
+| `Render.GetFPS()` | Averaged frames per second |
+| `Streaming.GetStats()` | `{ sectors, active, loading, ready, nodes, streamedIn, streamedOut, mbRead, lastMs, maxMs }` |
+| `NodeAPI.SetLight(id, intensity [, r, g, b])` / `NodeAPI.GetLight(id)` | A light node's intensity and colour |
+| `Input.IsDown/IsPressed("F1".."F12")` | Function keys |
+
+### 6.5 Step-by-Step Developer Tutorials
 
 #### Tutorial 1: Setting Up Photorealistic Indoor/Outdoor Lighting (VXGI + Area Lights)
 1. Open **Window → Rendering, GI & Post-Processing** (<kbd>Shift+R</kbd>) or the top **Render** menu.
@@ -630,12 +651,14 @@ Tessera currently excels at the **AA engine standard** (comparable to Godot 4, h
 To bridge the gap from **AA to full modern AAA** (Unreal Engine 5, Decima, Frostbite, id Tech, RE Engine), the strategic development roadmap targets six foundational architectural tiers:
 
 #### 1. Rendering: Hardware Ray Tracing & Virtualized Geometry - [x] COMPLETED
+* **What runs today (Vulkan)**: `VK_KHR_acceleration_structure` + `VK_KHR_ray_query` are enabled on GPUs that support them. `VulkanRayTracing` builds a BLAS per mesh / submesh (recorded into the frame, no stalls) and a TLAS per frame for the editor and play scenes; `frag_rt.spv` (the forward shader compiled with `TESSERA_RT`) traces soft, alpha-tested sun and local-light shadows, reflections shaded at the hit (sun + shadow ray, sky, emission) and optional RTAO. Views that trace shadows skip the shadow-map passes. Without RT support the shadow-map / SSR path is used unchanged. The Metal backend is still a stub, and meshlets / vendor upscalers below are scaffolding.
 * **Hardware Vulkan & Apple Metal Ray Tracing (`VK_KHR_acceleration_structure` / `MTLAccelerationStructure`)**:
   * *Status*: **[x] Done**. Decoupled cross-platform BVH manager (`RayTracingManager`), dynamic BLAS mesh caching, and live scene instance TLAS synchronization for RTAO, RTR, RTS, and RTGI.
 * **Mesh Shaders & Meshlets (Nanite-Class Virtualized Geometry)**:
   * *Status*: **[x] Done**. Meshlet cluster builder breaking meshes into clusters of <= 64 vertices and <= 126 triangles (`MeshletBuilder`), cluster bounding sphere frustum culling, normal orientation cone backface culling, and `VK_EXT_mesh_shader` support.
 
 #### 2. World Scale: Asynchronous Streaming & World Partitioning - [x] COMPLETED
+* **What runs today**: `Streaming::WorldStreamer` streams `.world` manifests from disk: worker threads read and parse sector `.scene` files and load their models; the main thread attaches whole sectors within a per-frame budget, swaps out low-detail stand-ins, adds / removes physics bodies, and frees GPU meshes, splat maps and BLASes after the frames using them finish. Play mode takes over the editor's streamed sectors.
 * **Seamless Open Worlds (No Loading Screens) & DirectStorage Streaming**:
   * *Status*: **[x] Done**. Spatial grid-based world partition (`WorldPartitionManager`) dividing the infinite coordinate plane into sector cells, multi-threaded priority I/O queue (`DirectStorageQueue`) with unbuffered read fast-paths, camera distance/frustum priority boosts, seamless dynamic scene graph node attachment/detachment, and automatic memory budget enforcement.
 * **Large World Coordinates (64-Bit LWC) & Camera-Relative Rendering**:

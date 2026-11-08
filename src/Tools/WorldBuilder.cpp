@@ -160,7 +160,9 @@ struct Island {
         const float n = Fbm(x / 9.0f, z / 9.0f, 2, 909) - 0.5f;
         const float rock = glm::max(Smooth(30.0f, 42.0f, slope + n * 8.0f), Cliff(x, z) * Smooth(0.25f, 0.55f, Land(x, z)) * (1.0f - Smooth(0.6f, 0.75f, Land(x, z))));
         const float sand = (1.0f - Smooth(1.3f, 2.5f, h + n * 1.4f)) * (1.0f - rock);
-        const float forest = Forest(x, z) * (1.0f - rock) * (1.0f - sand);
+        // Forest floor shows through in patches (needle litter), grass between them
+        const float litter = Smooth(0.35f, 0.7f, Fbm(x / 14.0f + 3.0f, z / 14.0f + 8.0f, 3, 919));
+        const float forest = Forest(x, z) * (0.35f + 0.65f * litter) * (1.0f - rock) * (1.0f - sand);
         const float grass = glm::max(1.0f - rock - sand - forest, 0.0f);
         glm::vec4 w(sand, grass, forest, rock);
         return w / glm::max(w.x + w.y + w.z + w.w, 1e-4f);
@@ -466,7 +468,7 @@ void AddGroundCover(TerrainNode& terrain, const Island& island, int cx, int cz, 
     FoliageType grass;
     grass.name = "Meadow grass";
     grass.builtIn = 0;
-    grass.color = glm::vec4(0.40f, 0.52f, 0.22f, 1.0f);
+    grass.color = glm::vec4(0.26f, 0.38f, 0.13f, 1.0f);
     grass.minScale = 0.7f;
     grass.maxScale = 1.35f;
     grass.castShadows = false;
@@ -698,7 +700,7 @@ bool BuildHeadlandWorld(const WorldBuildOptions& options, std::string& error) {
             auto awayFromCamp = [&](const glm::vec2& p) { return Smooth(30.0f, 55.0f, glm::distance(p, island.campCenter)); };
             auto aboveWater = [&](const glm::vec2& p) { return island.Height(p.x, p.y) > 0.4f ? 1.0f : 0.0f; };
             // Trees, then what grows under them, then meadows, then the shore
-            sb.Scatter(origin, 9.0f, kForestTrees, std::size(kForestTrees), [&](const glm::vec2& p) {
+            sb.Scatter(origin, 7.0f, kForestTrees, std::size(kForestTrees), [&](const glm::vec2& p) {
                 return island.Forest(p.x, p.y) * 0.95f * aboveWater(p) * awayFromCamp(p);
             });
             sb.Scatter(origin, 4.0f, kForestFloor, std::size(kForestFloor), [&](const glm::vec2& p) {
@@ -833,9 +835,49 @@ bool BuildHeadlandWorld(const WorldBuildOptions& options, std::string& error) {
         }
         addView("View: Forest", glm::vec3(forest.x, island.Height(forest.x, forest.y) + 1.7f, forest.y), 35.0f, 4.0f);
         addView("View: Hilltop", glm::vec3(hill.x, bestHill + 2.0f, hill.y), yawToward(island.campCenter - hill), -6.0f);
-        addView("View: Cliffs", glm::vec3(cliff.x, island.Height(cliff.x, cliff.y) + 1.8f, cliff.y), yawToward(glm::vec2(-0.6f, 0.8f)), -12.0f);
+        // Out at sea, looking back at the cliffs (in flight: well above the water)
+        const glm::vec2 cliffView = cliff + glm::vec2(-140.0f, 70.0f);
+        addView("View: Cliffs", glm::vec3(cliffView.x, 34.0f, cliffView.y), yawToward(cliff - cliffView), -9.0f);
         const glm::vec3 aerial(kCenter.x + 380.0f, 230.0f, kCenter.y + 520.0f);
         addView("View: Overview", aerial, yawToward(kCenter - glm::vec2(aerial.x, aerial.z)), -22.0f);
+    }
+
+    // HUD (scripts/headland/Hud.lua fills it in) and the world director (time, weather, lights,
+    // ray tracing switches)
+    {
+        auto place = [](const std::shared_ptr<Node>& n, UIAnchor anchor, glm::vec2 pos, glm::vec2 size) {
+            n->uiAnchor = anchor;
+            n->uiPosition = pos;
+            n->uiSize = size;
+        };
+        auto canvas = base.AddUICanvasNode("HUD");
+        canvas->scriptPath = "scripts/headland/Hud.lua";
+        auto panel = base.AddUIPanelNode("HUD Panel", canvas->id);
+        place(panel, UIAnchor::TopLeft, glm::vec2(16.0f, 16.0f), glm::vec2(520.0f, 112.0f));
+        panel->uiColor = glm::vec4(0.03f, 0.04f, 0.05f, 0.55f);
+        panel->uiBorderThickness = 0.0f;
+        panel->uiRounding = 6.0f;
+        auto title = base.AddUITextNode("HEADLAND", "HUD Title", panel->id);
+        place(title, UIAnchor::TopLeft, glm::vec2(14.0f, 8.0f), glm::vec2(490.0f, 24.0f));
+        title->uiFontSize = 20.0f;
+        title->uiTextColor = glm::vec4(1.0f, 0.9f, 0.72f, 1.0f);
+        auto stats = base.AddUITextNode("", "HUD Stats", panel->id);
+        place(stats, UIAnchor::TopLeft, glm::vec2(14.0f, 36.0f), glm::vec2(490.0f, 70.0f));
+        stats->uiFontSize = 15.0f;
+        stats->uiTextColor = glm::vec4(0.9f, 0.93f, 0.97f, 1.0f);
+        auto compass = base.AddUITextNode("", "HUD Compass", canvas->id);
+        place(compass, UIAnchor::TopCenter, glm::vec2(0.0f, 16.0f), glm::vec2(260.0f, 28.0f));
+        compass->uiFontSize = 18.0f;
+        compass->uiTextColor = glm::vec4(1.0f, 1.0f, 1.0f, 0.9f);
+        auto help = base.AddUITextNode("WASD move  |  Shift sprint  |  hold RMB look  |  F fly  |  1-6 viewpoints  |  "
+                                       "F1 RT shadows  |  F2 RT reflections  |  F3 stats  |  F4 weather  |  F5 +3 hours",
+                                       "HUD Help", canvas->id);
+        place(help, UIAnchor::BottomLeft, glm::vec2(16.0f, -14.0f), glm::vec2(1200.0f, 22.0f));
+        help->uiFontSize = 14.0f;
+        help->uiTextColor = glm::vec4(0.88f, 0.9f, 0.94f, 0.85f);
+
+        auto director = base.AddEmptyNode("World Director");
+        director->scriptPath = "scripts/headland/WorldDirector.lua";
     }
 
     const std::string baseFile = (fs::path(options.outputDir) / "base.scene").string();

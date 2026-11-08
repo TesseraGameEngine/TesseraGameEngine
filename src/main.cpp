@@ -3248,8 +3248,11 @@ private:
                     ResolveRayTracingMaterial(node, submesh, inst);
                 };
                 if (rtOn) {
-                    auto gameCam = activePlayScene.GetActiveCamera();
-                    const glm::vec3 gameFocus = gameCam ? gameCam->GetWorldPosition(activePlayScene) : m_camera.GetPosition();
+                    glm::vec3 gameFocus = m_camera.GetPosition();
+                    if (m_gameConfig.isStandaloneGame || m_gameLoop.IsPlaying() || m_gameLoop.IsPaused()) {
+                        auto gameCam = activePlayScene.GetActiveCamera();
+                        if (gameCam) gameFocus = gameCam->GetWorldPosition(activePlayScene);
+                    }
                     rtMgr.SyncScene(activePlayScene, 1, meshResolver, materialResolver, gameFocus, kRTRange);
                     if (editorShown && !sameScene) {
                         rtMgr.SyncScene(m_scene, 0, meshResolver, materialResolver, m_camera.GetPosition(), kRTRange);
@@ -3276,7 +3279,11 @@ private:
         }
 
         auto activeCam = activePlayScene.GetActiveCamera();
-        if (activeCam) {
+        const bool gameViewNeeded = m_gameConfig.isStandaloneGame ||
+                                    m_gameLoop.IsPlaying() ||
+                                    m_gameLoop.IsPaused() ||
+                                    m_editorUI.IsGameOrPreviewVisible();
+        if (activeCam && gameViewNeeded) {
             UniformBufferObject camUbo{};
             camUbo.view = activeCam->GetCameraViewMatrix(&activePlayScene);
             float aspect = (float)m_cameraPreviewOffscreen.GetWidth() / (float)m_cameraPreviewOffscreen.GetHeight();
@@ -3358,6 +3365,9 @@ private:
                 glm::vec2 gameRes(static_cast<float>(m_cameraPreviewOffscreen.GetWidth()), static_cast<float>(m_cameraPreviewOffscreen.GetHeight()));
                 Monitoring::GameProfiler::Get().RecordGameRenderMetrics(playDrawCalls, playTriangles, playVertices, activeLights, shadowPasses, gameRes);
             }
+        } else if (activeCam) {
+            // Game / Preview window is not currently visible or active: skip heavy scene passes
+            m_prevViewProjValid[1] = false;
         } else {
             // When no camera exists in scene, cleanly clear preview offscreen framebuffer
             gpuBegin("Game View");
@@ -3394,8 +3404,10 @@ private:
 
 
         // Synchronize and cull Meshlet GPU Virtualization clusters
-        // Synchronize and cull Meshlet GPU Virtualization clusters
-        Graphics::Meshlet::MeshletManager::Get().SyncScene(activeViewportScene, m_camera.GetPosition(), editorUbo.proj * editorUbo.view);
+        // Synchronize and cull Meshlet GPU Virtualization clusters (when enabled)
+        if (Graphics::Meshlet::MeshletManager::Get().GetSettings().enableMeshletPipeline) {
+            Graphics::Meshlet::MeshletManager::Get().SyncScene(activeViewportScene, m_camera.GetPosition(), editorUbo.proj * editorUbo.view);
+        }
 
         // Update Temporal Upscaling & Large World Coordinates telemetry
         Graphics::Upscaling::TemporalUpscaler::Get().UpdateStats(m_offscreen.GetWidth(), m_offscreen.GetHeight(), m_taaFrameIndex);

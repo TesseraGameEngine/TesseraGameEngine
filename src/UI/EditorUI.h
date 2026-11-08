@@ -490,6 +490,10 @@ public:
         if (frame - m_previewImageFrame <= 2) return m_previewImageSize * pixels;
         return glm::vec2(0.0f);
     }
+    bool IsGameOrPreviewVisible() const {
+        const int frame = ImGui::GetFrameCount();
+        return (frame - m_gameImageFrame <= 2) || (frame - m_previewImageFrame <= 2);
+    }
 private:
     glm::vec2 m_gameImageSize{0.0f};
     int m_gameImageFrame{-100};

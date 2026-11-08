@@ -1811,9 +1811,41 @@ void EditorUI::RenderHierarchy(Scene& scene, Camera& camera) {
     bool requestDelete = false;
 
     // Render root nodes (nodes with parentId == 0)
+    // Separate base scene root nodes from streamed sector nodes to avoid 5,000+ loose tree items
+    std::vector<std::shared_ptr<Node>> baseRootNodes;
+    std::map<std::string, std::vector<std::shared_ptr<Node>>> streamedSectors;
+
     auto rootNodes = scene.GetRootNodes();
     for (const auto& rootNode : rootNodes) {
+        if (!rootNode) continue;
+        if (rootNode->streamSector.empty()) {
+            baseRootNodes.push_back(rootNode);
+        } else {
+            streamedSectors[rootNode->streamSector].push_back(rootNode);
+        }
+    }
+
+    for (const auto& rootNode : baseRootNodes) {
         RenderNodeTree(scene, rootNode->id, nodeToDelete, requestDelete);
+    }
+
+    if (!streamedSectors.empty()) {
+        size_t totalStreamed = 0;
+        for (const auto& [sec, sNodes] : streamedSectors) totalStreamed += sNodes.size();
+
+        std::string groupLabel = "[Streamed Sectors] (" + std::to_string(streamedSectors.size()) + " sectors, " + std::to_string(totalStreamed) + " nodes)";
+        if (ImGui::TreeNode(groupLabel.c_str())) {
+            for (const auto& [sec, sNodes] : streamedSectors) {
+                std::string secLabel = "Sector " + sec + " (" + std::to_string(sNodes.size()) + " nodes)";
+                if (ImGui::TreeNode(secLabel.c_str())) {
+                    for (const auto& sNode : sNodes) {
+                        RenderNodeTree(scene, sNode->id, nodeToDelete, requestDelete);
+                    }
+                    ImGui::TreePop();
+                }
+            }
+            ImGui::TreePop();
+        }
     }
 
     // Drag-and-drop onto empty list area unparents back to root
@@ -3799,6 +3831,17 @@ void EditorUI::RenderViewport(Scene& scene, Camera& camera, Graphics::IRenderTar
         };
 
         for (const auto& n : scene.GetNodes()) {
+            if (!n) continue;
+            const auto type = n->nodeType;
+            if (type != NodeType::ParticleEmitter &&
+                type != NodeType::Spline &&
+                type != NodeType::Terrain &&
+                type != NodeType::Decal &&
+                type != NodeType::Camera &&
+                type != NodeType::Light &&
+                type != NodeType::AudioSource) {
+                continue;
+            }
             glm::vec3 worldPos = n->GetWorldPosition(scene);
             bool isSel = (scene.GetSelectedId() == static_cast<int32_t>(n->id));
 

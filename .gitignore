@@ -69,3 +69,6 @@ assets/external/
 CMakeUserPresets.json
 CMakeFiles/
 CMakeCache.txt
+
+# Generated test worlds (tools/make_stream_test_world.py)
+projects/DefaultProject/scenes/streamtest/

@@ -40,6 +40,12 @@ public:
     void BuildFromScene(Scene& scene);
     uint32_t CreateBodyForNode(Scene& scene, const std::shared_ptr<Node>& node);
     bool HasBodyForNode(uint32_t nodeId) const;
+    // Streaming: bodies for nodes that joined a running scene (rigid bodies, colliders, and
+    // terrains with their solid foliage), and removal of everything a node owns
+    void AddBodiesForNodes(Scene& scene, const std::vector<std::shared_ptr<Node>>& nodes);
+    void RemoveBodiesForNode(uint32_t nodeId);
+    // Number of bodies a node owns (its own body plus terrain / foliage extras)
+    size_t GetBodyCountForNode(uint32_t nodeId) const;
 
     void SetLinearVelocity(uint32_t nodeId, const glm::vec3& velocity);
     glm::vec3 GetLinearVelocity(uint32_t nodeId) const;
@@ -70,6 +76,8 @@ public:
     // Terrains as solid ground (a heightfield each) and their solid foliage (trees, rocks) as
     // static bodies. Call after BuildFromScene; they go with the scene's other bodies.
     void AddTerrainBodies(Scene& scene);
+    // One terrain's heightfield and solid foliage (owned by that node: RemoveBodiesForNode)
+    void AddTerrainBodiesForNode(Scene& scene, const std::shared_ptr<Node>& node);
     // Pairs of nodes whose bodies started touching since the last call (scripts' OnCollision)
     std::vector<std::pair<uint32_t, uint32_t>> TakeNewContacts();
 

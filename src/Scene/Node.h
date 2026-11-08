@@ -733,6 +733,10 @@ struct Node {
         return 0;
     }
 
+    // World streaming (runtime only, never saved): the sector ("x,z") whose file this node was
+    // streamed in from; empty for the scene's own nodes
+    std::string streamSector{""};
+
     // Networking properties
     uint32_t networkId{0};
     uint32_t multiplayerAuthority{1}; // 1 = Server/Host (Default), 2+ = Specific Client, 0 = Shared/Any

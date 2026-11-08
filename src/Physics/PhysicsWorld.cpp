@@ -26,6 +26,7 @@
 #include <thread>
 #include <mutex>
 #include <algorithm>
+#include <unordered_map>
 
 JPH_SUPPRESS_WARNINGS
 
@@ -171,7 +172,9 @@ struct PhysicsWorld::Impl {
     std::map<uint32_t, CollisionFilter> nodeCollisionFilters;
     TesseraContactListener contactListener;
     std::mutex contactMutex;
-    std::vector<JPH::BodyID> staticExtras; // terrain heightfields and solid foliage (AddTerrainBodies)
+    // Terrain heightfields and solid foliage, per terrain node (AddTerrainBodiesForNode)
+    std::unordered_map<uint32_t, std::vector<JPH::BodyID>> nodeExtras;
+    size_t foliageBodyCount{0};
     std::vector<std::pair<uint32_t, uint32_t>> newContacts; // node ids, since TakeNewContacts
 };
 
@@ -277,11 +280,14 @@ void PhysicsWorld::Shutdown() {
         }
     }
     m_impl->nodeToBody.clear();
-    for (const JPH::BodyID& id : m_impl->staticExtras) {
-        bodyInterface.RemoveBody(id);
-        bodyInterface.DestroyBody(id);
+    for (const auto& [nodeId, ids] : m_impl->nodeExtras) {
+        for (const JPH::BodyID& id : ids) {
+            bodyInterface.RemoveBody(id);
+            bodyInterface.DestroyBody(id);
+        }
     }
-    m_impl->staticExtras.clear();
+    m_impl->nodeExtras.clear();
+    m_impl->foliageBodyCount = 0;
 
     for (const auto& kv : m_impl->ragdolls) {
         for (uint32_t rawId : kv.second.joltBodyIds) {
@@ -327,11 +333,14 @@ void PhysicsWorld::BuildFromScene(Scene& scene) {
         }
     }
     m_impl->nodeToBody.clear();
-    for (const JPH::BodyID& id : m_impl->staticExtras) {
-        bodyInterface.RemoveBody(id);
-        bodyInterface.DestroyBody(id);
+    for (const auto& [nodeId, ids] : m_impl->nodeExtras) {
+        for (const JPH::BodyID& id : ids) {
+            bodyInterface.RemoveBody(id);
+            bodyInterface.DestroyBody(id);
+        }
     }
-    m_impl->staticExtras.clear();
+    m_impl->nodeExtras.clear();
+    m_impl->foliageBodyCount = 0;
 
     for (const auto& node : scene.GetNodes()) {
         if (!node) continue;
@@ -426,15 +435,23 @@ uint32_t PhysicsWorld::CreateBodyForNode(Scene& scene, const std::shared_ptr<Nod
 
 void PhysicsWorld::AddTerrainBodies(Scene& scene) {
     if (!m_initialized) return;
+    for (const auto& node : scene.GetNodes()) {
+        if (node && node->nodeType == NodeType::Terrain) AddTerrainBodiesForNode(scene, node);
+    }
+    m_impl->physicsSystem->OptimizeBroadPhase();
+}
+
+void PhysicsWorld::AddTerrainBodiesForNode(Scene& scene, const std::shared_ptr<Node>& node) {
+    if (!m_initialized || !node || node->nodeType != NodeType::Terrain) return;
     auto& bodyInterface = m_impl->physicsSystem->GetBodyInterface();
     constexpr size_t kMaxFoliageBodies = 12000;
-    size_t foliageBodies = 0;
-    for (const auto& node : scene.GetNodes()) {
-        if (!node || node->nodeType != NodeType::Terrain) continue;
+    {
         auto terrain = std::dynamic_pointer_cast<TerrainNode>(node);
-        if (!terrain) continue;
+        if (!terrain) return;
+        if (m_impl->nodeExtras.count(terrain->id)) RemoveBodiesForNode(terrain->id);
+        auto& owned = m_impl->nodeExtras[terrain->id];
         const uint32_t N = terrain->gridResolution;
-        if (N < 2 || terrain->heightData.size() != static_cast<size_t>(N) * N) continue;
+        if (N < 2 || terrain->heightData.size() != static_cast<size_t>(N) * N) return;
         // The ground: a heightfield of the terrain's samples (Jolt wants a multiple of its block size)
         uint32_t samples = N;
         if (samples % 2 != 0) ++samples;
@@ -457,11 +474,11 @@ void PhysicsWorld::AddTerrainBodies(Scene& scene) {
             body.mUserData = static_cast<uint64_t>(terrain->id);
             body.mFriction = 0.8f;
             const JPH::BodyID id = bodyInterface.CreateAndAddBody(body, JPH::EActivation::DontActivate);
-            if (!id.IsInvalid()) m_impl->staticExtras.push_back(id);
+            if (!id.IsInvalid()) owned.push_back(id);
         }
         // Solid foliage: trunks as capsules, rocks and bushes as balls
         for (const auto& [type, model] : terrain->CollidingFoliage(scene)) {
-            if (foliageBodies >= kMaxFoliageBodies) break;
+            if (m_impl->foliageBodyCount >= kMaxFoliageBodies) break;
             const int builtIn = terrain->foliageTypes[type].builtIn;
             const float s = glm::length(glm::vec3(model[1]));
             const glm::vec3 base(model[3]);
@@ -480,12 +497,54 @@ void PhysicsWorld::AddTerrainBodies(Scene& scene) {
             body.mUserData = static_cast<uint64_t>(terrain->id);
             const JPH::BodyID id = bodyInterface.CreateAndAddBody(body, JPH::EActivation::DontActivate);
             if (!id.IsInvalid()) {
-                m_impl->staticExtras.push_back(id);
-                ++foliageBodies;
+                owned.push_back(id);
+                ++m_impl->foliageBodyCount;
             }
         }
     }
-    m_impl->physicsSystem->OptimizeBroadPhase();
+}
+
+void PhysicsWorld::AddBodiesForNodes(Scene& scene, const std::vector<std::shared_ptr<Node>>& nodes) {
+    if (!m_initialized) return;
+    for (const auto& node : nodes) {
+        if (!node) continue;
+        if (node->nodeType == NodeType::Terrain) {
+            AddTerrainBodiesForNode(scene, node);
+        } else if (node->rigidBodyType != RigidBodyType::None || node->nodeType == NodeType::Collider) {
+            CreateBodyForNode(scene, node);
+        }
+    }
+}
+
+void PhysicsWorld::RemoveBodiesForNode(uint32_t nodeId) {
+    if (!m_initialized) return;
+    auto& bodyInterface = m_impl->physicsSystem->GetBodyInterface();
+    auto it = m_impl->nodeToBody.find(nodeId);
+    if (it != m_impl->nodeToBody.end()) {
+        if (!it->second.IsInvalid()) {
+            bodyInterface.RemoveBody(it->second);
+            bodyInterface.DestroyBody(it->second);
+        }
+        m_impl->nodeToBody.erase(it);
+    }
+    auto extras = m_impl->nodeExtras.find(nodeId);
+    if (extras != m_impl->nodeExtras.end()) {
+        // Every extra but the heightfield is a foliage body
+        const size_t foliage = extras->second.empty() ? 0 : extras->second.size() - 1;
+        m_impl->foliageBodyCount -= std::min(m_impl->foliageBodyCount, foliage);
+        for (const JPH::BodyID& id : extras->second) {
+            bodyInterface.RemoveBody(id);
+            bodyInterface.DestroyBody(id);
+        }
+        m_impl->nodeExtras.erase(extras);
+    }
+}
+
+size_t PhysicsWorld::GetBodyCountForNode(uint32_t nodeId) const {
+    size_t count = HasBodyForNode(nodeId) ? 1 : 0;
+    auto extras = m_impl->nodeExtras.find(nodeId);
+    if (extras != m_impl->nodeExtras.end()) count += extras->second.size();
+    return count;
 }
 
 bool PhysicsWorld::HasBodyForNode(uint32_t nodeId) const {

@@ -232,6 +232,7 @@ set(SOURCES
     src/Core/LargeWorldCoordinates.cpp
     src/Streaming/DirectStorageQueue.cpp
     src/Streaming/WorldPartitionManager.cpp
+    src/Streaming/WorldStreamer.cpp
     src/Physics/PhysicsWorld.cpp
     src/Physics/XPBDClothSim.cpp
     src/Navigation/NavMesh.cpp
@@ -527,6 +528,7 @@ add_executable(EngineTestSuite
     src/Core/LargeWorldCoordinates.cpp
     src/Streaming/DirectStorageQueue.cpp
     src/Streaming/WorldPartitionManager.cpp
+    src/Streaming/WorldStreamer.cpp
     src/Physics/PhysicsWorld.cpp
     src/Physics/XPBDClothSim.cpp
     src/Navigation/NavMesh.cpp

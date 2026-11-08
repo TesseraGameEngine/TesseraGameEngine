@@ -240,6 +240,11 @@ public:
     int32_t GetSelectedId() const { return m_selectedId; }
 
     const std::vector<std::shared_ptr<Node>>& GetNodes() const { return m_nodes; }
+    // A fresh node id (for nodes created elsewhere and attached with AttachNode)
+    uint32_t AllocateNodeId() { return m_nextId++; }
+    // Ids handed out from now on are at least `next` (keeps two scenes' new ids apart)
+    void EnsureNextIdAtLeast(uint32_t next) { if (m_nextId < next) m_nextId = next; }
+    uint32_t PeekNextId() const { return m_nextId; }
     void AttachNode(std::shared_ptr<Node> node) {
         if (!node) return;
         for (const auto& existing : m_nodes) {

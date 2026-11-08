@@ -687,6 +687,8 @@ JsonValue Scene::Serialize() const {
 
     JsonValue nodesArr = JsonValue::Array();
     for (const auto& node : m_nodes) {
+        // Nodes streamed in from world sectors belong to their sector files, not this scene
+        if (!node->streamSector.empty()) continue;
         JsonValue n = JsonValue::Object();
         n["id"] = node->id;
         n["parentId"] = node->parentId;

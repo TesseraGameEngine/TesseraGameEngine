@@ -43,7 +43,10 @@ static std::ofstream g_log("engine.log");
 #include "Renderer/Pipeline/VulkanPipelineCache.h"
 #include "Renderer/Upscaling/TemporalUpscaler.h"
 #include "Core/LargeWorldCoordinates.h" 
-#include "Streaming/WorldPartitionManager.h" 
+#include "Streaming/WorldPartitionManager.h"
+#include "Streaming/WorldStreamer.h"
+#include <mutex>
+#include <unordered_set> 
 #include "Core/EngineIconData.h"
 #include <filesystem>
 #ifdef _WIN32
@@ -836,6 +839,7 @@ private:
 
     bool SaveScene() {
         if (m_project && m_project->IsLoaded()) {
+            StreamingSaveGuard guard(*this);
             bool ok = m_project->SaveActiveScene(m_scene);
             LOG("SaveScene result: " << (ok ? "SUCCESS" : "FAILED"));
             return ok;
@@ -845,6 +849,7 @@ private:
 
     bool SaveSceneAs(const std::string& name) {
         if (m_project && m_project->IsLoaded()) {
+            StreamingSaveGuard guard(*this);
             bool ok = m_project->SaveSceneAs(name, m_scene);
             if (ok) {
                 UpdateWindowTitle();
@@ -922,6 +927,7 @@ private:
 
     bool SaveProject() {
         if (m_project && m_project->IsLoaded()) {
+            StreamingSaveGuard guard(*this);
             bool ok = m_project->Save(m_scene, m_camera, m_editorUI);
             LOG("SaveProject result: " << (ok ? "SUCCESS" : "FAILED"));
             return ok;
@@ -1150,6 +1156,19 @@ private:
                     }
                     return false;
                 };
+                // A world manifest: its base scene is loaded; sectors stream in during play
+                if (std::filesystem::path(sceneToLoad).extension() == ".world") {
+                    Streaming::WorldManifest manifest;
+                    std::string error;
+                    if (Streaming::WorldManifest::Load(sceneToLoad, manifest, &error)) {
+                        m_editorStreamer.SetHooks(MakeStreamHooks(false, manifest.rootDir));
+                        m_editorStreamer.Open(manifest);
+                        sceneToLoad = manifest.BaseScenePath();
+                        m_worldBoundScenePath = sceneToLoad;
+                    } else {
+                        std::cerr << "[Standalone] " << error << std::endl;
+                    }
+                }
                 m_scene.LoadFromFile(sceneToLoad, standaloneLoadMeshCb);
             } else {
                 std::cout << "[Standalone] Starting scene not found (" << sceneToLoad << "), using default scene." << std::endl;
@@ -3151,6 +3170,7 @@ private:
                 }
             }
         };
+        UpdateWorldStreaming();
         UpdateTerrainMeshes(activePlayScene);
         UpdateTerrainMeshes(m_scene);
 
@@ -3776,6 +3796,9 @@ private:
         m_fluidSim.Cleanup();
         m_particleSim.Cleanup();
         m_gpuProfiler.Cleanup();
+        if (m_playStreamer) m_playStreamer->ReleaseAll();
+        m_editorStreamer.ReleaseAll();
+        FlushPendingMeshFrees(true);
         Graphics::Meshlet::MeshletManager::Get().Shutdown();
         // Acceleration structures and their buffers belong to the device: free them now, not in
         // the singleton's destructor (which runs after the device is gone)
@@ -3923,6 +3946,204 @@ private:
     std::map<ShapeType, GPUMesh> m_meshes;
     std::map<std::string, GPUMesh> m_customMeshes;
     std::map<std::string, LoadedMesh> m_cpuMeshes;
+
+    // ------------------------------------------------------------------------------------------
+    // World streaming (Streaming::WorldStreamer). The edited scene streams sectors around the
+    // editor camera; in Play the play scene (a clone) takes over those sectors and streams around
+    // the game camera. Models are reference counted across both and freed a few frames after the
+    // last sector using them leaves (the GPU may still be drawing them).
+    // ------------------------------------------------------------------------------------------
+    Streaming::WorldStreamer m_editorStreamer;
+    std::unique_ptr<Streaming::WorldStreamer> m_playStreamer;
+    const Scene* m_playStreamerScene{nullptr};
+    std::string m_worldBoundScenePath;   // the m_scene file the editor streamer was bound for
+    std::mutex m_streamMeshMutex;
+    std::unordered_set<std::string> m_residentMeshNames; // models resident on the GPU (worker threads ask)
+    std::unordered_map<std::string, int> m_streamMeshRefs;
+    std::unordered_set<std::string> m_pinnedMeshes;      // resident before streaming used them: never freed by it
+    std::vector<std::pair<uint64_t, GPUMesh>> m_pendingMeshFrees;
+    uint64_t m_streamFrame{0};
+
+    struct StreamingSaveGuard {
+        EngineApp& app;
+        explicit StreamingSaveGuard(EngineApp& a) : app(a) { if (app.m_editorStreamer.IsOpen()) app.m_editorStreamer.SuspendForSave(app.m_scene); }
+        ~StreamingSaveGuard() { if (app.m_editorStreamer.IsOpen()) app.m_editorStreamer.ResumeAfterSave(app.m_scene); }
+    };
+
+    // A model file's CPU data (any thread: no GPU or engine state is touched)
+    bool LoadMeshFileCPU(const std::string& name, const std::string& worldRoot, LoadedMesh& out) const {
+        namespace fs = std::filesystem;
+        std::vector<fs::path> candidates;
+        candidates.emplace_back(name);
+        if (!worldRoot.empty()) {
+            candidates.push_back(fs::path(worldRoot) / name);
+            candidates.push_back(fs::path(worldRoot).parent_path() / name);
+        }
+        candidates.push_back(fs::path("assets/models") / name);
+        std::error_code ec;
+        for (const auto& path : candidates) {
+            if (!fs::exists(path, ec)) continue;
+            std::string ext = path.extension().string();
+            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+            if (ext == ".gltf" || ext == ".glb") return GltfLoader::Load(path.string(), out, true);
+            if (ext == ".fbx") return FbxLoader::Load(path.string(), out, true);
+            return ObjLoader::Load(path.string(), out, true);
+        }
+        return false;
+    }
+
+    bool AcquireStreamMesh(const std::string& name, LoadedMesh* cpu, const std::string& worldRoot) {
+        int& refs = m_streamMeshRefs[name];
+        if (m_customMeshes.count(name)) {
+            if (refs == 0 && !m_residentMeshNames.count(name)) m_pinnedMeshes.insert(name); // the base scene's own
+            ++refs;
+            std::lock_guard<std::mutex> lock(m_streamMeshMutex);
+            m_residentMeshNames.insert(name);
+            return true;
+        }
+        LoadedMesh local;
+        if (!cpu) {
+            if (!LoadMeshFileCPU(name, worldRoot, local)) {
+                if (refs == 0) m_streamMeshRefs.erase(name);
+                std::cerr << "[WorldStreamer] Model not found: " << name << std::endl;
+                return false;
+            }
+            cpu = &local;
+        }
+        m_customMeshes[name] = VulkanBufferUtils::UploadMesh(cpu->meshData);
+        m_cpuMeshes[name] = std::move(*cpu);
+        ++refs;
+        std::lock_guard<std::mutex> lock(m_streamMeshMutex);
+        m_residentMeshNames.insert(name);
+        return true;
+    }
+
+    void ReleaseStreamMesh(const std::string& name) {
+        auto it = m_streamMeshRefs.find(name);
+        if (it == m_streamMeshRefs.end()) return;
+        if (--it->second > 0) return;
+        m_streamMeshRefs.erase(it);
+        if (m_pinnedMeshes.count(name)) return;
+        Graphics::RayTracing::RayTracingManager::Get().UnregisterMesh("mesh:" + name);
+        auto gpu = m_customMeshes.find(name);
+        if (gpu != m_customMeshes.end()) {
+            m_pendingMeshFrees.emplace_back(m_streamFrame, gpu->second);
+            m_customMeshes.erase(gpu);
+        }
+        m_cpuMeshes.erase(name);
+        std::lock_guard<std::mutex> lock(m_streamMeshMutex);
+        m_residentMeshNames.erase(name);
+    }
+
+    // A streamed-out terrain tile's generated mesh (its key is unique to the node id)
+    void ReleaseTerrainMesh(const std::string& key) {
+        if (key.empty()) return;
+        Graphics::RayTracing::RayTracingManager::Get().UnregisterMesh("terrain:" + key);
+        m_terrainCpuMeshes.erase(key);
+        auto gpu = m_customMeshes.find(key);
+        if (gpu != m_customMeshes.end()) {
+            m_pendingMeshFrees.emplace_back(m_streamFrame, gpu->second);
+            m_customMeshes.erase(gpu);
+        }
+    }
+
+    void FlushPendingMeshFrees(bool all) {
+        VkDevice device = VulkanContext::Get().GetDevice();
+        auto it = m_pendingMeshFrees.begin();
+        while (it != m_pendingMeshFrees.end()) {
+            if (all || it->first + MAX_FRAMES_IN_FLIGHT + 1 <= m_streamFrame) {
+                it->second.Cleanup(device);
+                it = m_pendingMeshFrees.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
+    Streaming::WorldStreamer::Hooks MakeStreamHooks(bool playScene, const std::string& worldRoot) {
+        Streaming::WorldStreamer::Hooks h;
+        h.isMeshResident = [this](const std::string& n) {
+            std::lock_guard<std::mutex> lock(m_streamMeshMutex);
+            return m_residentMeshNames.count(n) > 0;
+        };
+        h.loadMeshCPU = [this, worldRoot](const std::string& n, LoadedMesh& out) { return LoadMeshFileCPU(n, worldRoot, out); };
+        h.acquireMesh = [this, worldRoot](const std::string& n, LoadedMesh* cpu) { return AcquireStreamMesh(n, cpu, worldRoot); };
+        h.releaseMesh = [this](const std::string& n) { ReleaseStreamMesh(n); };
+        h.onAttached = [this, playScene](Scene& sc, const std::vector<std::shared_ptr<Node>>& nodes) {
+            auto& physics = m_gameLoop.GetPhysicsWorld();
+            if (playScene && physics.IsInitialized()) physics.AddBodiesForNodes(sc, nodes);
+        };
+        h.onDetaching = [this, playScene](Scene& sc, const std::vector<std::shared_ptr<Node>>& nodes) {
+            auto& physics = m_gameLoop.GetPhysicsWorld();
+            for (const auto& n : nodes) {
+                if (playScene) {
+                    if (physics.IsInitialized()) physics.RemoveBodiesForNode(n->id);
+                    Scripting::LuaScriptSystem::Get().DestroyNodeScript(n->id);
+                }
+                if (n->nodeType == NodeType::Terrain) ReleaseTerrainMesh(n->customMeshName);
+                if (sc.GetSelectedId() == static_cast<int32_t>(n->id)) sc.ClearSelection();
+            }
+        };
+        return h;
+    }
+
+    // The editor streamer follows the edited scene: a .world manifest next to the scene file
+    // whose base scene is that file turns streaming on
+    void RebindEditorWorld() {
+        namespace fs = std::filesystem;
+        m_worldBoundScenePath = m_scene.GetFilePath();
+        m_editorStreamer.ReleaseAll(); // the scene it streamed into was replaced
+        if (m_worldBoundScenePath.empty()) return;
+        std::error_code ec;
+        const fs::path scenePath(m_worldBoundScenePath);
+        for (const auto& entry : fs::directory_iterator(scenePath.parent_path(), ec)) {
+            if (!entry.is_regular_file() || entry.path().extension() != ".world") continue;
+            Streaming::WorldManifest manifest;
+            if (!Streaming::WorldManifest::Load(entry.path().string(), manifest)) continue;
+            if (!fs::equivalent(manifest.BaseScenePath(), scenePath, ec)) continue;
+            m_editorStreamer.SetHooks(MakeStreamHooks(false, manifest.rootDir));
+            m_editorStreamer.Open(manifest);
+            return;
+        }
+    }
+
+    void UpdateWorldStreaming() {
+        ++m_streamFrame;
+        const bool standalone = m_gameConfig.isStandaloneGame;
+        if (!standalone && m_scene.GetFilePath() != m_worldBoundScenePath) RebindEditorWorld();
+        if (!standalone && m_editorStreamer.IsOpen()) {
+            m_editorStreamer.Update(m_scene, m_camera.GetPosition(), 4.0f);
+        }
+
+        std::shared_ptr<Scene> playScene = m_gameLoop.GetMode() != Gameplay::EngineMode::Edit ? m_gameLoop.GetPlayScene() : nullptr;
+        if (playScene && m_editorStreamer.GetManifest().sectors.size() > 0) {
+            if (m_playStreamerScene != playScene.get()) {
+                if (m_playStreamer) m_playStreamer->ReleaseAll();
+                m_playStreamer = std::make_unique<Streaming::WorldStreamer>();
+                m_playStreamer->SetHooks(MakeStreamHooks(true, m_editorStreamer.GetManifest().rootDir));
+                // New ids in the play scene never collide with the editor scene's (terrain mesh
+                // keys and acceleration structure keys are made from node ids)
+                playScene->EnsureNextIdAtLeast(m_scene.PeekNextId() + 1000000u);
+                m_playStreamer->Adopt(m_editorStreamer, *playScene);
+                m_playStreamerScene = playScene.get();
+                if (standalone) {
+                    // Loading screen: everything near the player is in before the first frame
+                    auto cam = playScene->GetActiveCamera();
+                    const glm::vec3 focus = cam ? cam->GetWorldPosition(*playScene) : glm::vec3(0.0f);
+                    m_playStreamer->LoadAround(*playScene, focus, 60.0f);
+                }
+            }
+            auto cam = playScene->GetActiveCamera();
+            const glm::vec3 focus = cam ? cam->GetWorldPosition(*playScene) : m_camera.GetPosition();
+            m_playStreamer->Update(*playScene, focus, 4.0f);
+        } else if (m_playStreamer) {
+            m_playStreamer->ReleaseAll();
+            m_playStreamer.reset();
+            m_playStreamerScene = nullptr;
+        }
+        FlushPendingMeshFrees(false);
+    }
+
     // CPU copies for ray tracing BLAS builds: built-in primitives and generated terrain meshes
     std::map<ShapeType, MeshData> m_cpuPrimitives;
     std::map<std::string, MeshData> m_terrainCpuMeshes;

@@ -4694,6 +4694,142 @@ TEST_CASE(RoadmapWorldStreaming, AsynchronousWorldPartitionAndDirectStorage) {
 }
 
 // ============================================================================
+// Disk-backed world streaming: sector files stream in and out around a focus
+// ============================================================================
+#include "Streaming/WorldStreamer.h"
+
+TEST_CASE(RoadmapWorldStreaming, DiskSectorsStreamInAndOut) {
+    using namespace Streaming;
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / "tessera_stream_test";
+    std::error_code ec;
+    fs::remove_all(dir, ec);
+    fs::create_directories(dir / "sectors");
+
+    // Base scene: a camera and a low-detail stand-in for sector (0,0)
+    {
+        Scene base;
+        base.Clear();
+        auto lod = base.AddNode(ShapeType::Plane, "LOD_0_0");
+        lod->position = glm::vec3(50.0f, 0.0f, 50.0f);
+        base.AddCameraNode("Camera");
+        ASSERT_TRUE(base.SaveToFile((dir / "base.scene").string()));
+    }
+    // Two sectors of 100 m: (0,0) with three nodes using one model, (5,0) with one node
+    auto writeSector = [&](const std::string& file, glm::vec3 at, int count) {
+        Scene s;
+        s.Clear();
+        auto parent = s.AddEmptyNode("SectorRoot");
+        parent->position = at;
+        for (int i = 0; i < count; ++i) {
+            auto rock = s.AddNode(ShapeType::Custom, "Rock" + std::to_string(i), parent->id);
+            rock->customMeshName = "rock.glb";
+            rock->position = glm::vec3(static_cast<float>(i), 0.0f, 0.0f);
+        }
+        ASSERT_TRUE(s.SaveToFile((dir / file).string()));
+    };
+    writeSector("sectors/sector_0_0.scene", glm::vec3(50.0f, 0.0f, 50.0f), 3);
+    writeSector("sectors/sector_5_0.scene", glm::vec3(550.0f, 0.0f, 50.0f), 1);
+    {
+        std::ofstream world(dir / "test.world");
+        world << R"({ "format": "tessera-world-1", "name": "Test", "cellSize": 100, "baseScene": "base.scene",
+                     "loadRadius": 150, "unloadRadius": 250,
+                     "sectors": [ { "x": 0, "z": 0, "file": "sectors/sector_0_0.scene", "lodNode": "LOD_0_0" },
+                                  { "x": 5, "z": 0, "file": "sectors/sector_5_0.scene" } ] })";
+    }
+
+    Scene scene;
+    ASSERT_TRUE(scene.LoadFromFile((dir / "base.scene").string()));
+    const size_t baseCount = scene.GetNodes().size();
+
+    WorldStreamer streamer;
+    std::mutex residentMutex;
+    std::set<std::string> resident;
+    std::map<std::string, int> refs;
+    int cpuLoads = 0, attachedCalls = 0, detachingCalls = 0;
+    WorldStreamer::Hooks hooks;
+    hooks.isMeshResident = [&](const std::string& n) { std::lock_guard<std::mutex> l(residentMutex); return resident.count(n) > 0; };
+    hooks.loadMeshCPU = [&](const std::string&, LoadedMesh& out) {
+        out.meshData.vertices.resize(3);
+        out.meshData.indices = {0, 1, 2};
+        std::lock_guard<std::mutex> l(residentMutex);
+        ++cpuLoads;
+        return true;
+    };
+    hooks.acquireMesh = [&](const std::string& n, LoadedMesh*) {
+        std::lock_guard<std::mutex> l(residentMutex);
+        resident.insert(n);
+        ++refs[n];
+        return true;
+    };
+    hooks.releaseMesh = [&](const std::string& n) {
+        std::lock_guard<std::mutex> l(residentMutex);
+        if (--refs[n] == 0) resident.erase(n);
+    };
+    hooks.onAttached = [&](Scene&, const std::vector<std::shared_ptr<Node>>&) { ++attachedCalls; };
+    hooks.onDetaching = [&](Scene&, const std::vector<std::shared_ptr<Node>>&) { ++detachingCalls; };
+    streamer.SetHooks(hooks);
+    ASSERT_TRUE(streamer.Open((dir / "test.world").string()));
+    ASSERT_EQ(streamer.GetStats().totalSectors, 2u);
+
+    // 1. Near sector (0,0): streamed in from disk; its stand-in is taken out
+    const glm::vec3 nearFocus(50.0f, 0.0f, 50.0f);
+    streamer.LoadAround(scene, nearFocus, 10.0f);
+    ASSERT_TRUE(streamer.IsSectorActive(GridCellCoord{0, 0}));
+    ASSERT_TRUE(!streamer.IsSectorActive(GridCellCoord{5, 0}));   // 450 m away
+    ASSERT_TRUE(scene.GetNodeByName("LOD_0_0") == nullptr);
+    ASSERT_EQ(scene.GetNodes().size(), baseCount - 1 + 4);        // stand-in out, root + 3 rocks in
+    ASSERT_EQ(refs["rock.glb"], 1);
+    ASSERT_EQ(cpuLoads, 1);
+    // Ids are fresh and the hierarchy survived the remap
+    auto root = scene.GetNodeByName("SectorRoot");
+    ASSERT_TRUE(root != nullptr);
+    ASSERT_EQ(root->childrenIds.size(), static_cast<size_t>(3));
+    for (uint32_t child : root->childrenIds) {
+        auto c = scene.GetNodeById(child);
+        ASSERT_TRUE(c != nullptr);
+        ASSERT_EQ(c->parentId, root->id);
+        ASSERT_EQ(c->streamSector, std::string("0,0"));
+    }
+
+    // 2. Saving never captures streamed nodes (and puts the stand-in back in the file)
+    streamer.SuspendForSave(scene);
+    ASSERT_TRUE(scene.SaveToFile((dir / "saved.scene").string()));
+    streamer.ResumeAfterSave(scene);
+    {
+        Scene saved;
+        ASSERT_TRUE(saved.LoadFromFile((dir / "saved.scene").string()));
+        ASSERT_EQ(saved.GetNodes().size(), baseCount);
+        ASSERT_TRUE(saved.GetNodeByName("LOD_0_0") != nullptr);
+        ASSERT_TRUE(saved.GetNodeByName("SectorRoot") == nullptr);
+    }
+    ASSERT_TRUE(scene.GetNodeByName("SectorRoot") != nullptr);
+
+    // 3. Moving away streams it out: the scene is back to the base scene, the model released
+    const glm::vec3 farFocus(550.0f, 0.0f, 50.0f);
+    streamer.LoadAround(scene, farFocus, 10.0f);
+    ASSERT_TRUE(!streamer.IsSectorActive(GridCellCoord{0, 0}));
+    ASSERT_TRUE(streamer.IsSectorActive(GridCellCoord{5, 0}));
+    ASSERT_TRUE(scene.GetNodeByName("LOD_0_0") != nullptr);
+    ASSERT_EQ(refs["rock.glb"], 1); // now held by sector (5,0) only
+
+    // 4. Back and forth 50 times: nothing leaks, counts stay exact
+    for (int cycle = 0; cycle < 50; ++cycle) {
+        streamer.LoadAround(scene, (cycle % 2 == 0) ? nearFocus : farFocus, 10.0f);
+    }
+    streamer.Close(scene);
+    ASSERT_EQ(scene.GetNodes().size(), baseCount);
+    ASSERT_TRUE(scene.GetNodeByName("LOD_0_0") != nullptr);
+    ASSERT_EQ(refs["rock.glb"], 0);
+    ASSERT_EQ(attachedCalls - detachingCalls, 0);
+    const auto stats = streamer.GetStats();
+    ASSERT_EQ(stats.sectorsStreamedIn, stats.sectorsStreamedOut);
+    ASSERT_TRUE(stats.sectorsStreamedIn >= 50u);
+
+    fs::remove_all(dir, ec);
+}
+
+// ============================================================================
 // TEST 85: Locomotion — Motion Matching & Procedural Full-Body IK
 // ============================================================================
 #include "Animation/MotionMatching.h"

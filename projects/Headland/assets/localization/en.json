@@ -1,0 +1,22 @@
+{
+  "__language_name": "English",
+  "game_title": "Headland: Open-World Island",
+  "hud_controls_hint": "WASD move | Shift sprint | hold RMB look | F fly | 1-6 viewpoints | F1 RT shadows | F2 RT reflections | F3 stats | F4 weather | F5 +3h | F6 lang",
+  "hud_off": "off",
+  "hud_on": "on",
+  "hud_raytracing": "Ray tracing",
+  "hud_rt_off": "off (shadow maps + screen-space reflections)",
+  "hud_shadows": "shadows",
+  "hud_reflections": "reflections",
+  "hud_streaming": "Streaming",
+  "hud_sectors": "sectors",
+  "hud_objects": "objects",
+  "hud_loading": "loading",
+  "hud_mb_read": "MB read",
+  "view_camp": "Fishing Camp Outpost",
+  "view_cliffs": "Ocean Sea Cliffs",
+  "view_forest": "Dense Fir Forest",
+  "view_hilltop": "High Island Hilltop",
+  "view_overview": "Aerial Island Overview",
+  "view_pier": "Wooden Pier & Coast"
+}

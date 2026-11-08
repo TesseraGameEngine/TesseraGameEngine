@@ -1,8 +1,9 @@
 -- scripts/headland/WorldDirector.lua
 -- Runs the Headland showcase: hardware ray tracing switches (F1 shadows, F2 reflections), a
--- weather cycle (F4: clear -> cloudy -> overcast -> rain -> storm), time skips (F5: +3 hours), and
+-- weather cycle (F4: clear -> cloudy -> overcast -> rain -> storm), time skips (F5: +3 hours),
+-- localization language switch (F6: English <-> Spanish), and
 -- the camp's fire and lanterns, which glow at night and flicker.
--- Uses the engine's Lua API: Render, Weather, Sky, Scene, NodeAPI, Input.
+-- Uses the engine's Lua API: Render, Weather, Sky, Scene, NodeAPI, Input, Localization.
 
 local weathers = { "Clear", "Cloudy", "Overcast", "Rain", "Storm" }
 local weatherIndex = 1
@@ -45,6 +46,14 @@ function OnUpdate(self, dt)
     end
     if Input.IsPressed("F5") then
         Sky.SetTime(((Sky.GetTime() or 12.0) + 3.0) % 24.0)
+    end
+    if Input.IsPressed("F6") then
+        if Localization and Localization.GetLanguage and Localization.SetLanguage then
+            local cur = Localization.GetLanguage()
+            local nextLang = (cur == "es") and "en" or "es"
+            Localization.SetLanguage(nextLang)
+            print("[WorldDirector] Language -> " .. nextLang)
+        end
     end
 
     -- Fire and lanterns: faint by day, full at night (dusk 18:30-20:30, dawn 5:00-7:00)

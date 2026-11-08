@@ -120,6 +120,8 @@ struct GameConfig {
     bool gpuProfileLog{false};
     // --start-at=<node name>: (standalone) the active camera starts where that node is
     std::string startAt;
+    // --project=<file.tess>: open a specific project directly at startup
+    std::string startingProject;
 
     static GameConfig Detect(int argc, char* argv[]) {
         GameConfig cfg;
@@ -129,6 +131,8 @@ struct GameConfig {
                 cfg.isStandaloneGame = true;
             } else if (arg == "--fullscreen") {
                 cfg.fullscreen = true;
+            } else if (arg.rfind("--project=", 0) == 0) {
+                cfg.startingProject = arg.substr(10);
             } else if (arg.rfind("--scene=", 0) == 0) {
                 cfg.startingScene = arg.substr(8);
                 cfg.sceneOnCommandLine = true;
@@ -1131,6 +1135,28 @@ private:
 
             // 2. Load starting scene
             std::string sceneToLoad = m_gameConfig.startingScene;
+            if (!m_gameConfig.startingProject.empty() && std::filesystem::exists(m_gameConfig.startingProject)) {
+                auto prj = Project::Load(m_gameConfig.startingProject, m_scene, m_camera, m_editorUI, nullptr);
+                if (prj) {
+                    m_project = prj;
+                    GameLocalization::Get().SetProjectRoot(prj->GetRootPath());
+                    if (!m_gameConfig.sceneOnCommandLine) {
+                        sceneToLoad = (std::filesystem::path(prj->GetRootPath()) / "scenes" / prj->GetActiveSceneFile()).string();
+                    }
+                }
+            }
+            if (GameLocalization::Get().GetAvailableLanguages().empty()) {
+                std::filesystem::path scPath(sceneToLoad);
+                std::filesystem::path candidate = scPath.parent_path();
+                while (!candidate.empty() && candidate != candidate.root_path()) {
+                    if (std::filesystem::exists(candidate / "assets" / "localization") ||
+                        std::filesystem::exists(candidate / "localization")) {
+                        GameLocalization::Get().SetProjectRoot(candidate.string());
+                        break;
+                    }
+                    candidate = candidate.parent_path();
+                }
+            }
             if (!std::filesystem::exists(sceneToLoad)) {
                 if (std::filesystem::exists("scenes/" + sceneToLoad)) {
                     sceneToLoad = "scenes/" + sceneToLoad;
@@ -1213,12 +1239,19 @@ private:
         } else {
             // Editor Mode: Ensure an active project and its generated files always exist on disk
             bool projectLoaded = false;
-            auto recents = Project::GetRecentProjects();
-            for (const auto& r : recents) {
-                if (std::filesystem::exists(r)) {
-                    if (OpenProject(r)) {
-                        projectLoaded = true;
-                        break;
+            if (!m_gameConfig.startingProject.empty() && std::filesystem::exists(m_gameConfig.startingProject)) {
+                if (OpenProject(m_gameConfig.startingProject)) {
+                    projectLoaded = true;
+                }
+            }
+            if (!projectLoaded) {
+                auto recents = Project::GetRecentProjects();
+                for (const auto& r : recents) {
+                    if (std::filesystem::exists(r)) {
+                        if (OpenProject(r)) {
+                            projectLoaded = true;
+                            break;
+                        }
                     }
                 }
             }
@@ -1240,9 +1273,12 @@ private:
 
             UpdateWindowTitle();
             // Start engine with the splash screen which leads to the Project Launcher Hub!
-            // (--screenshot goes straight to the editor so it can capture the 3D viewport)
-            m_editorUI.SetStartupState(m_gameConfig.screenshotPath.empty() ? EditorUI::StartupState::Splash
-                                                                           : EditorUI::StartupState::Editor);
+            // (--screenshot or explicit --project goes straight to the editor so it can capture the 3D viewport)
+            if (!m_gameConfig.startingProject.empty() || !m_gameConfig.screenshotPath.empty()) {
+                m_editorUI.SetStartupState(EditorUI::StartupState::Editor);
+            } else {
+                m_editorUI.SetStartupState(EditorUI::StartupState::Splash);
+            }
         }
     }
 

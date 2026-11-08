@@ -152,6 +152,7 @@ cmake --build build-linux --target linux_export_template
 | `--scene=<file>` (editor) | Open `<file>` in the editor at startup without modifying the active project |
 | `--select=<node name>` | Select the named node at startup; an editor `--screenshot` also saves its studio material preview as `<name>_material.png` |
 | `--gpu-profile` | Log averaged GPU timestamp pass timings on exit |
+| `--project=<file.tess>` | Open a project directly at startup (bypassing the launcher hub into the editor) |
 | `--scene=<file>.world` (with `--game`) | Play a streamed open world: its base scene loads, sectors stream in around the player |
 | `--start-at=<node name>` | (`--game`) The camera starts at that node's position and rotation (e.g. `"View: Overview"`) |
 | `--no-raytracing` | Use the rasterised fallback (shadow maps, SSR) even on a GPU with hardware ray tracing |
@@ -512,7 +513,13 @@ Open **File → Export Game (Windows & Web)...** (<kbd>Ctrl+B</kbd>):
 
 ### 6.4 Headland: Open-World Showcase
 
-A ~1.5 km coastal island built from CC0 scanned assets (Poly Haven): streamed in 128 m sectors, lit by the physical sky and volumetric clouds, with hardware ray-traced shadows and reflections, a Gerstner ocean, real-scale trees / rocks / props with LODs, a fishing camp with firelight, and a scripted HUD. Build it with `tools/fetch_assets.py`, `Tessera --optimize-models` and `Tessera --build-world` (see [`tools/README.md`](tools/README.md)), then play `--game --scene=projects/Headland/scenes/headland.world`.
+A ~1.5 km coastal island built from CC0 scanned assets (Poly Haven): streamed in 128 m sectors, lit by the physical sky and volumetric clouds, with hardware ray-traced shadows and reflections, a Gerstner ocean, real-scale trees / rocks / props with LODs, a fishing camp with firelight, dynamic game localization (English/Spanish), and a scripted HUD.
+
+- **Open in Editor**: Select Headland from the Project Launcher Hub, or run `Tessera.exe --project=projects/Headland/Headland.tess`.
+- **Play Standalone**: Run `Tessera.exe --game --scene=projects/Headland/scenes/headland.world` (or `--game --project=projects/Headland/Headland.tess`).
+- **Build from scratch**: Run `tools/fetch_assets.py`, `Tessera --optimize-models` and `Tessera --build-world` (see [`tools/README.md`](tools/README.md)).
+
+Controls: `WASD` / `Shift` walk/sprint, `F` fly, `1`–`6` viewpoint teleports, `F1` RT shadows, `F2` RT reflections, `F3` stats toggle, `F4` weather cycle, `F5` time skip (+3h), `F6` language cycle (English/Spanish).
 
 Lua APIs added for it (in addition to those registered in `LuaScriptSystem::RegisterEngineAPI`):
 
@@ -523,6 +530,8 @@ Lua APIs added for it (in addition to those registered in `LuaScriptSystem::Regi
 | `Render.GetFPS()` | Averaged frames per second |
 | `Streaming.GetStats()` | `{ sectors, active, loading, ready, nodes, streamedIn, streamedOut, mbRead, lastMs, maxMs }` |
 | `NodeAPI.SetLight(id, intensity [, r, g, b])` / `NodeAPI.GetLight(id)` | A light node's intensity and colour |
+| `Localization.Translate(key, def)` / `TR(key, def)` | Localized string lookup for game UI |
+| `Localization.SetLanguage(code)` / `Localization.GetLanguage()` | Switch or inspect active game language (e.g. `"en"`, `"es"`) |
 | `Input.IsDown/IsPressed("F1".."F12")` | Function keys |
 
 ### 6.5 Step-by-Step Developer Tutorials

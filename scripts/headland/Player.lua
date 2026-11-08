@@ -3,13 +3,18 @@
 -- sprint with Shift, look around with the mouse while the right button is held. The camera
 -- follows the terrain (Terrain.GetHeight) and stays above the water.
 --
--- Uses only the engine's registered Lua API (Input, Terrain, self.position / self.rotation).
+-- Uses only the engine's registered Lua API (Input, Terrain, self.position / self.rotation, Localization).
 
 local walkSpeed = 4.5      -- m/s
 local sprintSpeed = 11.0   -- m/s
 local eyeHeight = 1.7      -- m above the ground
 local lookSpeed = 0.15     -- degrees per pixel
 local climbRate = 8.0      -- how quickly the eye follows the ground (1/s)
+
+local function tr(key, def)
+    if TR then return TR(key, def or key) end
+    return def or key
+end
 
 local function down(...)
     for _, name in ipairs({...}) do
@@ -37,6 +42,14 @@ function OnUpdate(self, dt)
 
     -- Number keys: jump to the world's viewpoints
     local views = { "View: Camp", "View: Pier", "View: Forest", "View: Hilltop", "View: Cliffs", "View: Overview" }
+    local viewKeys = {
+        ["View: Camp"] = "view_camp",
+        ["View: Pier"] = "view_pier",
+        ["View: Forest"] = "view_forest",
+        ["View: Hilltop"] = "view_hilltop",
+        ["View: Cliffs"] = "view_cliffs",
+        ["View: Overview"] = "view_overview"
+    }
     for i, name in ipairs(views) do
         if Input.IsPressed(tostring(i)) then
             local spot = Scene.FindNode(name)
@@ -45,7 +58,9 @@ function OnUpdate(self, dt)
                 self.rotation.x, self.rotation.y = spot.rotation.x, spot.rotation.y
                 local ground = Terrain.GetHeight(self.position.x, self.position.z)
                 flying = ground ~= nil and (self.position.y - math.max(ground, 0.0)) > 20.0
-                print("[Player] " .. name)
+                local key = viewKeys[name]
+                local locName = key and tr(key, name) or name
+                print("[Player] " .. locName)
             end
         end
     end

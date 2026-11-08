@@ -108,6 +108,8 @@ void EditorUI::Init() {
     colors[ImGuiCol_TabUnfocusedActive]    = ImVec4(0.18f, 0.18f, 0.22f, 1.00f);
     colors[ImGuiCol_DockingPreview]        = ImVec4(0.35f, 0.65f, 0.95f, 0.40f);
     colors[ImGuiCol_DockingEmptyBg]        = ImVec4(0.10f, 0.10f, 0.12f, 1.00f);
+
+    GameLocalization::Get().Init(m_projectRoot);
 }
 
 void EditorUI::Render(Scene& scene, Camera& camera, Graphics::IRenderTarget& offscreen,
@@ -237,6 +239,7 @@ void EditorUI::Render(Scene& scene, Camera& camera, Graphics::IRenderTarget& off
     RenderCutsceneSequencerWindow(scene, camera, gameLoop);
     RenderShaderGraphWindow(scene);
     RenderAudioMixerWindow(scene);
+    RenderGameLocalizationWindow();
     RenderNavMeshWindow(scene);
     RenderGpuProfilerWindow();
     RenderNetworkingWindow(scene, &gameLoop);
@@ -268,6 +271,9 @@ void EditorUI::Render(Scene& scene, Camera& camera, Graphics::IRenderTarget& off
     ImGuiIO& io = ImGui::GetIO();
     if (io.KeyCtrl && !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_B)) {
         m_showExportGameModal = true;
+    }
+    if (io.KeyCtrl && !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_L)) {
+        m_showGameLocalizationWindow = !m_showGameLocalizationWindow;
     }
     if (io.KeyCtrl && !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_K)) {
         m_showInputSettingsModal = true;
@@ -415,21 +421,21 @@ void EditorUI::OpenProjectDialog() {
 void EditorUI::RenderNewProjectModal() {
     if (!m_showNewProjectModal) return;
 
-    ImGui::OpenPopup("Create New Project");
+    ImGui::OpenPopup(TR("Create New Project"));
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(520, 260), ImGuiCond_Appearing);
 
-    if (ImGui::BeginPopupModal("Create New Project", &m_showNewProjectModal, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Specify Project Name and Destination Directory:");
+    if (ImGui::BeginPopupModal(TR("Create New Project"), &m_showNewProjectModal, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("%s", TR("Specify Project Name and Destination Directory:"));
         ImGui::Spacing();
 
-        ImGui::Text("Project Name:");
+        ImGui::Text("%s", TR("Project Name:"));
         ImGui::SetNextItemWidth(480.0f);
         ImGui::InputText("##NewProjName", m_newProjectName, sizeof(m_newProjectName));
 
         ImGui::Spacing();
-        ImGui::Text("Project Location (Parent Directory):");
+        ImGui::Text("%s", TR("Project Location (Parent Directory):"));
         ImGui::SetNextItemWidth(480.0f);
         ImGui::InputText("##NewProjDir", m_newProjectDir, sizeof(m_newProjectDir));
 
@@ -441,7 +447,7 @@ void EditorUI::RenderNewProjectModal() {
         ImGui::Separator();
         ImGui::Spacing();
 
-        if (ImGui::Button("Create Project", ImVec2(130, 30))) {
+        if (ImGui::Button(TR("Create Project"), ImVec2(130, 30))) {
             if (m_onNewProject) {
                 m_onNewProject(std::string(m_newProjectDir), std::string(m_newProjectName));
             }
@@ -450,7 +456,7 @@ void EditorUI::RenderNewProjectModal() {
         }
 
         ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(100, 30))) {
+        if (ImGui::Button(TR("Cancel"), ImVec2(100, 30))) {
             m_showNewProjectModal = false;
             ImGui::CloseCurrentPopup();
         }
@@ -462,21 +468,21 @@ void EditorUI::RenderNewProjectModal() {
 void EditorUI::RenderSaveProjectAsModal() {
     if (!m_showSaveAsModal) return;
 
-    ImGui::OpenPopup("Save Project As");
+    ImGui::OpenPopup(TR("Save Project As"));
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(520, 260), ImGuiCond_Appearing);
 
-    if (ImGui::BeginPopupModal("Save Project As", &m_showSaveAsModal, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Save copy of project to a new location:");
+    if (ImGui::BeginPopupModal(TR("Save Project As"), &m_showSaveAsModal, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("%s", TR("Save copy of project to a new location:"));
         ImGui::Spacing();
 
-        ImGui::Text("New Project Name:");
+        ImGui::Text("%s", TR("New Project Name:"));
         ImGui::SetNextItemWidth(480.0f);
         ImGui::InputText("##SaveAsName", m_saveAsProjectName, sizeof(m_saveAsProjectName));
 
         ImGui::Spacing();
-        ImGui::Text("Destination Directory:");
+        ImGui::Text("%s", TR("Destination Directory:"));
         ImGui::SetNextItemWidth(480.0f);
         ImGui::InputText("##SaveAsDir", m_saveAsProjectDir, sizeof(m_saveAsProjectDir));
 
@@ -488,7 +494,7 @@ void EditorUI::RenderSaveProjectAsModal() {
         ImGui::Separator();
         ImGui::Spacing();
 
-        if (ImGui::Button("Save Copy", ImVec2(120, 30))) {
+        if (ImGui::Button(TR("Save Copy"), ImVec2(120, 30))) {
             if (m_onSaveProjectAs) {
                 m_onSaveProjectAs(std::string(m_saveAsProjectDir), std::string(m_saveAsProjectName));
             }
@@ -497,7 +503,7 @@ void EditorUI::RenderSaveProjectAsModal() {
         }
 
         ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(100, 30))) {
+        if (ImGui::Button(TR("Cancel"), ImVec2(100, 30))) {
             m_showSaveAsModal = false;
             ImGui::CloseCurrentPopup();
         }
@@ -509,13 +515,13 @@ void EditorUI::RenderSaveProjectAsModal() {
 void EditorUI::RenderNewSceneModal() {
     if (!m_showNewSceneModal) return;
 
-    ImGui::OpenPopup("Create New Scene");
+    ImGui::OpenPopup(TR("Create New Scene"));
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(440, 190), ImGuiCond_Appearing);
 
-    if (ImGui::BeginPopupModal("Create New Scene", &m_showNewSceneModal, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Enter name for the new scene (.scene):");
+    if (ImGui::BeginPopupModal(TR("Create New Scene"), &m_showNewSceneModal, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("%s", TR("Enter name for the new scene (.scene):"));
         ImGui::Spacing();
 
         ImGui::SetNextItemWidth(400.0f);
@@ -525,7 +531,7 @@ void EditorUI::RenderNewSceneModal() {
         ImGui::Separator();
         ImGui::Spacing();
 
-        if (ImGui::Button("Create Scene", ImVec2(120, 28))) {
+        if (ImGui::Button(TR("Create Scene"), ImVec2(120, 28))) {
             if (m_onNewScene) {
                 m_onNewScene(std::string(m_newSceneName));
             }
@@ -534,7 +540,7 @@ void EditorUI::RenderNewSceneModal() {
         }
 
         ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(90, 28))) {
+        if (ImGui::Button(TR("Cancel"), ImVec2(90, 28))) {
             m_showNewSceneModal = false;
             ImGui::CloseCurrentPopup();
         }
@@ -546,13 +552,13 @@ void EditorUI::RenderNewSceneModal() {
 void EditorUI::RenderSaveSceneAsModal() {
     if (!m_showSaveSceneAsModal) return;
 
-    ImGui::OpenPopup("Save Scene As");
+    ImGui::OpenPopup(TR("Save Scene As"));
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(440, 190), ImGuiCond_Appearing);
 
-    if (ImGui::BeginPopupModal("Save Scene As", &m_showSaveSceneAsModal, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Enter new name for current scene:");
+    if (ImGui::BeginPopupModal(TR("Save Scene As"), &m_showSaveSceneAsModal, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("%s", TR("Enter new name for current scene:"));
         ImGui::Spacing();
 
         ImGui::SetNextItemWidth(400.0f);
@@ -562,7 +568,7 @@ void EditorUI::RenderSaveSceneAsModal() {
         ImGui::Separator();
         ImGui::Spacing();
 
-        if (ImGui::Button("Save Scene Copy", ImVec2(130, 28))) {
+        if (ImGui::Button(TR("Save Scene Copy"), ImVec2(130, 28))) {
             if (m_onSaveSceneAs) {
                 m_onSaveSceneAs(std::string(m_saveSceneAsName));
             }
@@ -571,7 +577,7 @@ void EditorUI::RenderSaveSceneAsModal() {
         }
 
         ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(90, 28))) {
+        if (ImGui::Button(TR("Cancel"), ImVec2(90, 28))) {
             m_showSaveSceneAsModal = false;
             ImGui::CloseCurrentPopup();
         }
@@ -677,13 +683,13 @@ void EditorUI::OpenImportDialog() {
 void EditorUI::RenderImportModal() {
     if (!m_showImportModal) return;
 
-    ImGui::OpenPopup("Import 3D Model");
+    ImGui::OpenPopup(TR("Import 3D Model"));
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(480, 240), ImGuiCond_Appearing);
 
-    if (ImGui::BeginPopupModal("Import 3D Model", &m_showImportModal, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Enter the path to a 3D model file (.obj, .fbx, .gltf, .glb):");
+    if (ImGui::BeginPopupModal(TR("Import 3D Model"), &m_showImportModal, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("%s", TR("Enter the path to a 3D model file (.obj, .fbx, .gltf, .glb):"));
         ImGui::Spacing();
 
         ImGui::SetNextItemWidth(450.0f);
@@ -703,7 +709,7 @@ void EditorUI::RenderImportModal() {
         ImGui::Separator();
         ImGui::Spacing();
 
-        if (ImGui::Button("Import Model", ImVec2(120, 28))) {
+        if (ImGui::Button(TR("Import Model"), ImVec2(120, 28))) {
             if (m_onImportObj) {
                 m_onImportObj(std::string(m_importPathBuffer));
             }
@@ -712,7 +718,7 @@ void EditorUI::RenderImportModal() {
         }
 
         ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(100, 28))) {
+        if (ImGui::Button(TR("Cancel"), ImVec2(100, 28))) {
             m_showImportModal = false;
             ImGui::CloseCurrentPopup();
         }
@@ -722,29 +728,29 @@ void EditorUI::RenderImportModal() {
 }
 
 void EditorUI::RenderMainMenuBar(Scene& scene, Camera& camera, Gameplay::GameLoop& gameLoop) {
-        if (ImGui::BeginMenu("File")) {
-            if (ImGui::MenuItem("Project Launcher / Hub...")) {
+        if (ImGui::BeginMenu(TR("File"))) {
+            if (ImGui::MenuItem(TR("Project Launcher / Hub..."))) {
                 m_startupState = StartupState::ProjectLauncher;
             }
             ImGui::Separator();
-            if (ImGui::MenuItem("New Project...", "Ctrl+N")) {
+            if (ImGui::MenuItem(TR("New Project..."), "Ctrl+N")) {
                 OpenNewProjectDialog();
             }
-            if (ImGui::MenuItem("Open Project...", "Ctrl+O")) {
+            if (ImGui::MenuItem(TR("Open Project..."), "Ctrl+O")) {
                 OpenProjectDialog();
             }
-            if (ImGui::MenuItem("Save Project", "Ctrl+S")) {
+            if (ImGui::MenuItem(TR("Save Project"), "Ctrl+S")) {
                 if (m_onSaveProject) m_onSaveProject();
             }
-            if (ImGui::MenuItem("Save Project As...")) {
+            if (ImGui::MenuItem(TR("Save Project As..."))) {
                 OpenSaveProjectAsDialog();
             }
 
             ImGui::Separator();
-            if (ImGui::BeginMenu("Recent Projects")) {
+            if (ImGui::BeginMenu(TR("Recent Projects"))) {
                 auto recents = Project::GetRecentProjects();
                 if (recents.empty()) {
-                    ImGui::TextDisabled("No recent projects");
+                    ImGui::TextDisabled("%s", TR("No recent projects"));
                 } else {
                     for (const auto& r : recents) {
                         if (ImGui::MenuItem(r.c_str())) {
@@ -756,22 +762,24 @@ void EditorUI::RenderMainMenuBar(Scene& scene, Camera& camera, Gameplay::GameLoo
             }
 
             ImGui::Separator();
-                        ImGui::Separator();
-            if (ImGui::MenuItem("Export Standalone Game...", "Ctrl+B")) {
+            if (ImGui::MenuItem(TR("Export Standalone Game..."), "Ctrl+B")) {
                 m_showExportGameModal = true;
             }
-            if (ImGui::MenuItem("Project Input & Key Bindings...", "Ctrl+K")) {
+            if (ImGui::MenuItem(TR("Project Input & Key Bindings..."), "Ctrl+K")) {
                 m_showInputSettingsModal = true;
             }
+            if (ImGui::MenuItem(TR("Game Localization..."), "Ctrl+L")) {
+                m_showGameLocalizationWindow = true;
+            }
             ImGui::Separator();
-            if (ImGui::MenuItem("Import 3D Model...")) {
+            if (ImGui::MenuItem(TR("Import 3D Model..."))) {
                 OpenImportDialog();
             }
 
             ImGui::EndMenu();
         }
 
-        if (ImGui::BeginMenu("Edit")) {
+        if (ImGui::BeginMenu(TR("Edit"))) {
             std::string undoLabel = Core::UndoRedoManager::Get().CanUndo()
                 ? ("Undo " + Core::UndoRedoManager::Get().GetUndoDescription())
                 : "Undo";
@@ -788,37 +796,37 @@ void EditorUI::RenderMainMenuBar(Scene& scene, Camera& camera, Gameplay::GameLoo
 
             ImGui::Separator();
             bool hasSelection = (scene.GetSelectedId() > 0);
-            if (ImGui::MenuItem("Copy Selected Node", "Ctrl+C", false, hasSelection)) {
+            if (ImGui::MenuItem(TR("Copy Selected Node"), "Ctrl+C", false, hasSelection)) {
                 scene.CopySelected();
             }
-            if (ImGui::MenuItem("Paste Node", "Ctrl+V", false, scene.HasClipboardData())) {
+            if (ImGui::MenuItem(TR("Paste Node"), "Ctrl+V", false, scene.HasClipboardData())) {
                 JsonValue before = scene.Serialize();
                 int32_t beforeSel = scene.GetSelectedId();
                 scene.PasteNode();
                 Core::UndoRedoManager::Get().RecordSnapshot(before, scene.Serialize(), beforeSel, scene.GetSelectedId(), "Paste Node");
             }
-            if (ImGui::MenuItem("Duplicate Selected Node", "Ctrl+D", false, hasSelection)) {
+            if (ImGui::MenuItem(TR("Duplicate Selected Node"), "Ctrl+D", false, hasSelection)) {
                 JsonValue before = scene.Serialize();
                 int32_t beforeSel = scene.GetSelectedId();
                 scene.DuplicateNode(static_cast<uint32_t>(beforeSel));
                 Core::UndoRedoManager::Get().RecordSnapshot(before, scene.Serialize(), beforeSel, scene.GetSelectedId(), "Duplicate Node");
             }
             ImGui::Separator();
-            if (ImGui::MenuItem("Delete Selected Node", "Del", false, hasSelection)) {
+            if (ImGui::MenuItem(TR("Delete Selected Node"), "Del", false, hasSelection)) {
                 scene.DeleteSelected();
             }
             ImGui::EndMenu();
         }
 
-        if (ImGui::BeginMenu("Scene")) {
-            if (ImGui::MenuItem("New Scene...")) {
+        if (ImGui::BeginMenu(TR("Scene"))) {
+            if (ImGui::MenuItem(TR("New Scene..."))) {
                 OpenNewSceneModal();
             }
-            if (ImGui::BeginMenu("Open Scene")) {
+            if (ImGui::BeginMenu(TR("Open Scene"))) {
                 std::vector<std::string> scenes;
                 if (m_onGetScenes) scenes = m_onGetScenes();
                 if (scenes.empty()) {
-                    ImGui::TextDisabled("No other scenes in project");
+                    ImGui::TextDisabled("%s", TR("No other scenes in project"));
                 } else {
                     std::string active = m_onGetActiveScene ? m_onGetActiveScene() : "";
                     for (const auto& sc : scenes) {
@@ -830,14 +838,14 @@ void EditorUI::RenderMainMenuBar(Scene& scene, Camera& camera, Gameplay::GameLoo
                 }
                 ImGui::EndMenu();
             }
-            if (ImGui::MenuItem("Save Scene")) {
+            if (ImGui::MenuItem(TR("Save Scene"))) {
                 if (m_onSaveScene) m_onSaveScene();
             }
-            if (ImGui::MenuItem("Save Scene As...")) {
+            if (ImGui::MenuItem(TR("Save Scene As..."))) {
                 OpenSaveSceneAsModal();
             }
             ImGui::Separator();
-            if (ImGui::MenuItem("Instantiate Subscene / Prefab (.scene)...", "Ctrl+Shift+I")) {
+            if (ImGui::MenuItem(TR("Instantiate Subscene / Prefab (.scene)..."), "Ctrl+Shift+I")) {
                 std::string scenePath;
                 if (OpenSceneFileDialog(scenePath, "Select Scene to Instantiate")) {
                     uint32_t targetParent = scene.GetSelectedId() > 0 ? static_cast<uint32_t>(scene.GetSelectedId()) : 0;
@@ -846,14 +854,14 @@ void EditorUI::RenderMainMenuBar(Scene& scene, Camera& camera, Gameplay::GameLoo
             }
 
             ImGui::Separator();
-            if (ImGui::MenuItem("Add Node / Entity...", "Ctrl+A")) {
+            if (ImGui::MenuItem(TR("Add Node / Entity..."), "Ctrl+A")) {
                 m_openAddNodePopup = true;
             }
-            if (ImGui::MenuItem("Cutscene & Cinematic Sequencer...", "Shift+C")) {
+            if (ImGui::MenuItem(TR("Cutscene & Cinematic Sequencer..."), "Shift+C")) {
                 m_showCutsceneWindow = true;
             }
-            if (ImGui::BeginMenu("Add In-Game Video Screen...")) {
-                if (ImGui::MenuItem("TV Set (16:9 Live News Broadcast)")) {
+            if (ImGui::BeginMenu(TR("Add In-Game Video Screen..."))) {
+                if (ImGui::MenuItem(TR("TV Set (16:9 Live News Broadcast)"))) {
                     auto tv = scene.AddNode(ShapeType::Cube, "TV Set Screen");
                     tv->position = glm::vec3(0.0f, 1.5f, 0.0f);
                     tv->scale = glm::vec3(1.6f, 0.9f, 0.06f);
@@ -864,7 +872,7 @@ void EditorUI::RenderMainMenuBar(Scene& scene, Camera& camera, Gameplay::GameLoo
                     tv->videoPlaying = true;
                     tv->videoScreenBrightness = 1.6f;
                 }
-                if (ImGui::MenuItem("Cinema Screen (2.39:1 Feature Film Reel)")) {
+                if (ImGui::MenuItem(TR("Cinema Screen (2.39:1 Feature Film Reel)"))) {
                     auto cin = scene.AddNode(ShapeType::Cube, "Cinema Screen");
                     cin->position = glm::vec3(0.0f, 3.2f, -4.0f);
                     cin->scale = glm::vec3(7.2f, 3.0f, 0.08f);
@@ -876,7 +884,7 @@ void EditorUI::RenderMainMenuBar(Scene& scene, Camera& camera, Gameplay::GameLoo
                     cin->videoScreenBrightness = 2.2f;
                     cin->videoScanlineStrength = 0.05f;
                 }
-                if (ImGui::MenuItem("Smartphone Screen (9:16 Incoming Call)")) {
+                if (ImGui::MenuItem(TR("Smartphone Screen (9:16 Incoming Call)"))) {
                     auto ph = scene.AddNode(ShapeType::Cube, "Smartphone Screen");
                     ph->position = glm::vec3(0.0f, 1.2f, 1.0f);
                     ph->scale = glm::vec3(0.18f, 0.32f, 0.02f);
@@ -889,7 +897,7 @@ void EditorUI::RenderMainMenuBar(Scene& scene, Camera& camera, Gameplay::GameLoo
                     ph->videoScreenBrightness = 1.8f;
                     ph->videoScanlineStrength = 0.0f;
                 }
-                if (ImGui::MenuItem("Security CCTV Monitor")) {
+                if (ImGui::MenuItem(TR("Security CCTV Monitor"))) {
                     auto cctv = scene.AddNode(ShapeType::Cube, "CCTV Monitor");
                     cctv->position = glm::vec3(0.0f, 1.4f, 0.0f);
                     cctv->scale = glm::vec3(0.8f, 0.6f, 0.08f);
@@ -902,13 +910,13 @@ void EditorUI::RenderMainMenuBar(Scene& scene, Camera& camera, Gameplay::GameLoo
                     cctv->videoScanlineStrength = 0.35f;
                 }
                 ImGui::Separator();
-                if (ImGui::MenuItem("2D UI / Cutaway Video Player")) {
+                if (ImGui::MenuItem(TR("2D UI / Cutaway Video Player"))) {
                     scene.AddUIVideoNode("UI Video Player");
                 }
-                if (ImGui::MenuItem("Test Full-Screen Video Cutaway Now")) {
+                if (ImGui::MenuItem(TR("Test Full-Screen Video Cutaway Now"))) {
                     Video::VideoSystem::Get().StartCutaway(1, "", 8.0f, true, false, "CINEMA CUTAWAY REEL");
                 }
-                if (ImGui::MenuItem("Test Corner PiP Transmission Now")) {
+                if (ImGui::MenuItem(TR("Test Corner PiP Transmission Now"))) {
                     Video::VideoSystem::Get().StartCutaway(3, "", 8.0f, true, true, "INCOMING CCTV FEED");
                 }
                 ImGui::EndMenu();
@@ -916,197 +924,200 @@ void EditorUI::RenderMainMenuBar(Scene& scene, Camera& camera, Gameplay::GameLoo
             if (false) {
                 m_openAddNodePopup = true;
             }
-            if (ImGui::BeginMenu("Add Primitive")) {
-                if (ImGui::MenuItem("Cube")) scene.AddNode(ShapeType::Cube);
-                if (ImGui::MenuItem("Sphere")) scene.AddNode(ShapeType::Sphere);
-                if (ImGui::MenuItem("Cone")) scene.AddNode(ShapeType::Cone);
-                if (ImGui::MenuItem("Cylinder")) scene.AddNode(ShapeType::Cylinder);
-                if (ImGui::MenuItem("Plane")) scene.AddNode(ShapeType::Plane);
+            if (ImGui::BeginMenu(TR("Add Primitive"))) {
+                if (ImGui::MenuItem(TR("Cube"))) scene.AddNode(ShapeType::Cube);
+                if (ImGui::MenuItem(TR("Sphere"))) scene.AddNode(ShapeType::Sphere);
+                if (ImGui::MenuItem(TR("Cone"))) scene.AddNode(ShapeType::Cone);
+                if (ImGui::MenuItem(TR("Cylinder"))) scene.AddNode(ShapeType::Cylinder);
+                if (ImGui::MenuItem(TR("Plane"))) scene.AddNode(ShapeType::Plane);
                 ImGui::EndMenu();
             }
-            if (ImGui::BeginMenu("Add Entity")) {
-                if (ImGui::MenuItem("Camera")) scene.AddCameraNode();
-                if (ImGui::MenuItem("Point Light")) scene.AddLightNode(LightType::Point);
-                if (ImGui::MenuItem("Directional Light")) scene.AddLightNode(LightType::Directional);
-                if (ImGui::MenuItem("Spot Light")) scene.AddLightNode(LightType::Spot);
-                if (ImGui::MenuItem("Audio Source (2D / 3D)")) scene.AddAudioNode();
-                if (ImGui::MenuItem("Particle Emitter (CPU / Niagara)")) scene.AddParticleNode();
-                if (ImGui::MenuItem("Terrain (Landscape)")) scene.AddTerrainNode();
-                if (ImGui::MenuItem("Fluid Volume")) {
+            if (ImGui::BeginMenu(TR("Add Entity"))) {
+                if (ImGui::MenuItem(TR("Camera"))) scene.AddCameraNode();
+                if (ImGui::MenuItem(TR("Point Light"))) scene.AddLightNode(LightType::Point);
+                if (ImGui::MenuItem(TR("Directional Light"))) scene.AddLightNode(LightType::Directional);
+                if (ImGui::MenuItem(TR("Spot Light"))) scene.AddLightNode(LightType::Spot);
+                if (ImGui::MenuItem(TR("Audio Source (2D / 3D)"))) scene.AddAudioNode();
+                if (ImGui::MenuItem(TR("Particle Emitter (CPU / Niagara)"))) scene.AddParticleNode();
+                if (ImGui::MenuItem(TR("Terrain (Landscape)"))) scene.AddTerrainNode();
+                if (ImGui::MenuItem(TR("Fluid Volume"))) {
                     auto fluid = scene.AddEmptyNode("Fluid Volume");
                     if (fluid) fluid->isFluidVolume = true;
                 }
-                if (ImGui::MenuItem("Pour Spout")) {
+                if (ImGui::MenuItem(TR("Pour Spout"))) {
                     auto spout = scene.AddEmptyNode("Pour Spout");
                     if (spout) {
                         spout->isPourSpout = true;
                         spout->rotation = glm::vec3(90.0f, 0.0f, 0.0f); // facing up: not pouring until tipped
                     }
                 }
-                if (ImGui::MenuItem("Ocean")) {
+                if (ImGui::MenuItem(TR("Ocean"))) {
                     auto ocean = scene.AddNode(ShapeType::Plane, "Ocean");
                     ocean->isOcean = true;
                     ocean->lightmapStatic = false;
                     ocean->castShadows = false;
                 }
-                if (ImGui::MenuItem("Decal Projector")) scene.AddDecalNode();
-                if (ImGui::MenuItem("Spline / 3D Curve")) scene.AddSplineNode();
-                if (ImGui::MenuItem("Empty Group Node")) scene.AddEmptyNode();
+                if (ImGui::MenuItem(TR("Decal Projector"))) scene.AddDecalNode();
+                if (ImGui::MenuItem(TR("Spline / 3D Curve"))) scene.AddSplineNode();
+                if (ImGui::MenuItem(TR("Empty Group Node"))) scene.AddEmptyNode();
                 ImGui::EndMenu();
             }
-            if (ImGui::BeginMenu("Add 2D UI Component")) {
-                if (ImGui::BeginMenu("Containers & Windows")) {
-                    if (ImGui::MenuItem("Canvas (UI Root)")) scene.AddUICanvasNode();
-                    if (ImGui::MenuItem("Panel")) scene.AddUIPanelNode();
-                    if (ImGui::MenuItem("Floating Window")) scene.AddUIWindowNode();
-                    if (ImGui::MenuItem("Scroll Pane")) scene.AddUIScrollPaneNode();
-                    if (ImGui::MenuItem("Tabs View")) scene.AddUITabsNode();
+            if (ImGui::BeginMenu(TR("Add 2D UI Component"))) {
+                if (ImGui::BeginMenu(TR("Containers & Windows"))) {
+                    if (ImGui::MenuItem(TR("Canvas (UI Root)"))) scene.AddUICanvasNode();
+                    if (ImGui::MenuItem(TR("Panel"))) scene.AddUIPanelNode();
+                    if (ImGui::MenuItem(TR("Floating Window"))) scene.AddUIWindowNode();
+                    if (ImGui::MenuItem(TR("Scroll Pane"))) scene.AddUIScrollPaneNode();
+                    if (ImGui::MenuItem(TR("Tabs View"))) scene.AddUITabsNode();
                     ImGui::EndMenu();
                 }
-                if (ImGui::BeginMenu("Basic & Text")) {
-                    if (ImGui::MenuItem("Text Label")) scene.AddUITextNode();
-                    if (ImGui::MenuItem("Button")) scene.AddUIButtonNode();
-                    if (ImGui::MenuItem("Text Field")) scene.AddUITextFieldNode();
-                    if (ImGui::MenuItem("Password Field")) scene.AddUIPasswordFieldNode();
-                    if (ImGui::MenuItem("Progress Bar")) scene.AddUIProgressBarNode();
-                    if (ImGui::MenuItem("Spinner")) scene.AddUISpinnerNode();
+                if (ImGui::BeginMenu(TR("Basic & Text"))) {
+                    if (ImGui::MenuItem(TR("Text Label"))) scene.AddUITextNode();
+                    if (ImGui::MenuItem(TR("Button"))) scene.AddUIButtonNode();
+                    if (ImGui::MenuItem(TR("Text Field"))) scene.AddUITextFieldNode();
+                    if (ImGui::MenuItem(TR("Password Field"))) scene.AddUIPasswordFieldNode();
+                    if (ImGui::MenuItem(TR("Progress Bar"))) scene.AddUIProgressBarNode();
+                    if (ImGui::MenuItem(TR("Spinner"))) scene.AddUISpinnerNode();
                     ImGui::EndMenu();
                 }
-                if (ImGui::BeginMenu("Inputs & Controls")) {
-                    if (ImGui::MenuItem("Slider")) scene.AddUISliderNode();
-                    if (ImGui::MenuItem("Checkbox")) scene.AddUICheckboxNode();
-                    if (ImGui::MenuItem("Radio Button")) scene.AddUIRadioButtonNode();
-                    if (ImGui::MenuItem("Dropdown Box")) scene.AddUIDropdownNode();
-                    if (ImGui::MenuItem("Date/Time Picker")) scene.AddUIDatePickerNode();
-                    if (ImGui::MenuItem("Color Picker")) scene.AddUIColorPickerNode();
+                if (ImGui::BeginMenu(TR("Inputs & Controls"))) {
+                    if (ImGui::MenuItem(TR("Slider"))) scene.AddUISliderNode();
+                    if (ImGui::MenuItem(TR("Checkbox"))) scene.AddUICheckboxNode();
+                    if (ImGui::MenuItem(TR("Radio Button"))) scene.AddUIRadioButtonNode();
+                    if (ImGui::MenuItem(TR("Dropdown Box"))) scene.AddUIDropdownNode();
+                    if (ImGui::MenuItem(TR("Date/Time Picker"))) scene.AddUIDatePickerNode();
+                    if (ImGui::MenuItem(TR("Color Picker"))) scene.AddUIColorPickerNode();
                     ImGui::EndMenu();
                 }
-                if (ImGui::BeginMenu("Data & Media")) {
-                    if (ImGui::MenuItem("Image")) scene.AddUIImageNode();
-                    if (ImGui::MenuItem("Video Player")) scene.AddUIVideoNode();
-                    if (ImGui::MenuItem("Selectable List")) scene.AddUISelectableListNode();
-                    if (ImGui::MenuItem("Table Grid")) scene.AddUITableNode();
-                    if (ImGui::MenuItem("Menu Bar")) scene.AddUIMenuBarNode();
+                if (ImGui::BeginMenu(TR("Data & Media"))) {
+                    if (ImGui::MenuItem(TR("Image"))) scene.AddUIImageNode();
+                    if (ImGui::MenuItem(TR("Video Player"))) scene.AddUIVideoNode();
+                    if (ImGui::MenuItem(TR("Selectable List"))) scene.AddUISelectableListNode();
+                    if (ImGui::MenuItem(TR("Table Grid"))) scene.AddUITableNode();
+                    if (ImGui::MenuItem(TR("Menu Bar"))) scene.AddUIMenuBarNode();
                     ImGui::EndMenu();
                 }
-                if (ImGui::BeginMenu("Vector Shapes")) {
-                    if (ImGui::MenuItem("Rectangle")) scene.AddUIShapeNode(UIShapeType::Rectangle, "Rectangle");
-                    if (ImGui::MenuItem("Rounded Rectangle")) scene.AddUIShapeNode(UIShapeType::RoundedRect, "RoundedRect");
-                    if (ImGui::MenuItem("Circle")) scene.AddUIShapeNode(UIShapeType::Circle, "Circle");
-                    if (ImGui::MenuItem("Triangle")) scene.AddUIShapeNode(UIShapeType::Triangle, "Triangle");
+                if (ImGui::BeginMenu(TR("Vector Shapes"))) {
+                    if (ImGui::MenuItem(TR("Rectangle"))) scene.AddUIShapeNode(UIShapeType::Rectangle, "Rectangle");
+                    if (ImGui::MenuItem(TR("Rounded Rectangle"))) scene.AddUIShapeNode(UIShapeType::RoundedRect, "RoundedRect");
+                    if (ImGui::MenuItem(TR("Circle"))) scene.AddUIShapeNode(UIShapeType::Circle, "Circle");
+                    if (ImGui::MenuItem(TR("Triangle"))) scene.AddUIShapeNode(UIShapeType::Triangle, "Triangle");
                     ImGui::EndMenu();
                 }
                 ImGui::EndMenu();
             }
-            if (ImGui::BeginMenu("Add Collider")) {
-                if (ImGui::MenuItem("Box Collider")) scene.AddColliderNode(ColliderType::Box);
-                if (ImGui::MenuItem("Sphere Collider")) scene.AddColliderNode(ColliderType::Sphere);
-                if (ImGui::MenuItem("Capsule Collider")) scene.AddColliderNode(ColliderType::Capsule);
+            if (ImGui::BeginMenu(TR("Add Collider"))) {
+                if (ImGui::MenuItem(TR("Box Collider"))) scene.AddColliderNode(ColliderType::Box);
+                if (ImGui::MenuItem(TR("Sphere Collider"))) scene.AddColliderNode(ColliderType::Sphere);
+                if (ImGui::MenuItem(TR("Capsule Collider"))) scene.AddColliderNode(ColliderType::Capsule);
                 ImGui::EndMenu();
             }
 
             ImGui::Separator();
-            if (ImGui::MenuItem("Delete Selected", "Del", false, scene.GetSelectedId() >= 0)) {
+            if (ImGui::MenuItem(TR("Delete Selected"), "Del", false, scene.GetSelectedId() >= 0)) {
                 scene.DeleteSelected();
             }
-            if (ImGui::MenuItem("Reset Scene to Default")) {
+            if (ImGui::MenuItem(TR("Reset Scene to Default"))) {
                 scene.ResetToDefault();
                 camera.Reset();
             }
-            if (ImGui::MenuItem("Clear All")) {
+            if (ImGui::MenuItem(TR("Clear All"))) {
                 scene.Clear();
             }
             ImGui::EndMenu();
         }
 
-        if (ImGui::BeginMenu("Camera")) {
-            if (ImGui::MenuItem("Reset View")) {
+        if (ImGui::BeginMenu(TR("Camera"))) {
+            if (ImGui::MenuItem(TR("Reset View"))) {
                 camera.Reset();
             }
             ImGui::EndMenu();
         }
 
-        if (ImGui::BeginMenu("Gizmo")) {
-            if (ImGui::MenuItem("Translate", "W", m_currentGizmoOperation == ImGuizmo::TRANSLATE)) m_currentGizmoOperation = ImGuizmo::TRANSLATE;
-            if (ImGui::MenuItem("Rotate", "E", m_currentGizmoOperation == ImGuizmo::ROTATE)) m_currentGizmoOperation = ImGuizmo::ROTATE;
-            if (ImGui::MenuItem("Scale", "R", m_currentGizmoOperation == ImGuizmo::SCALE)) m_currentGizmoOperation = ImGuizmo::SCALE;
+        if (ImGui::BeginMenu(TR("Gizmo"))) {
+            if (ImGui::MenuItem(TR("Translate"), "W", m_currentGizmoOperation == ImGuizmo::TRANSLATE)) m_currentGizmoOperation = ImGuizmo::TRANSLATE;
+            if (ImGui::MenuItem(TR("Rotate"), "E", m_currentGizmoOperation == ImGuizmo::ROTATE)) m_currentGizmoOperation = ImGuizmo::ROTATE;
+            if (ImGui::MenuItem(TR("Scale"), "R", m_currentGizmoOperation == ImGuizmo::SCALE)) m_currentGizmoOperation = ImGuizmo::SCALE;
             ImGui::Separator();
-            if (ImGui::MenuItem("World Coordinates", nullptr, m_currentGizmoMode == ImGuizmo::WORLD)) m_currentGizmoMode = ImGuizmo::WORLD;
-            if (ImGui::MenuItem("Local Coordinates", nullptr, m_currentGizmoMode == ImGuizmo::LOCAL)) m_currentGizmoMode = ImGuizmo::LOCAL;
+            if (ImGui::MenuItem(TR("World Coordinates"), nullptr, m_currentGizmoMode == ImGuizmo::WORLD)) m_currentGizmoMode = ImGuizmo::WORLD;
+            if (ImGui::MenuItem(TR("Local Coordinates"), nullptr, m_currentGizmoMode == ImGuizmo::LOCAL)) m_currentGizmoMode = ImGuizmo::LOCAL;
             ImGui::EndMenu();
         }
 
-        if (ImGui::BeginMenu("Window")) {
-            ImGui::TextDisabled("Workspace Panels");
-            if (ImGui::MenuItem("Scene Hierarchy", "Ctrl+1", m_showHierarchyWindow)) {
+        if (ImGui::BeginMenu(TR("Window"))) {
+            ImGui::TextDisabled("%s", TR("Workspace Panels"));
+            if (ImGui::MenuItem(TR("Scene Hierarchy"), "Ctrl+1", m_showHierarchyWindow)) {
                 m_showHierarchyWindow = !m_showHierarchyWindow;
             }
-            if (ImGui::MenuItem("Inspector", "Ctrl+2", m_showInspectorWindow)) {
+            if (ImGui::MenuItem(TR("Inspector"), "Ctrl+2", m_showInspectorWindow)) {
                 m_showInspectorWindow = !m_showInspectorWindow;
             }
-            if (ImGui::MenuItem("3D Viewport", "Ctrl+3", m_showViewportWindow)) {
+            if (ImGui::MenuItem(TR("3D Viewport"), "Ctrl+3", m_showViewportWindow)) {
                 m_showViewportWindow = !m_showViewportWindow;
             }
-            if (ImGui::MenuItem("Camera Preview", "Ctrl+4", m_showCameraPreviewWindow)) {
+            if (ImGui::MenuItem(TR("Camera Preview"), "Ctrl+4", m_showCameraPreviewWindow)) {
                 m_showCameraPreviewWindow = !m_showCameraPreviewWindow;
             }
-            if (ImGui::MenuItem("Project Files (File Viewer)", "Ctrl+5", m_showProjectFilesWindow)) {
+            if (ImGui::MenuItem(TR("Project Files (File Viewer)"), "Ctrl+5", m_showProjectFilesWindow)) {
                 m_showProjectFilesWindow = !m_showProjectFilesWindow;
             }
-            if (ImGui::MenuItem("Animation Timeline", "Ctrl+6", m_showTimelineWindow)) {
+            if (ImGui::MenuItem(TR("Animation Timeline"), "Ctrl+6", m_showTimelineWindow)) {
                 m_showTimelineWindow = !m_showTimelineWindow;
             }
-            if (ImGui::MenuItem("Script Editor", "Ctrl+7", m_showScriptEditor)) {
+            if (ImGui::MenuItem(TR("Script Editor"), "Ctrl+7", m_showScriptEditor)) {
                 m_showScriptEditor = !m_showScriptEditor;
             }
-            if (ImGui::MenuItem("Game Profiler & Resource Monitor", "Ctrl+8", m_showGameProfilerWindow)) {
+            if (ImGui::MenuItem(TR("Game Profiler & Resource Monitor"), "Ctrl+8", m_showGameProfilerWindow)) {
                 m_showGameProfilerWindow = !m_showGameProfilerWindow;
             }
-            if (ImGui::MenuItem("GPU Profiler", "Ctrl+9", m_showGpuProfilerWindow)) {
+            if (ImGui::MenuItem(TR("GPU Profiler"), "Ctrl+9", m_showGpuProfilerWindow)) {
                 m_showGpuProfilerWindow = !m_showGpuProfilerWindow;
             }
 
             ImGui::Separator();
-            ImGui::TextDisabled("Specialized Tools");
-            if (ImGui::MenuItem("Rendering, GI & Post-Processing", "Shift+R", m_showEnvironmentWindow)) {
+            ImGui::TextDisabled("%s", TR("Specialized Tools"));
+            if (ImGui::MenuItem(TR("Rendering, GI & Post-Processing"), "Shift+R", m_showEnvironmentWindow)) {
                 m_showEnvironmentWindow = !m_showEnvironmentWindow;
             }
-            if (ImGui::MenuItem("Visual Shader Graph Editor", "Shift+G", m_showShaderGraphWindow)) {
+            if (ImGui::MenuItem(TR("Visual Shader Graph Editor"), "Shift+G", m_showShaderGraphWindow)) {
                 m_showShaderGraphWindow = !m_showShaderGraphWindow;
             }
-            if (ImGui::MenuItem("Audio Mixer & Reverb Zones", "Shift+A", m_showAudioMixerWindow)) {
+            if (ImGui::MenuItem(TR("Audio Mixer & Reverb Zones"), "Shift+A", m_showAudioMixerWindow)) {
                 m_showAudioMixerWindow = !m_showAudioMixerWindow;
             }
-            if (ImGui::MenuItem("Navigation & NavMesh Baker", "Shift+N", m_showNavMeshWindow)) {
+            if (ImGui::MenuItem(TR("Navigation & NavMesh Baker"), "Shift+N", m_showNavMeshWindow)) {
                 m_showNavMeshWindow = !m_showNavMeshWindow;
             }
-            if (ImGui::MenuItem("Multiplayer & Networking", "Shift+P", m_showNetworkingWindow)) {
+            if (ImGui::MenuItem(TR("Multiplayer & Networking"), "Shift+P", m_showNetworkingWindow)) {
                 m_showNetworkingWindow = !m_showNetworkingWindow;
             }
-            if (ImGui::MenuItem("Animation State Machine Graph", "Shift+M", m_showAnimStateMachineWindow)) {
+            if (ImGui::MenuItem(TR("Animation State Machine Graph"), "Shift+M", m_showAnimStateMachineWindow)) {
                 m_showAnimStateMachineWindow = !m_showAnimStateMachineWindow;
             }
-            if (ImGui::MenuItem("Cutscene & Cinematic Sequencer", "Shift+C", m_showCutsceneWindow)) {
+            if (ImGui::MenuItem(TR("Cutscene & Cinematic Sequencer"), "Shift+C", m_showCutsceneWindow)) {
                 m_showCutsceneWindow = !m_showCutsceneWindow;
             }
             if (false) {
                 m_showAnimStateMachineWindow = !m_showAnimStateMachineWindow;
             }
-            if (ImGui::MenuItem("3D Ruler & Measurement Tool", "M", m_rulerToolState.showRulerWindow || m_rulerToolState.active)) {
+            if (ImGui::MenuItem(TR("3D Ruler & Measurement Tool"), "M", m_rulerToolState.showRulerWindow || m_rulerToolState.active)) {
                 bool newState = !(m_rulerToolState.showRulerWindow || m_rulerToolState.active);
                 m_rulerToolState.showRulerWindow = newState;
                 SetRulerActive(newState);
             }
 
             ImGui::Separator();
-            ImGui::TextDisabled("Standalone Game View");
-            if (ImGui::MenuItem("Game [Standalone Window]", "F11", m_showGameWindow)) {
+            ImGui::TextDisabled("%s", TR("Standalone Game View"));
+            if (ImGui::MenuItem(TR("Game Localization Editor"), "Ctrl+L", m_showGameLocalizationWindow)) {
+                m_showGameLocalizationWindow = !m_showGameLocalizationWindow;
+            }
+            if (ImGui::MenuItem(TR("Game [Standalone Window]"), "F11", m_showGameWindow)) {
                 m_showGameWindow = !m_showGameWindow;
             }
 
             ImGui::Separator();
-            ImGui::TextDisabled("Layout Options");
-            if (ImGui::MenuItem("Reset to Default Window Layout")) {
+            ImGui::TextDisabled("%s", TR("Layout Options"));
+            if (ImGui::MenuItem(TR("Reset to Default Window Layout"))) {
                 m_resetDockLayoutRequested = true;
                 m_showHierarchyWindow = true;
                 m_showInspectorWindow = true;
@@ -1115,7 +1126,7 @@ void EditorUI::RenderMainMenuBar(Scene& scene, Camera& camera, Gameplay::GameLoo
                 m_showProjectFilesWindow = true;
                 m_showTimelineWindow = true;
             }
-            if (ImGui::MenuItem("Show All Workspace Panels")) {
+            if (ImGui::MenuItem(TR("Show All Workspace Panels"))) {
                 m_showHierarchyWindow = true;
                 m_showInspectorWindow = true;
                 m_showViewportWindow = true;
@@ -1123,7 +1134,7 @@ void EditorUI::RenderMainMenuBar(Scene& scene, Camera& camera, Gameplay::GameLoo
                 m_showProjectFilesWindow = true;
                 m_showTimelineWindow = true;
             }
-            if (ImGui::MenuItem("Close All Secondary Windows")) {
+            if (ImGui::MenuItem(TR("Close All Secondary Windows"))) {
                 m_showEnvironmentWindow = false;
                 m_showShaderGraphWindow = false;
                 m_showAudioMixerWindow = false;
@@ -1139,18 +1150,18 @@ void EditorUI::RenderMainMenuBar(Scene& scene, Camera& camera, Gameplay::GameLoo
             ImGui::EndMenu();
         }
 
-        if (ImGui::BeginMenu("Render")) {
+        if (ImGui::BeginMenu(TR("Render"))) {
             auto& env = scene.GetEnvironment();
             auto& rt = Graphics::RayTracing::RayTracingManager::Get();
             auto& rtSettings = rt.GetSettings();
             auto& meshletMgr = Graphics::Meshlet::MeshletManager::Get();
             auto& meshletSettings = meshletMgr.GetSettings();
-            ImGui::MenuItem("Enable Meshlet GPU Virtualization", nullptr, &meshletSettings.enableMeshletPipeline);
+            ImGui::MenuItem(TR("Enable Meshlet GPU Virtualization"), nullptr, &meshletSettings.enableMeshletPipeline);
 
             auto& upscaler = Graphics::Upscaling::TemporalUpscaler::Get();
             auto& upscalerSettings = upscaler.GetSettings();
-            ImGui::MenuItem("Enable Temporal Upscaling (FSR 3 / DLSS)", nullptr, &upscalerSettings.enableUpscaling);
-            if (ImGui::MenuItem("Enable Hardware Ray Tracing (Vulkan / Metal)", nullptr, &rtSettings.enableHardwareRT)) {
+            ImGui::MenuItem(TR("Enable Temporal Upscaling (FSR 3 / DLSS)"), nullptr, &upscalerSettings.enableUpscaling);
+            if (ImGui::MenuItem(TR("Enable Hardware Ray Tracing (Vulkan / Metal)"), nullptr, &rtSettings.enableHardwareRT)) {
                 if (rtSettings.enableHardwareRT) {
                     rtSettings.enableRTGI = true;
                     rtSettings.enableRTAO = true;
@@ -1158,26 +1169,41 @@ void EditorUI::RenderMainMenuBar(Scene& scene, Camera& camera, Gameplay::GameLoo
                     env.vxgiEnabled = true;
                 }
             }
-            ImGui::MenuItem("Enable Voxel Global Illumination (VXGI)", nullptr, &env.vxgiEnabled);
-            ImGui::MenuItem("Enable Spherical Harmonics Sky GI", nullptr, &env.enableGI);
-            ImGui::MenuItem("Enable Realtime Shadows & CSM", nullptr, &env.enableShadows);
-            ImGui::MenuItem("Enable ACES Filmic Tonemapping", nullptr, &env.enableACES);
+            ImGui::MenuItem(TR("Enable Voxel Global Illumination (VXGI)"), nullptr, &env.vxgiEnabled);
+            ImGui::MenuItem(TR("Enable Spherical Harmonics Sky GI"), nullptr, &env.enableGI);
+            ImGui::MenuItem(TR("Enable Realtime Shadows & CSM"), nullptr, &env.enableShadows);
+            ImGui::MenuItem(TR("Enable ACES Filmic Tonemapping"), nullptr, &env.enableACES);
             ImGui::Separator();
-            if (ImGui::MenuItem("Bake Static Lighting", nullptr, false, !m_giBaking)) {
+            if (ImGui::MenuItem(TR("Bake Static Lighting"), nullptr, false, !m_giBaking)) {
                 m_giBakeRequested = true;
             }
-            if (ImGui::MenuItem("Recapture Reflection Probes")) {
+            if (ImGui::MenuItem(TR("Recapture Reflection Probes"))) {
                 m_probeRecaptureRequests++;
             }
             ImGui::Separator();
-            if (ImGui::MenuItem("Environment, GI & Post-Processing...", "Shift+R", m_showEnvironmentWindow)) {
+            if (ImGui::MenuItem(TR("Environment, GI & Post-Processing..."), "Shift+R", m_showEnvironmentWindow)) {
                 m_showEnvironmentWindow = !m_showEnvironmentWindow;
             }
             ImGui::EndMenu();
         }
 
-        if (ImGui::BeginMenu("Help")) {
-            if (ImGui::MenuItem("Open HTML Documentation...")) {
+        if (ImGui::BeginMenu(TR("Language"))) {
+            const auto& langs = Localization::Get().GetAvailableLanguages();
+            for (const auto& l : langs) {
+                bool selected = (l.code == Localization::Get().GetCurrentLanguage());
+                if (ImGui::MenuItem(l.displayName.c_str(), nullptr, selected)) {
+                    Localization::Get().SetLanguage(l.code);
+                }
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem(TR("Reload Languages"))) {
+                Localization::Get().ReloadCurrentLanguage();
+            }
+            ImGui::EndMenu();
+        }
+
+        if (ImGui::BeginMenu(TR("Help"))) {
+            if (ImGui::MenuItem(TR("Open HTML Documentation..."))) {
 #ifdef _WIN32
                 ShellExecuteA(NULL, "open", "docs\\index.html", NULL, NULL, SW_SHOWNORMAL);
 #elif defined(__linux__)
@@ -1185,7 +1211,7 @@ void EditorUI::RenderMainMenuBar(Scene& scene, Camera& camera, Gameplay::GameLoo
 #endif
             }
             ImGui::Separator();
-            if (ImGui::MenuItem("About Tessera Game Engine...")) {
+            if (ImGui::MenuItem(TR("About Tessera Game Engine..."))) {
                 m_showAboutModal = true;
             }
             ImGui::EndMenu();
@@ -1195,14 +1221,14 @@ void EditorUI::RenderMainMenuBar(Scene& scene, Camera& camera, Gameplay::GameLoo
 
 void EditorUI::RenderLeftPanel(Scene& scene, Camera& camera) {
     if (m_showHierarchyWindow) {
-        if (ImGui::Begin("Scene Hierarchy", &m_showHierarchyWindow)) {
+        if (ImGui::Begin(TR("Scene Hierarchy###HierarchyWindow"), &m_showHierarchyWindow)) {
             RenderHierarchy(scene, camera);
         }
         ImGui::End();
     }
 
     if (m_showInspectorWindow) {
-        if (ImGui::Begin("Inspector", &m_showInspectorWindow)) {
+        if (ImGui::Begin(TR("Inspector###InspectorWindow"), &m_showInspectorWindow)) {
             RenderInspector(scene, camera);
         }
         ImGui::End();
@@ -1335,20 +1361,20 @@ void EditorUI::RenderNodeTree(Scene& scene, uint32_t nodeId, uint32_t& nodeToDel
         ImGui::Separator();
 
         if (node->isSceneInstanceRoot) {
-            if (ImGui::MenuItem("Reload Prefab From Disk")) {
+            if (ImGui::MenuItem(TR("Reload Prefab From Disk"))) {
                 scene.ReloadSceneInstance(node->id);
             }
             ImGui::Separator();
         }
 
         if (node->parentId != 0) {
-            if (ImGui::MenuItem("Unparent (Move to Root)")) {
+            if (ImGui::MenuItem(TR("Unparent (Move to Root)"))) {
                 scene.Unparent(node->id);
             }
             ImGui::Separator();
         }
 
-        if (ImGui::BeginMenu("Add Child")) {
+        if (ImGui::BeginMenu(TR("Add Child"))) {
             if (ImGui::MenuItem("Instantiate Subscene / Prefab (.scene)...")) {
                 std::string scenePath;
                 if (OpenSceneFileDialog(scenePath, "Select Scene to Instantiate as Child")) {
@@ -1356,7 +1382,7 @@ void EditorUI::RenderNodeTree(Scene& scene, uint32_t nodeId, uint32_t& nodeToDel
                 }
             }
             ImGui::Separator();
-            if (ImGui::BeginMenu("3D Objects & Primitives")) {
+            if (ImGui::BeginMenu(TR("3D Objects & Primitives"))) {
                 if (ImGui::MenuItem("Character NPC")) scene.AddCharacterNode("", node->id);
                 if (ImGui::MenuItem("Cube")) scene.AddNode(ShapeType::Cube, "", node->id);
                 if (ImGui::MenuItem("Sphere")) scene.AddNode(ShapeType::Sphere, "", node->id);
@@ -1365,8 +1391,8 @@ void EditorUI::RenderNodeTree(Scene& scene, uint32_t nodeId, uint32_t& nodeToDel
                 if (ImGui::MenuItem("Plane")) scene.AddNode(ShapeType::Plane, "", node->id);
                 ImGui::EndMenu();
             }
-            if (ImGui::BeginMenu("2D User Interface")) {
-                if (ImGui::BeginMenu("Containers & Windows")) {
+            if (ImGui::BeginMenu(TR("2D User Interface"))) {
+                if (ImGui::BeginMenu(TR("Containers & Windows"))) {
                     if (ImGui::MenuItem("Canvas (UI Root)")) scene.AddUICanvasNode("", node->id);
                     if (ImGui::MenuItem("Panel")) scene.AddUIPanelNode("", node->id);
                     if (ImGui::MenuItem("Floating Window")) scene.AddUIWindowNode("Floating Window", "", node->id);
@@ -1374,7 +1400,7 @@ void EditorUI::RenderNodeTree(Scene& scene, uint32_t nodeId, uint32_t& nodeToDel
                     if (ImGui::MenuItem("Tabs View")) scene.AddUITabsNode({"Tab 1", "Tab 2", "Tab 3"}, "", node->id);
                     ImGui::EndMenu();
                 }
-                if (ImGui::BeginMenu("Basic & Text")) {
+                if (ImGui::BeginMenu(TR("Basic & Text"))) {
                     if (ImGui::MenuItem("Text Label")) scene.AddUITextNode("Text Label", "", node->id);
                     if (ImGui::MenuItem("Button")) scene.AddUIButtonNode("Button", "", node->id);
                     if (ImGui::MenuItem("Text Field")) scene.AddUITextFieldNode("Enter text...", "", node->id);
@@ -1383,7 +1409,7 @@ void EditorUI::RenderNodeTree(Scene& scene, uint32_t nodeId, uint32_t& nodeToDel
                     if (ImGui::MenuItem("Spinner")) scene.AddUISpinnerNode("", node->id);
                     ImGui::EndMenu();
                 }
-                if (ImGui::BeginMenu("Inputs & Controls")) {
+                if (ImGui::BeginMenu(TR("Inputs & Controls"))) {
                     if (ImGui::MenuItem("Slider")) scene.AddUISliderNode(0.0f, 100.0f, 50.0f, "", node->id);
                     if (ImGui::MenuItem("Checkbox")) scene.AddUICheckboxNode("Checkbox", false, "", node->id);
                     if (ImGui::MenuItem("Radio Button")) scene.AddUIRadioButtonNode("Radio Option", "Group1", false, "", node->id);
@@ -1392,7 +1418,7 @@ void EditorUI::RenderNodeTree(Scene& scene, uint32_t nodeId, uint32_t& nodeToDel
                     if (ImGui::MenuItem("Color Picker")) scene.AddUIColorPickerNode("", node->id);
                     ImGui::EndMenu();
                 }
-                if (ImGui::BeginMenu("Data & Media")) {
+                if (ImGui::BeginMenu(TR("Data & Media"))) {
                     if (ImGui::MenuItem("Image")) scene.AddUIImageNode("", "", node->id);
                     if (ImGui::MenuItem("Video Player")) scene.AddUIVideoNode("", node->id);
                     if (ImGui::MenuItem("Selectable List")) scene.AddUISelectableListNode({"Item 1", "Item 2", "Item 3"}, "", node->id);
@@ -1400,7 +1426,7 @@ void EditorUI::RenderNodeTree(Scene& scene, uint32_t nodeId, uint32_t& nodeToDel
                     if (ImGui::MenuItem("Menu Bar")) scene.AddUIMenuBarNode("", node->id);
                     ImGui::EndMenu();
                 }
-                if (ImGui::BeginMenu("Vector Shapes")) {
+                if (ImGui::BeginMenu(TR("Vector Shapes"))) {
                     if (ImGui::MenuItem("Rectangle")) scene.AddUIShapeNode(UIShapeType::Rectangle, "Rectangle", node->id);
                     if (ImGui::MenuItem("Rounded Rectangle")) scene.AddUIShapeNode(UIShapeType::RoundedRect, "RoundedRect", node->id);
                     if (ImGui::MenuItem("Circle")) scene.AddUIShapeNode(UIShapeType::Circle, "Circle", node->id);
@@ -1409,7 +1435,7 @@ void EditorUI::RenderNodeTree(Scene& scene, uint32_t nodeId, uint32_t& nodeToDel
                 }
                 ImGui::EndMenu();
             }
-            if (ImGui::BeginMenu("Entities & Lighting")) {
+            if (ImGui::BeginMenu(TR("Entities & Lighting"))) {
                 if (ImGui::MenuItem("Camera")) scene.AddCameraNode("", node->id);
                 if (ImGui::MenuItem("Point Light")) scene.AddLightNode(LightType::Point, "", node->id);
                 if (ImGui::MenuItem("Directional Light")) scene.AddLightNode(LightType::Directional, "", node->id);
@@ -1422,7 +1448,7 @@ void EditorUI::RenderNodeTree(Scene& scene, uint32_t nodeId, uint32_t& nodeToDel
                 if (ImGui::MenuItem("Empty Group Node")) scene.AddEmptyNode("", node->id);
                 ImGui::EndMenu();
             }
-            if (ImGui::BeginMenu("Physics & Colliders")) {
+            if (ImGui::BeginMenu(TR("Physics & Colliders"))) {
                 if (ImGui::MenuItem("Box Collider")) scene.AddColliderNode(ColliderType::Box, "", node->id);
                 if (ImGui::MenuItem("Sphere Collider")) scene.AddColliderNode(ColliderType::Sphere, "", node->id);
                 if (ImGui::MenuItem("Capsule Collider")) scene.AddColliderNode(ColliderType::Capsule, "", node->id);
@@ -1432,7 +1458,7 @@ void EditorUI::RenderNodeTree(Scene& scene, uint32_t nodeId, uint32_t& nodeToDel
         }
 
         ImGui::Separator();
-        if (ImGui::MenuItem("Delete Node")) {
+        if (ImGui::MenuItem(TR("Delete Node"))) {
             nodeToDelete = node->id;
             requestDelete = true;
         }
@@ -1689,7 +1715,7 @@ void EditorUI::RenderHierarchy(Scene& scene, Camera& camera) {
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.45f, 0.72f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.26f, 0.54f, 0.84f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.15f, 0.36f, 0.60f, 1.0f));
-        if (ImGui::Button("+ Add Node...", ImVec2(addBtnWidth, 26))) {
+        if (ImGui::Button(TR("+ Add Node..."), ImVec2(addBtnWidth, 26))) {
             ImGui::OpenPopup("AddNodePopupWindow");
         }
         ImGui::PopStyleColor(3);
@@ -1699,7 +1725,7 @@ void EditorUI::RenderHierarchy(Scene& scene, Camera& camera) {
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.45f, 0.35f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.58f, 0.45f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.15f, 0.36f, 0.28f, 1.0f));
-            if (ImGui::Button("Import 3D...", ImVec2(-1, 26))) {
+            if (ImGui::Button(TR("Import 3D..."), ImVec2(-1, 26))) {
                 OpenImportDialog();
             }
             ImGui::PopStyleColor(3);
@@ -1716,7 +1742,7 @@ void EditorUI::RenderHierarchy(Scene& scene, Camera& camera) {
         // Quick Undo / Redo / Clipboard Toolbar in Hierarchy (always visible even when no node is selected)
         ImGui::Spacing();
         ImGui::BeginDisabled(!Core::UndoRedoManager::Get().CanUndo());
-        if (ImGui::SmallButton("Undo")) {
+        if (ImGui::SmallButton(TR("Undo"))) {
             Core::UndoRedoManager::Get().Undo(scene);
         }
         ImGui::EndDisabled();
@@ -1726,7 +1752,7 @@ void EditorUI::RenderHierarchy(Scene& scene, Camera& camera) {
 
         ImGui::SameLine();
         ImGui::BeginDisabled(!Core::UndoRedoManager::Get().CanRedo());
-        if (ImGui::SmallButton("Redo")) {
+        if (ImGui::SmallButton(TR("Redo"))) {
             Core::UndoRedoManager::Get().Redo(scene);
         }
         ImGui::EndDisabled();
@@ -1736,14 +1762,14 @@ void EditorUI::RenderHierarchy(Scene& scene, Camera& camera) {
 
         ImGui::SameLine();
         ImGui::BeginDisabled(scene.GetSelectedId() <= 0);
-        if (ImGui::SmallButton("Copy")) {
+        if (ImGui::SmallButton(TR("Copy"))) {
             scene.CopySelected();
         }
         ImGui::EndDisabled();
 
         ImGui::SameLine();
         ImGui::BeginDisabled(!scene.HasClipboardData());
-        if (ImGui::SmallButton("Paste")) {
+        if (ImGui::SmallButton(TR("Paste"))) {
             JsonValue before = scene.Serialize();
             int32_t beforeSel = scene.GetSelectedId();
             scene.PasteNode();
@@ -1753,7 +1779,7 @@ void EditorUI::RenderHierarchy(Scene& scene, Camera& camera) {
 
         ImGui::SameLine();
         ImGui::BeginDisabled(scene.GetSelectedId() <= 0);
-        if (ImGui::SmallButton("Duplicate")) {
+        if (ImGui::SmallButton(TR("Duplicate"))) {
             JsonValue before = scene.Serialize();
             int32_t beforeSel = scene.GetSelectedId();
             scene.DuplicateNode(static_cast<uint32_t>(beforeSel));
@@ -1765,7 +1791,7 @@ void EditorUI::RenderHierarchy(Scene& scene, Camera& camera) {
         ImGui::Separator();
         ImGui::Spacing();
 
-        ImGui::Text("Scene Hierarchy (%zu nodes)", scene.GetNodes().size());
+        ImGui::Text("%s (%zu %s)", TR("Scene Hierarchy"), scene.GetNodes().size(), TR("nodes"));
         if (scene.GetSelectedId() > 0) {
             float availX = ImGui::GetContentRegionAvail().x;
             if (availX > 60.0f) {
@@ -1807,90 +1833,90 @@ void EditorUI::RenderHierarchy(Scene& scene, Camera& camera) {
 
     // Context menu on empty area
     if (ImGui::BeginPopupContextWindow("HierarchyEmptyContextMenu", ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems)) {
-        if (ImGui::MenuItem("Instantiate Subscene / Prefab (.scene)...")) {
+        if (ImGui::MenuItem(TR("Instantiate Subscene / Prefab (.scene)..."))) {
             std::string scenePath;
             if (OpenSceneFileDialog(scenePath, "Select Scene to Instantiate")) {
                 scene.InstantiateScene(scenePath, 0);
             }
         }
         ImGui::Separator();
-        if (ImGui::BeginMenu("Add Node")) {
-            if (ImGui::BeginMenu("3D Objects & Primitives")) {
-                if (ImGui::MenuItem("Cube")) { auto n = scene.AddNode(ShapeType::Cube); if (n) scene.SelectNode(n->id); }
-                if (ImGui::MenuItem("Sphere")) { auto n = scene.AddNode(ShapeType::Sphere); if (n) scene.SelectNode(n->id); }
-                if (ImGui::MenuItem("Cylinder")) { auto n = scene.AddNode(ShapeType::Cylinder); if (n) scene.SelectNode(n->id); }
-                if (ImGui::MenuItem("Cone")) { auto n = scene.AddNode(ShapeType::Cone); if (n) scene.SelectNode(n->id); }
-                if (ImGui::MenuItem("Plane")) { auto n = scene.AddNode(ShapeType::Plane); if (n) scene.SelectNode(n->id); }
+        if (ImGui::BeginMenu(TR("Add Node / Entity..."))) {
+            if (ImGui::BeginMenu(TR("3D Objects & Primitives"))) {
+                if (ImGui::MenuItem(TR("Cube"))) { auto n = scene.AddNode(ShapeType::Cube); if (n) scene.SelectNode(n->id); }
+                if (ImGui::MenuItem(TR("Sphere"))) { auto n = scene.AddNode(ShapeType::Sphere); if (n) scene.SelectNode(n->id); }
+                if (ImGui::MenuItem(TR("Cylinder"))) { auto n = scene.AddNode(ShapeType::Cylinder); if (n) scene.SelectNode(n->id); }
+                if (ImGui::MenuItem(TR("Cone"))) { auto n = scene.AddNode(ShapeType::Cone); if (n) scene.SelectNode(n->id); }
+                if (ImGui::MenuItem(TR("Plane"))) { auto n = scene.AddNode(ShapeType::Plane); if (n) scene.SelectNode(n->id); }
                 ImGui::EndMenu();
             }
-            if (ImGui::BeginMenu("2D User Interface")) {
-                if (ImGui::BeginMenu("Containers & Windows")) {
-                    if (ImGui::MenuItem("Canvas (UI Root)")) { auto n = scene.AddUICanvasNode(); if (n) scene.SelectNode(n->id); }
-                    if (ImGui::MenuItem("Panel")) { auto n = scene.AddUIPanelNode(); if (n) scene.SelectNode(n->id); }
-                    if (ImGui::MenuItem("Floating Window")) { auto n = scene.AddUIWindowNode("Floating Window"); if (n) scene.SelectNode(n->id); }
-                    if (ImGui::MenuItem("Scroll Pane")) { auto n = scene.AddUIScrollPaneNode(); if (n) scene.SelectNode(n->id); }
-                    if (ImGui::MenuItem("Tabs View")) { auto n = scene.AddUITabsNode({"Tab 1", "Tab 2", "Tab 3"}); if (n) scene.SelectNode(n->id); }
+            if (ImGui::BeginMenu(TR("2D User Interface"))) {
+                if (ImGui::BeginMenu(TR("Containers & Windows"))) {
+                    if (ImGui::MenuItem(TR("Canvas (UI Root)"))) { auto n = scene.AddUICanvasNode(); if (n) scene.SelectNode(n->id); }
+                    if (ImGui::MenuItem(TR("Panel"))) { auto n = scene.AddUIPanelNode(); if (n) scene.SelectNode(n->id); }
+                    if (ImGui::MenuItem(TR("Floating Window"))) { auto n = scene.AddUIWindowNode("Floating Window"); if (n) scene.SelectNode(n->id); }
+                    if (ImGui::MenuItem(TR("Scroll Pane"))) { auto n = scene.AddUIScrollPaneNode(); if (n) scene.SelectNode(n->id); }
+                    if (ImGui::MenuItem(TR("Tabs View"))) { auto n = scene.AddUITabsNode({"Tab 1", "Tab 2", "Tab 3"}); if (n) scene.SelectNode(n->id); }
                     if (ImGui::MenuItem("Box Container (Vertical)")) { auto n = scene.AddUIBoxContainerNode(BoxOrientation::Vertical); if (n) scene.SelectNode(n->id); }
                     if (ImGui::MenuItem("Box Container (Horizontal)")) { auto n = scene.AddUIBoxContainerNode(BoxOrientation::Horizontal); if (n) scene.SelectNode(n->id); }
                     if (ImGui::MenuItem("Grid Container")) { auto n = scene.AddUIGridContainerNode(4); if (n) scene.SelectNode(n->id); }
                     ImGui::EndMenu();
                 }
-                if (ImGui::BeginMenu("Basic & Text")) {
-                    if (ImGui::MenuItem("Text Label")) { auto n = scene.AddUITextNode("Text Label"); if (n) scene.SelectNode(n->id); }
-                    if (ImGui::MenuItem("Button")) { auto n = scene.AddUIButtonNode("Button"); if (n) scene.SelectNode(n->id); }
-                    if (ImGui::MenuItem("Text Field")) { auto n = scene.AddUITextFieldNode("Enter text..."); if (n) scene.SelectNode(n->id); }
-                    if (ImGui::MenuItem("Password Field")) { auto n = scene.AddUIPasswordFieldNode(); if (n) scene.SelectNode(n->id); }
-                    if (ImGui::MenuItem("Progress Bar")) { auto n = scene.AddUIProgressBarNode(); if (n) scene.SelectNode(n->id); }
-                    if (ImGui::MenuItem("Spinner")) { auto n = scene.AddUISpinnerNode(); if (n) scene.SelectNode(n->id); }
+                if (ImGui::BeginMenu(TR("Basic & Text"))) {
+                    if (ImGui::MenuItem(TR("Text Label"))) { auto n = scene.AddUITextNode("Text Label"); if (n) scene.SelectNode(n->id); }
+                    if (ImGui::MenuItem(TR("Button"))) { auto n = scene.AddUIButtonNode("Button"); if (n) scene.SelectNode(n->id); }
+                    if (ImGui::MenuItem(TR("Text Field"))) { auto n = scene.AddUITextFieldNode("Enter text..."); if (n) scene.SelectNode(n->id); }
+                    if (ImGui::MenuItem(TR("Password Field"))) { auto n = scene.AddUIPasswordFieldNode(); if (n) scene.SelectNode(n->id); }
+                    if (ImGui::MenuItem(TR("Progress Bar"))) { auto n = scene.AddUIProgressBarNode(); if (n) scene.SelectNode(n->id); }
+                    if (ImGui::MenuItem(TR("Spinner"))) { auto n = scene.AddUISpinnerNode(); if (n) scene.SelectNode(n->id); }
                     ImGui::EndMenu();
                 }
-                if (ImGui::BeginMenu("Inputs & Controls")) {
-                    if (ImGui::MenuItem("Slider")) { auto n = scene.AddUISliderNode(0.0f, 100.0f, 50.0f); if (n) scene.SelectNode(n->id); }
-                    if (ImGui::MenuItem("Checkbox")) { auto n = scene.AddUICheckboxNode("Checkbox", false); if (n) scene.SelectNode(n->id); }
-                    if (ImGui::MenuItem("Radio Button")) { auto n = scene.AddUIRadioButtonNode("Radio Option", "Group1", false); if (n) scene.SelectNode(n->id); }
-                    if (ImGui::MenuItem("Dropdown Box")) { auto n = scene.AddUIDropdownNode({"Option 1", "Option 2", "Option 3"}); if (n) scene.SelectNode(n->id); }
-                    if (ImGui::MenuItem("Date/Time Picker")) { auto n = scene.AddUIDatePickerNode(); if (n) scene.SelectNode(n->id); }
-                    if (ImGui::MenuItem("Color Picker")) { auto n = scene.AddUIColorPickerNode(); if (n) scene.SelectNode(n->id); }
+                if (ImGui::BeginMenu(TR("Inputs & Controls"))) {
+                    if (ImGui::MenuItem(TR("Slider"))) { auto n = scene.AddUISliderNode(0.0f, 100.0f, 50.0f); if (n) scene.SelectNode(n->id); }
+                    if (ImGui::MenuItem(TR("Checkbox"))) { auto n = scene.AddUICheckboxNode("Checkbox", false); if (n) scene.SelectNode(n->id); }
+                    if (ImGui::MenuItem(TR("Radio Button"))) { auto n = scene.AddUIRadioButtonNode("Radio Option", "Group1", false); if (n) scene.SelectNode(n->id); }
+                    if (ImGui::MenuItem(TR("Dropdown Box"))) { auto n = scene.AddUIDropdownNode({"Option 1", "Option 2", "Option 3"}); if (n) scene.SelectNode(n->id); }
+                    if (ImGui::MenuItem(TR("Date/Time Picker"))) { auto n = scene.AddUIDatePickerNode(); if (n) scene.SelectNode(n->id); }
+                    if (ImGui::MenuItem(TR("Color Picker"))) { auto n = scene.AddUIColorPickerNode(); if (n) scene.SelectNode(n->id); }
                     ImGui::EndMenu();
                 }
-                if (ImGui::BeginMenu("Data & Media")) {
-                    if (ImGui::MenuItem("Image")) { auto n = scene.AddUIImageNode(); if (n) scene.SelectNode(n->id); }
-                    if (ImGui::MenuItem("Video Player")) { auto n = scene.AddUIVideoNode(); if (n) scene.SelectNode(n->id); }
-                    if (ImGui::MenuItem("Selectable List")) { auto n = scene.AddUISelectableListNode({"Item 1", "Item 2", "Item 3"}); if (n) scene.SelectNode(n->id); }
-                    if (ImGui::MenuItem("Table Grid")) { auto n = scene.AddUITableNode(); if (n) scene.SelectNode(n->id); }
-                    if (ImGui::MenuItem("Menu Bar")) { auto n = scene.AddUIMenuBarNode(); if (n) scene.SelectNode(n->id); }
+                if (ImGui::BeginMenu(TR("Data & Media"))) {
+                    if (ImGui::MenuItem(TR("Image"))) { auto n = scene.AddUIImageNode(); if (n) scene.SelectNode(n->id); }
+                    if (ImGui::MenuItem(TR("Video Player"))) { auto n = scene.AddUIVideoNode(); if (n) scene.SelectNode(n->id); }
+                    if (ImGui::MenuItem(TR("Selectable List"))) { auto n = scene.AddUISelectableListNode({"Item 1", "Item 2", "Item 3"}); if (n) scene.SelectNode(n->id); }
+                    if (ImGui::MenuItem(TR("Table Grid"))) { auto n = scene.AddUITableNode(); if (n) scene.SelectNode(n->id); }
+                    if (ImGui::MenuItem(TR("Menu Bar"))) { auto n = scene.AddUIMenuBarNode(); if (n) scene.SelectNode(n->id); }
                     ImGui::EndMenu();
                 }
-                if (ImGui::BeginMenu("Vector Shapes")) {
-                    if (ImGui::MenuItem("Rectangle")) { auto n = scene.AddUIShapeNode(UIShapeType::Rectangle, "Rectangle"); if (n) scene.SelectNode(n->id); }
-                    if (ImGui::MenuItem("Rounded Rectangle")) { auto n = scene.AddUIShapeNode(UIShapeType::RoundedRect, "RoundedRect"); if (n) scene.SelectNode(n->id); }
-                    if (ImGui::MenuItem("Circle")) { auto n = scene.AddUIShapeNode(UIShapeType::Circle, "Circle"); if (n) scene.SelectNode(n->id); }
-                    if (ImGui::MenuItem("Triangle")) { auto n = scene.AddUIShapeNode(UIShapeType::Triangle, "Triangle"); if (n) scene.SelectNode(n->id); }
+                if (ImGui::BeginMenu(TR("Vector Shapes"))) {
+                    if (ImGui::MenuItem(TR("Rectangle"))) { auto n = scene.AddUIShapeNode(UIShapeType::Rectangle, "Rectangle"); if (n) scene.SelectNode(n->id); }
+                    if (ImGui::MenuItem(TR("Rounded Rectangle"))) { auto n = scene.AddUIShapeNode(UIShapeType::RoundedRect, "RoundedRect"); if (n) scene.SelectNode(n->id); }
+                    if (ImGui::MenuItem(TR("Circle"))) { auto n = scene.AddUIShapeNode(UIShapeType::Circle, "Circle"); if (n) scene.SelectNode(n->id); }
+                    if (ImGui::MenuItem(TR("Triangle"))) { auto n = scene.AddUIShapeNode(UIShapeType::Triangle, "Triangle"); if (n) scene.SelectNode(n->id); }
                     ImGui::EndMenu();
                 }
                 ImGui::EndMenu();
             }
-            if (ImGui::BeginMenu("Entities & Lighting")) {
-                if (ImGui::MenuItem("Camera")) { auto n = scene.AddCameraNode(); if (n) scene.SelectNode(n->id); }
-                if (ImGui::MenuItem("Point Light")) { auto n = scene.AddLightNode(LightType::Point); if (n) scene.SelectNode(n->id); }
-                if (ImGui::MenuItem("Directional Light")) { auto n = scene.AddLightNode(LightType::Directional); if (n) scene.SelectNode(n->id); }
-                if (ImGui::MenuItem("Spot Light")) { auto n = scene.AddLightNode(LightType::Spot); if (n) scene.SelectNode(n->id); }
-                if (ImGui::MenuItem("Audio Source")) { auto n = scene.AddAudioNode(); if (n) scene.SelectNode(n->id); }
-                if (ImGui::MenuItem("Particle Emitter")) { auto n = scene.AddParticleNode(); if (n) scene.SelectNode(n->id); }
-                if (ImGui::MenuItem("Terrain (Landscape)")) { auto n = scene.AddTerrainNode(); if (n) scene.SelectNode(n->id); }
-                if (ImGui::MenuItem("Decal Projector")) { auto n = scene.AddDecalNode(); if (n) scene.SelectNode(n->id); }
-                if (ImGui::MenuItem("Spline / 3D Curve")) { auto n = scene.AddSplineNode(); if (n) scene.SelectNode(n->id); }
-                if (ImGui::MenuItem("Empty Group Node")) { auto n = scene.AddEmptyNode(); if (n) scene.SelectNode(n->id); }
+            if (ImGui::BeginMenu(TR("Entities & Lighting"))) {
+                if (ImGui::MenuItem(TR("Camera"))) { auto n = scene.AddCameraNode(); if (n) scene.SelectNode(n->id); }
+                if (ImGui::MenuItem(TR("Point Light"))) { auto n = scene.AddLightNode(LightType::Point); if (n) scene.SelectNode(n->id); }
+                if (ImGui::MenuItem(TR("Directional Light"))) { auto n = scene.AddLightNode(LightType::Directional); if (n) scene.SelectNode(n->id); }
+                if (ImGui::MenuItem(TR("Spot Light"))) { auto n = scene.AddLightNode(LightType::Spot); if (n) scene.SelectNode(n->id); }
+                if (ImGui::MenuItem(TR("Audio Source (2D / 3D)"))) { auto n = scene.AddAudioNode(); if (n) scene.SelectNode(n->id); }
+                if (ImGui::MenuItem(TR("Particle Emitter (CPU / Niagara)"))) { auto n = scene.AddParticleNode(); if (n) scene.SelectNode(n->id); }
+                if (ImGui::MenuItem(TR("Terrain (Landscape)"))) { auto n = scene.AddTerrainNode(); if (n) scene.SelectNode(n->id); }
+                if (ImGui::MenuItem(TR("Decal Projector"))) { auto n = scene.AddDecalNode(); if (n) scene.SelectNode(n->id); }
+                if (ImGui::MenuItem(TR("Spline / 3D Curve"))) { auto n = scene.AddSplineNode(); if (n) scene.SelectNode(n->id); }
+                if (ImGui::MenuItem(TR("Empty Group Node"))) { auto n = scene.AddEmptyNode(); if (n) scene.SelectNode(n->id); }
                 ImGui::EndMenu();
             }
-            if (ImGui::BeginMenu("Physics & Colliders")) {
-                if (ImGui::MenuItem("Box Collider")) { auto n = scene.AddColliderNode(ColliderType::Box); if (n) scene.SelectNode(n->id); }
-                if (ImGui::MenuItem("Sphere Collider")) { auto n = scene.AddColliderNode(ColliderType::Sphere); if (n) scene.SelectNode(n->id); }
-                if (ImGui::MenuItem("Capsule Collider")) { auto n = scene.AddColliderNode(ColliderType::Capsule); if (n) scene.SelectNode(n->id); }
+            if (ImGui::BeginMenu(TR("Physics & Colliders"))) {
+                if (ImGui::MenuItem(TR("Box Collider"))) { auto n = scene.AddColliderNode(ColliderType::Box); if (n) scene.SelectNode(n->id); }
+                if (ImGui::MenuItem(TR("Sphere Collider"))) { auto n = scene.AddColliderNode(ColliderType::Sphere); if (n) scene.SelectNode(n->id); }
+                if (ImGui::MenuItem(TR("Capsule Collider"))) { auto n = scene.AddColliderNode(ColliderType::Capsule); if (n) scene.SelectNode(n->id); }
                 ImGui::EndMenu();
             }
             ImGui::Separator();
-            if (ImGui::MenuItem("Import 3D Model...")) {
+            if (ImGui::MenuItem(TR("Import 3D Model..."))) {
                 OpenImportDialog();
             }
             ImGui::EndMenu();
@@ -2164,7 +2190,7 @@ static void RenderReflectionProbeProperties(Node& node) {
 }
 
 static void RenderTextureSlot(const char* label, const char* id, std::string& path, const char* browseTitle, std::function<std::string(const std::string&)> onImport = nullptr) {
-    ImGui::TextWrapped("%s", label);
+    ImGui::TextWrapped("%s", TR(label));
     ImGui::PushID(id);
 
     char buf[512];
@@ -2188,7 +2214,7 @@ static void RenderTextureSlot(const char* label, const char* id, std::string& pa
         if (ImGui::IsItemHovered() && !path.empty()) {
             ImGui::SetTooltip("%s", path.c_str());
         }
-        if (ImGui::Button("Browse...", ImVec2(availW - clearW - spacing, 0))) {
+        if (ImGui::Button(TR("Browse..."), ImVec2(availW - clearW - spacing, 0))) {
             std::string chosen;
             if (OpenTextureFileDialog(chosen, browseTitle)) {
                 path = onImport ? onImport(chosen) : chosen;
@@ -2210,7 +2236,7 @@ static void RenderTextureSlot(const char* label, const char* id, std::string& pa
             ImGui::SetTooltip("%s", path.c_str());
         }
         ImGui::SameLine();
-        if (ImGui::Button("Browse...", ImVec2(buttonW, 0))) {
+        if (ImGui::Button(TR("Browse..."), ImVec2(buttonW, 0))) {
             std::string chosen;
             if (OpenTextureFileDialog(chosen, browseTitle)) {
                 path = onImport ? onImport(chosen) : chosen;
@@ -2237,26 +2263,26 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
     auto selectedNode = scene.GetSelectedNode();
 
     // Camera Orbit Pivot Section (Always available)
-    if (ImGui::CollapsingHeader("Camera Pivot & Orbit Center", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ImGui::CollapsingHeader(TR("Camera Pivot & Orbit Center"), ImGuiTreeNodeFlags_DefaultOpen)) {
         glm::vec3 pivot = camera.GetTarget();
-        ImGui::Text("Orbit Pivot Point:");
+        ImGui::Text("%s", TR("Orbit Pivot Point:"));
         if (ImGui::DragFloat3("##Pivot", glm::value_ptr(pivot), 0.1f)) {
             camera.SetTarget(pivot);
         }
 
         if (selectedNode) {
-            if (ImGui::Button("Focus Pivot on Selected Node [F]", ImVec2(-1, 26))) {
+            if (ImGui::Button(TR("Focus Pivot on Selected Node [F]"), ImVec2(-1, 26))) {
                 camera.FocusOn(selectedNode->GetWorldPosition(scene));
             }
         }
-        if (ImGui::Button("Reset Pivot to Origin (0,0,0)", ImVec2(-1, 24))) {
+        if (ImGui::Button(TR("Reset Pivot to Origin (0,0,0)"), ImVec2(-1, 24))) {
             camera.SetTarget(glm::vec3(0.0f));
         }
 
         ImGui::Spacing();
-        ImGui::Checkbox("Show 3D Pivot Marker", &m_showPivotAxisMarker);
+        ImGui::Checkbox(TR("Show 3D Pivot Marker"), &m_showPivotAxisMarker);
         ImGui::SameLine();
-        ImGui::Checkbox("Show Ground Grid", &m_showGrid);
+        ImGui::Checkbox(TR("Show Ground Grid"), &m_showGrid);
     }
 
     ImGui::Spacing();
@@ -2265,19 +2291,19 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
 
     if (!selectedNode) {
         ImGui::BeginDisabled(!Core::UndoRedoManager::Get().CanUndo());
-        if (ImGui::Button("Undo (Ctrl+Z)")) {
+        if (ImGui::Button(TR("Undo (Ctrl+Z)"))) {
             Core::UndoRedoManager::Get().Undo(scene);
         }
         ImGui::EndDisabled();
         ImGui::SameLine();
         ImGui::BeginDisabled(!Core::UndoRedoManager::Get().CanRedo());
-        if (ImGui::Button("Redo (Ctrl+Y)")) {
+        if (ImGui::Button(TR("Redo (Ctrl+Y)"))) {
             Core::UndoRedoManager::Get().Redo(scene);
         }
         ImGui::EndDisabled();
         ImGui::Spacing();
-        ImGui::TextDisabled("No node selected.");
-        ImGui::TextWrapped("Click any node in Scene Hierarchy or Viewport to inspect properties and transforms.");
+        ImGui::TextDisabled("%s", TR("No node selected."));
+        ImGui::TextWrapped("%s", TR("Click any node in Scene Hierarchy or Viewport to inspect properties and transforms."));
         return;
     }
 
@@ -2287,7 +2313,7 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
         auto parent = scene.GetNodeById(selectedNode->parentId);
         ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "| Parent: %s", parent ? parent->name.c_str() : "Root");
         ImGui::SameLine();
-        if (ImGui::SmallButton("Unparent")) {
+        if (ImGui::SmallButton(TR("Unparent"))) {
             scene.Unparent(selectedNode->id);
         }
     } else {
@@ -2313,7 +2339,7 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
     char nameBuffer[128];
     strncpy(nameBuffer, selectedNode->name.c_str(), sizeof(nameBuffer));
     nameBuffer[sizeof(nameBuffer) - 1] = '\0';
-    ImGui::Text("Node Name:");
+    ImGui::Text("%s", TR("Node Name:"));
     ImGui::SetNextItemWidth(-1.0f);
     if (ImGui::InputText("##NodeName", nameBuffer, sizeof(nameBuffer))) {
         selectedNode->name = nameBuffer;
@@ -2360,7 +2386,7 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
         // Shape Type selector combo
         const char* shapeOptions[] = { "Cube", "Sphere", "Cylinder", "Cone", "Plane", "Custom 3D Model Asset" };
         int currentShapeIdx = (selectedNode->type == ShapeType::Custom) ? 5 : static_cast<int>(selectedNode->type);
-        ImGui::Text("Shape Type:");
+        ImGui::Text("%s", TR("Shape Type:"));
         ImGui::SetNextItemWidth(-1.0f);
         if (ImGui::Combo("##ShapeType", &currentShapeIdx, shapeOptions, IM_ARRAYSIZE(shapeOptions))) {
             if (currentShapeIdx == 5) {
@@ -2375,7 +2401,7 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
         // 3D Model Asset Slot (Rendered for Custom meshes or Character NPCs)
         if (selectedNode->type == ShapeType::Custom || selectedNode->nodeType == NodeType::Character) {
             ImGui::Spacing();
-            ImGui::TextColored(ImVec4(0.35f, 0.85f, 0.95f, 1.0f), "3D Model Asset (.fbx, .gltf, .glb, .obj):");
+            ImGui::TextColored(ImVec4(0.35f, 0.85f, 0.95f, 1.0f), "%s", TR("3D Model Asset (.fbx, .gltf, .glb, .obj):"));
             ImGui::PushID("ModelAssetSlot");
 
             char modelBuf[512];
@@ -2399,7 +2425,7 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
                 if (ImGui::IsItemHovered() && !selectedNode->customMeshName.empty()) {
                     ImGui::SetTooltip("%s", selectedNode->customMeshName.c_str());
                 }
-                if (ImGui::Button("Browse...", ImVec2(availW - clearW - spacing, 0))) {
+                if (ImGui::Button(TR("Browse..."), ImVec2(availW - clearW - spacing, 0))) {
                     std::string chosen;
                     if (OpenModelFileDialog(chosen, "Select 3D Model Asset (*.fbx, *.gltf, *.glb, *.obj)")) {
                         if (m_onAssignModel) m_onAssignModel(chosen, *selectedNode);
@@ -2426,7 +2452,7 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
                     ImGui::SetTooltip("%s", selectedNode->customMeshName.c_str());
                 }
                 ImGui::SameLine();
-                if (ImGui::Button("Browse...", ImVec2(buttonW, 0))) {
+                if (ImGui::Button(TR("Browse..."), ImVec2(buttonW, 0))) {
                     std::string chosen;
                     if (OpenModelFileDialog(chosen, "Select 3D Model Asset (*.fbx, *.gltf, *.glb, *.obj)")) {
                         if (m_onAssignModel) m_onAssignModel(chosen, *selectedNode);
@@ -2496,9 +2522,9 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
     // Nested Scene Instance (Prefab) Banner
     if (selectedNode->IsSceneInstance()) {
         ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.18f, 0.45f, 0.55f, 0.8f));
-        if (ImGui::CollapsingHeader("Nested Scene Instance (Prefab)", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (ImGui::CollapsingHeader(TR("Nested Scene Instance (Prefab)"), ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::TextColored(ImVec4(0.4f, 0.9f, 1.0f, 1.0f), "Source Scene: %s", selectedNode->instanceScenePath.c_str());
-            if (ImGui::Button("Reload Prefab From Disk", ImVec2(-1, 26))) {
+            if (ImGui::Button(TR("Reload Prefab From Disk"), ImVec2(-1, 26))) {
                 scene.ReloadSceneInstance(selectedNode->id);
             }
         }
@@ -2510,8 +2536,8 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
 
     // Level of Detail (LOD) & Draw Distance Culling Section (for Mesh nodes)
     if (selectedNode->nodeType == NodeType::Mesh || selectedNode->nodeType == NodeType::Character) {
-        if (ImGui::CollapsingHeader("Level of Detail (LOD) & Mesh Decimation", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::Checkbox("Enable Distance-Based LOD", &selectedNode->enableLOD);
+        if (ImGui::CollapsingHeader(TR("Level of Detail (LOD) & Mesh Decimation"), ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::Checkbox(TR("Enable Distance-Based LOD"), &selectedNode->enableLOD);
             ImGui::SameLine();
             ImGui::TextDisabled("(Phase 1 & 2)");
 
@@ -2620,33 +2646,33 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
     } else if (selectedNode->isOcean) {
         RenderOceanProperties(*selectedNode);
     } else {
-        if (ImGui::CollapsingHeader("Material & Appearance (PBR)", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (ImGui::CollapsingHeader(TR("Material & Appearance (PBR)"), ImGuiTreeNodeFlags_DefaultOpen)) {
             // A preview of the material on a sphere, cube or plane in a lit studio
             DrawMaterialPreview("inspector", *selectedNode, 128.0f, m_materialPreviewShape);
             ImGui::SameLine();
             ImGui::BeginGroup();
-            ImGui::TextDisabled("Preview");
-            ImGui::RadioButton("Sphere", &m_materialPreviewShape, 0);
-            ImGui::RadioButton("Cube", &m_materialPreviewShape, 1);
-            ImGui::RadioButton("Plane", &m_materialPreviewShape, 2);
+            ImGui::TextDisabled("%s", TR("Preview"));
+            ImGui::RadioButton(TR("Sphere"), &m_materialPreviewShape, 0);
+            ImGui::RadioButton(TR("Cube"), &m_materialPreviewShape, 1);
+            ImGui::RadioButton(TR("Plane"), &m_materialPreviewShape, 2);
             ImGui::EndGroup();
-            ImGui::Text("Base Color / Tint");
+            ImGui::Text("%s", TR("Base Color / Tint"));
             ImGui::ColorEdit4("##Color", glm::value_ptr(selectedNode->color));
-            ImGui::SliderFloat("Roughness (Default)", &selectedNode->roughness, 0.0f, 1.0f);
-            ImGui::SliderFloat("Metallic (Default)", &selectedNode->metallic, 0.0f, 1.0f);
-            ImGui::SliderFloat("Alpha Cutoff", &selectedNode->alphaCutoff, 0.0f, 1.0f, selectedNode->alphaCutoff > 0.0f ? "%.2f" : "Off");
+            ImGui::SliderFloat(TR("Roughness (Default)"), &selectedNode->roughness, 0.0f, 1.0f);
+            ImGui::SliderFloat(TR("Metallic (Default)"), &selectedNode->metallic, 0.0f, 1.0f);
+            ImGui::SliderFloat(TR("Alpha Cutoff"), &selectedNode->alphaCutoff, 0.0f, 1.0f, selectedNode->alphaCutoff > 0.0f ? "%.2f" : "Off");
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Cuts out pixels whose alpha is below this value.\nUse for leaves, fences and hair cards. 0 = off.");
-            ImGui::Checkbox("Double-Sided", &selectedNode->doubleSided);
+            ImGui::Checkbox(TR("Double-Sided"), &selectedNode->doubleSided);
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Draw and light both sides of each face.\nTurn off for closed meshes to hide back faces.");
             ImGui::SameLine();
-            ImGui::Checkbox("Cast Shadows", &selectedNode->castShadows);
+            ImGui::Checkbox(TR("Cast Shadows"), &selectedNode->castShadows);
             ImGui::SameLine();
-            ImGui::Checkbox("Lightmap Static", &selectedNode->lightmapStatic);
+            ImGui::Checkbox(TR("Lightmap Static"), &selectedNode->lightmapStatic);
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("This object never moves, so Bake Lighting gives it a lightmap:\n"
                                                           "detailed bounce light and soft sky shadowing. Turn off for objects\n"
                                                           "that move (they are lit by the light probes instead).");
             // One-click see-through materials
-            if (ImGui::SmallButton("Water")) {
+            if (ImGui::SmallButton(TR("Water"))) {
                 selectedNode->color = glm::vec4(0.75f, 0.88f, 0.95f, 0.25f);
                 selectedNode->roughness = 0.02f;
                 selectedNode->metallic = 0.0f;
@@ -2654,7 +2680,7 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
                 selectedNode->refractionIOR = 1.33f;
             }
             ImGui::SameLine();
-            if (ImGui::SmallButton("Glass")) {
+            if (ImGui::SmallButton(TR("Glass"))) {
                 selectedNode->color = glm::vec4(0.9f, 0.95f, 0.97f, 0.15f);
                 selectedNode->roughness = 0.03f;
                 selectedNode->metallic = 0.0f;
@@ -2662,35 +2688,35 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
                 selectedNode->refractionIOR = 1.5f;
             }
             ImGui::SameLine();
-            ImGui::TextDisabled("presets");
-            ImGui::Checkbox("Liquid Fill", &selectedNode->isLiquid);
+            ImGui::TextDisabled("%s", TR("presets"));
+            ImGui::Checkbox(TR("Liquid Fill"), &selectedNode->isLiquid);
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("This mesh is liquid inside a container: it is cut off at the fill level,\n"
                                                           "shows a flat top surface, and sloshes when the container moves.\n"
                                                           "Use a mesh slightly smaller than the container, e.g. a cylinder in a glass.");
             if (selectedNode->isLiquid) {
-                ImGui::SliderFloat("Fill", &selectedNode->liquidFill, 0.0f, 1.0f, "%.2f");
-                ImGui::ColorEdit4("Surface Colour", glm::value_ptr(selectedNode->liquidTopColor));
-                ImGui::SliderFloat("Slosh", &selectedNode->liquidSlosh, 0.0f, 3.0f, "%.2f");
+                ImGui::SliderFloat(TR("Fill"), &selectedNode->liquidFill, 0.0f, 1.0f, "%.2f");
+                ImGui::ColorEdit4(TR("Surface Colour"), glm::value_ptr(selectedNode->liquidTopColor));
+                ImGui::SliderFloat(TR("Slosh"), &selectedNode->liquidSlosh, 0.0f, 3.0f, "%.2f");
                 float colorDepthCm = selectedNode->liquidColorDepth * 100.0f;
-                if (ImGui::SliderFloat("Colour Depth (cm)", &colorDepthCm, 0.2f, 200.0f, "%.1f", ImGuiSliderFlags_Logarithmic)) {
+                if (ImGui::SliderFloat(TR("Colour Depth (cm)"), &colorDepthCm, 0.2f, 200.0f, "%.1f", ImGuiSliderFlags_Logarithmic)) {
                     selectedNode->liquidColorDepth = colorDepthCm / 100.0f;
                 }
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("How much liquid shows its colour (and opacity). Thinner parts look paler,\n"
                                                               "thicker parts deeper and more opaque.");
             }
             if ((selectedNode->color.a < 0.99f && selectedNode->alphaCutoff <= 0.0f) || selectedNode->isLiquid) {
-                ImGui::SliderFloat("Refraction (IOR)", &selectedNode->refractionIOR, 1.0f, 2.0f, "%.2f");
+                ImGui::SliderFloat(TR("Refraction (IOR)"), &selectedNode->refractionIOR, 1.0f, 2.0f, "%.2f");
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("How much the see-through surface bends what's behind it.\n1.0 = none, 1.33 = water, 1.5 = glass, 2.4 = diamond.");
             }
-            ImGui::Checkbox("Mirror", &selectedNode->isMirror);
+            ImGui::Checkbox(TR("Mirror"), &selectedNode->isMirror);
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Planar mirror: shows the scene reflected across this surface.\nBest on a Plane or Quad. The colour tints the reflection.\nOnly the nearest visible mirror is rendered.");
             RenderReflectionProbeProperties(*selectedNode);
-            ImGui::Checkbox("In-Game Video Screen (TV / Cinema / Phone / Monitor)", &selectedNode->isVideoScreen);
+            ImGui::Checkbox(TR("In-Game Video Screen (TV / Cinema / Phone / Monitor)"), &selectedNode->isVideoScreen);
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Turns this 3D surface into a live glowing video screen (TV set, cinema screen,\nsmartphone screen, CCTV monitor, or billboard). Drives both Albedo and HDR Emissive\nso the screen illuminates dark rooms via Bloom, SSR, and Real-Time VXGI.");
             if (selectedNode->isVideoScreen) {
                 ImGui::Indent(10.0f);
-                ImGui::TextDisabled("1-Click Screen Form-Factor Presets:");
-                if (ImGui::SmallButton("TV Set (16:9)")) {
+                ImGui::TextDisabled("%s", TR("1-Click Screen Form-Factor Presets:"));
+                if (ImGui::SmallButton(TR("TV Set (16:9)"))) {
                     selectedNode->scale = glm::vec3(1.6f, 0.9f, 0.06f);
                     selectedNode->color = glm::vec4(1.0f);
                     selectedNode->roughness = 0.12f;
@@ -2698,7 +2724,7 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
                     selectedNode->videoScreenBrightness = 1.6f;
                 }
                 ImGui::SameLine();
-                if (ImGui::SmallButton("Cinema (2.39:1)")) {
+                if (ImGui::SmallButton(TR("Cinema (2.39:1)"))) {
                     selectedNode->scale = glm::vec3(7.2f, 3.0f, 0.08f);
                     selectedNode->color = glm::vec4(1.0f);
                     selectedNode->roughness = 0.35f;
@@ -2706,7 +2732,7 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
                     selectedNode->videoScreenBrightness = 2.2f;
                 }
                 ImGui::SameLine();
-                if (ImGui::SmallButton("Smartphone (9:16)")) {
+                if (ImGui::SmallButton(TR("Smartphone (9:16)"))) {
                     selectedNode->scale = glm::vec3(0.18f, 0.32f, 0.02f);
                     selectedNode->color = glm::vec4(1.0f);
                     selectedNode->roughness = 0.06f;
@@ -2715,7 +2741,7 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
                     selectedNode->videoScreenBrightness = 1.8f;
                 }
                 ImGui::SameLine();
-                if (ImGui::SmallButton("CCTV Monitor")) {
+                if (ImGui::SmallButton(TR("CCTV Monitor"))) {
                     selectedNode->scale = glm::vec3(0.8f, 0.6f, 0.08f);
                     selectedNode->color = glm::vec4(1.0f);
                     selectedNode->videoChannelPreset = 3;
@@ -2732,7 +2758,7 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
                     "Ch 6: Sci-Fi Radar & Oscilloscope Telemetry"
                 };
                 int chIdx = std::clamp(selectedNode->videoChannelPreset, 0, 6);
-                if (ImGui::Combo("Video Channel", &chIdx, vChannels, IM_ARRAYSIZE(vChannels))) {
+                if (ImGui::Combo(TR("Video Channel"), &chIdx, vChannels, IM_ARRAYSIZE(vChannels))) {
                     selectedNode->videoChannelPreset = chIdx;
                 }
                 RenderTextureSlot("External Video / GIF / Atlas / Frame Folder", "videoSrc", selectedNode->videoSourcePath, "Select Animated GIF or Video Atlas");
@@ -2749,7 +2775,7 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
                 ImGui::SliderFloat("Playhead (s)##Vid", &selectedNode->videoCurrentTime, 0.0f, std::max(1.0f, selectedNode->videoDuration), "%.2f s");
                 ImGui::SliderFloat("Duration (s)##Vid", &selectedNode->videoDuration, 1.0f, 120.0f, "%.1f s");
                 ImGui::SliderFloat("Playback Speed##Vid", &selectedNode->videoSpeed, 0.1f, 3.0f, "%.2fx");
-                ImGui::SliderFloat("Screen Glow (HDR Emissive)", &selectedNode->videoScreenBrightness, 0.0f, 5.0f, "%.2f");
+                ImGui::SliderFloat(TR("Screen Glow (HDR Emissive)"), &selectedNode->videoScreenBrightness, 0.0f, 5.0f, "%.2f");
                 ImGui::SliderFloat("CRT Scanlines##Vid", &selectedNode->videoScanlineStrength, 0.0f, 1.0f, "%.2f");
                 RenderTextureSlot("Synced Audio (.wav, optional)", "videoAud", selectedNode->videoAudioPath, "Select Synced Video Audio (.wav)");
                 if (!selectedNode->videoAudioPath.empty()) {
@@ -2780,18 +2806,18 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
             RenderTextureSlot("Metallic Map", "metallic", selectedNode->metallicMapPath, "Select Metallic Map", m_onImportTexture);
             RenderTextureSlot("Roughness Map", "roughness", selectedNode->roughnessMapPath, "Select Roughness Map", m_onImportTexture);
             RenderTextureSlot("Ambient Occlusion (AO) Map", "ao", selectedNode->aoMapPath, "Select AO Map", m_onImportTexture);
-            ImGui::SliderFloat("AO Strength", &selectedNode->aoStrength, 0.0f, 1.0f);
+            ImGui::SliderFloat(TR("AO Strength"), &selectedNode->aoStrength, 0.0f, 1.0f);
             RenderTextureSlot("Emissive / Glow Map", "emissive", selectedNode->emissiveMapPath, "Select Emissive Map", m_onImportTexture);
-            ImGui::ColorEdit3("Emissive Color", glm::value_ptr(selectedNode->emissiveColor));
-            ImGui::DragFloat("Emissive Intensity (HDR)", &selectedNode->emissiveIntensity, 0.1f, 0.0f, 50.0f);
+            ImGui::ColorEdit3(TR("Emissive Color"), glm::value_ptr(selectedNode->emissiveColor));
+            ImGui::DragFloat(TR("Emissive Intensity (HDR)"), &selectedNode->emissiveIntensity, 0.1f, 0.0f, 50.0f);
             RenderTextureSlot("Height / Parallax Map", "height", selectedNode->heightMapPath, "Select Height Map", m_onImportTexture);
 
             ImGui::Spacing();
             ImGui::Separator();
             ImGui::Spacing();
-            ImGui::TextColored(ImVec4(0.35f, 0.85f, 0.95f, 1.0f), "Advanced Material:");
+            ImGui::TextColored(ImVec4(0.35f, 0.85f, 0.95f, 1.0f), "%s", TR("Advanced Material:"));
             const char* models[] = { "Standard", "Skin (Subsurface)", "Hair (Strands)", "Eye" };
-            ImGui::Combo("Material Model", &selectedNode->materialModel, models, IM_ARRAYSIZE(models));
+            ImGui::Combo(TR("Material Model"), &selectedNode->materialModel, models, IM_ARRAYSIZE(models));
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Skin: light scatters under the surface (softer shading, warm edges).\nHair: streaky strand highlights for hair cards (use Alpha Cutoff).\nEye: refracting cornea over the iris; UVs must centre the iris at (0.5, 0.5).");
             if (selectedNode->materialModel == 1) {
                 ImGui::ColorEdit3("Scatter Colour", glm::value_ptr(selectedNode->subsurfaceColor));
@@ -2807,12 +2833,12 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
                 ImGui::SliderFloat("Iris Depth (UV)", &selectedNode->irisDepth, 0.0f, 0.15f, "%.3f");
                 ImGui::SliderFloat("Cornea IOR", &selectedNode->corneaIOR, 1.0f, 1.6f, "%.3f");
             }
-            ImGui::SliderFloat("Clear Coat", &selectedNode->clearCoat, 0.0f, 1.0f, selectedNode->clearCoat > 0.0f ? "%.2f" : "Off");
+            ImGui::SliderFloat(TR("Clear Coat"), &selectedNode->clearCoat, 0.0f, 1.0f, selectedNode->clearCoat > 0.0f ? "%.2f" : "Off");
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("A glossy transparent top layer: car paint, varnished wood, lacquer, wet surfaces.");
             if (selectedNode->clearCoat > 0.0f) {
-                ImGui::SliderFloat("Clear Coat Roughness", &selectedNode->clearCoatRoughness, 0.02f, 1.0f, "%.2f");
+                ImGui::SliderFloat(TR("Clear Coat Roughness"), &selectedNode->clearCoatRoughness, 0.02f, 1.0f, "%.2f");
             }
-            ImGui::Checkbox("Triplanar Mapping", &selectedNode->triplanarMapping);
+            ImGui::Checkbox(TR("Triplanar Mapping"), &selectedNode->triplanarMapping);
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Projects the textures from the world X, Y and Z axes instead of the mesh UVs:\nno stretching on terrain, cliffs and rocks. Textures stay put if the object moves.");
             if (selectedNode->triplanarMapping) {
                 ImGui::SliderFloat("Tile Size (m)", &selectedNode->triplanarTileSize, 0.1f, 50.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
@@ -2848,7 +2874,7 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
                 }
             }
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.28f, 0.42f, 0.68f, 1.0f));
-            if (ImGui::Button("Open Visual Shader Graph Editor >>", ImVec2(-1, 26))) {
+            if (ImGui::Button(TR("Open Visual Shader Graph Editor >>"), ImVec2(-1, 26))) {
                 m_showShaderGraphWindow = true;
             }
             ImGui::PopStyleColor();
@@ -2861,8 +2887,8 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
         }
 
         if (selectedNode->hasSkeleton || customExt == ".fbx" || selectedNode->type == ShapeType::Custom) {
-            if (ImGui::CollapsingHeader("Armature & Animation Tree", ImGuiTreeNodeFlags_DefaultOpen)) {
-                ImGui::Checkbox("Armature / Skeleton Enabled", &selectedNode->hasSkeleton);
+            if (ImGui::CollapsingHeader(TR("Armature & Animation Tree"), ImGuiTreeNodeFlags_DefaultOpen)) {
+                ImGui::Checkbox(TR("Armature / Skeleton Enabled"), &selectedNode->hasSkeleton);
 
                 if (selectedNode->hasSkeleton) {
                     char skelBuf[128];
@@ -2872,11 +2898,11 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
                         selectedNode->skeletonName = skelBuf;
                     }
 
-                    if (ImGui::Checkbox("Play Animation", &selectedNode->playAnimation)) {
+                    if (ImGui::Checkbox(TR("Play Animation"), &selectedNode->playAnimation)) {
                         if (m_onSkeletalScrub) m_onSkeletalScrub(selectedNode->customMeshName, selectedNode->currentAnimState, 0.0f, selectedNode->playAnimation);
                     }
-                    ImGui::SliderFloat("Animation Speed", &selectedNode->animationSpeed, 0.0f, 3.0f, "%.2fx");
-                    ImGui::DragFloat("Start Offset (s)", &selectedNode->animationStartOffset, 0.01f, 0.0f, 600.0f, "%.2f");
+                    ImGui::SliderFloat(TR("Animation Speed"), &selectedNode->animationSpeed, 0.0f, 3.0f, "%.2fx");
+                    ImGui::DragFloat(TR("Start Offset (s)"), &selectedNode->animationStartOffset, 0.01f, 0.0f, 600.0f, "%.2f");
                     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Each character has its own animation clock. Give copies of the same\ncharacter different offsets or speeds so a crowd doesn't move in step.");
 
                     ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Bones: %u detected",
@@ -2908,15 +2934,15 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
                         selectedNode->currentAnimState = stateBuf;
                     }
 
-                    ImGui::Text("Quick Switch:");
+                    ImGui::Text("%s", TR("Quick Switch:"));
                     ImGui::SameLine();
-                    if (ImGui::SmallButton("Idle##Quick")) selectedNode->currentAnimState = "Idle";
+                    if (ImGui::SmallButton(TR("Idle##Quick"))) selectedNode->currentAnimState = "Idle";
                     ImGui::SameLine();
-                    if (ImGui::SmallButton("Walk##Quick")) selectedNode->currentAnimState = "Walk";
+                    if (ImGui::SmallButton(TR("Walk##Quick"))) selectedNode->currentAnimState = "Walk";
                     ImGui::SameLine();
-                    if (ImGui::SmallButton("Run##Quick")) selectedNode->currentAnimState = "Run";
+                    if (ImGui::SmallButton(TR("Run##Quick"))) selectedNode->currentAnimState = "Run";
                     ImGui::SameLine();
-                    if (ImGui::SmallButton("Attack##Quick")) selectedNode->currentAnimState = "Attack";
+                    if (ImGui::SmallButton(TR("Attack##Quick"))) selectedNode->currentAnimState = "Attack";
 
                     if (!selectedNode->animClipNames.empty()) {
                         ImGui::Spacing();
@@ -2935,7 +2961,7 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
 
                     ImGui::Spacing();
                     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.45f, 0.65f, 1.0f));
-                    if (ImGui::Button("Visual State Machine Graph >>", ImVec2(-1, 28))) {
+                    if (ImGui::Button(TR("Visual State Machine Graph >>"), ImVec2(-1, 28))) {
                         m_showAnimStateMachineWindow = true;
                     }
                     ImGui::PopStyleColor();
@@ -2956,42 +2982,42 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
 
     // Physics & Dynamics (JoltPhysics)
     if (!selectedNode->IsUINode() && selectedNode->nodeType != NodeType::Camera && selectedNode->nodeType != NodeType::Light) {
-        if (ImGui::CollapsingHeader("Physics & Dynamics (JoltPhysics)")) {
+        if (ImGui::CollapsingHeader(TR("Physics & Dynamics (JoltPhysics)"))) {
             const char* rbTypes[] = { "None", "Static (Immovable)", "Kinematic (Animated/Scripted)", "Dynamic (RigidBody Simulation)" };
             int curRb = static_cast<int>(selectedNode->rigidBodyType);
-            if (ImGui::Combo("RigidBody Mode", &curRb, rbTypes, IM_ARRAYSIZE(rbTypes))) {
+            if (ImGui::Combo(TR("RigidBody Mode"), &curRb, rbTypes, IM_ARRAYSIZE(rbTypes))) {
                 selectedNode->rigidBodyType = static_cast<RigidBodyType>(curRb);
             }
             if (selectedNode->rigidBodyType != RigidBodyType::None) {
-                ImGui::DragFloat("Mass (kg)", &selectedNode->mass, 0.1f, 0.01f, 10000.0f);
-                ImGui::Checkbox("Use Gravity", &selectedNode->useGravity);
+                ImGui::DragFloat(TR("Mass (kg)"), &selectedNode->mass, 0.1f, 0.01f, 10000.0f);
+                ImGui::Checkbox(TR("Use Gravity"), &selectedNode->useGravity);
                 if (selectedNode->rigidBodyType == RigidBodyType::Dynamic) {
-                    ImGui::Checkbox("Floats on Water", &selectedNode->floatsOnWater);
+                    ImGui::Checkbox(TR("Floats on Water"), &selectedNode->floatsOnWater);
                     if (ImGui::IsItemHovered()) ImGui::SetTooltip("In an ocean, the body bobs and tilts with the waves (Play mode).");
                     if (selectedNode->floatsOnWater) {
-                        ImGui::SliderFloat("Buoyancy", &selectedNode->buoyancy, 0.0f, 3.0f, "%.2f");
+                        ImGui::SliderFloat(TR("Buoyancy"), &selectedNode->buoyancy, 0.0f, 3.0f, "%.2f");
                         if (ImGui::IsItemHovered()) ImGui::SetTooltip("1 = neither floats nor sinks, below 1 sinks, above 1 rides higher.");
                     }
                 }
-                ImGui::SliderFloat("Friction", &selectedNode->friction, 0.0f, 1.0f);
-                ImGui::SliderFloat("Restitution (Bounciness)", &selectedNode->bounciness, 0.0f, 1.0f);
-                ImGui::DragFloat3("Linear Velocity", glm::value_ptr(selectedNode->linearVelocity), 0.1f);
-                ImGui::DragFloat3("Angular Velocity", glm::value_ptr(selectedNode->angularVelocity), 0.1f);
+                ImGui::SliderFloat(TR("Friction"), &selectedNode->friction, 0.0f, 1.0f);
+                ImGui::SliderFloat(TR("Restitution (Bounciness)"), &selectedNode->bounciness, 0.0f, 1.0f);
+                ImGui::DragFloat3(TR("Linear Velocity"), glm::value_ptr(selectedNode->linearVelocity), 0.1f);
+                ImGui::DragFloat3(TR("Angular Velocity"), glm::value_ptr(selectedNode->angularVelocity), 0.1f);
             }
             ImGui::Spacing();
             ImGui::Separator();
             ImGui::TextColored(ImVec4(0.45f, 0.85f, 1.0f, 1.0f), "Joints, Constraints & Ragdoll:");
             const char* constraintTypes[] = { "None", "Fixed Joint", "Hinge Joint", "Slider Joint", "Distance Spring", "Cone-Twist (Ragdoll)" };
-            ImGui::Combo("Joint / Constraint", &selectedNode->constraintType, constraintTypes, IM_ARRAYSIZE(constraintTypes));
+            ImGui::Combo(TR("Joint / Constraint"), &selectedNode->constraintType, constraintTypes, IM_ARRAYSIZE(constraintTypes));
             if (selectedNode->constraintType > 0) {
                 int targetId = static_cast<int>(selectedNode->constraintTargetNodeId);
                 if (ImGui::InputInt("Connected Node ID", &targetId)) {
                     selectedNode->constraintTargetNodeId = (targetId > 0) ? static_cast<uint32_t>(targetId) : 0;
                 }
             }
-            ImGui::Checkbox("Enable Humanoid Ragdoll Physics", &selectedNode->enableRagdoll);
+            ImGui::Checkbox(TR("Enable Humanoid Ragdoll Physics"), &selectedNode->enableRagdoll);
             if (selectedNode->enableRagdoll) {
-                if (ImGui::Button("Apply Upward Ragdoll Impulse Test", ImVec2(-1, 24))) {
+                if (ImGui::Button(TR("Apply Upward Ragdoll Impulse Test"), ImVec2(-1, 24))) {
                     selectedNode->rigidBodyType = RigidBodyType::Dynamic;
                     selectedNode->useGravity = true;
                     selectedNode->linearVelocity = glm::vec3(0.0f, 6.5f, -2.0f);
@@ -3000,8 +3026,8 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
             }
         }
 
-        if (ImGui::CollapsingHeader("Inverse Kinematics (IK) & Morph Targets")) {
-            ImGui::Checkbox("Enable Two-Bone IK Solver", &selectedNode->enableIK);
+        if (ImGui::CollapsingHeader(TR("Inverse Kinematics (IK) & Morph Targets"))) {
+            ImGui::Checkbox(TR("Enable Two-Bone IK Solver"), &selectedNode->enableIK);
             if (selectedNode->enableIK) {
                 char ikBoneBuf[128];
                 strncpy(ikBoneBuf, selectedNode->ikTargetBone.c_str(), sizeof(ikBoneBuf));
@@ -3017,7 +3043,7 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
             ImGui::Separator();
             ImGui::TextColored(ImVec4(0.95f, 0.75f, 0.35f, 1.0f), "Blend Shapes / Morph Targets (Deforms Mesh Live):");
             if (selectedNode->morphWeights.empty()) {
-                if (ImGui::Button("+ Initialize Default Facial & Body Morph Targets", ImVec2(-1, 24))) {
+                if (ImGui::Button(TR("+ Initialize Default Facial & Body Morph Targets"), ImVec2(-1, 24))) {
                     selectedNode->morphWeights["Smile / Facial"] = 0.0f;
                     selectedNode->morphWeights["Blink"] = 0.0f;
                     selectedNode->morphWeights["Breathing / Bulk"] = 0.0f;
@@ -3030,19 +3056,19 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
                 ImGui::SetNextItemWidth(160.0f);
                 ImGui::InputText("##NewMorphName", s_newMorphName, sizeof(s_newMorphName));
                 ImGui::SameLine();
-                if (ImGui::SmallButton("+ Add Morph Target")) {
+                if (ImGui::SmallButton(TR("+ Add Morph Target"))) {
                     if (s_newMorphName[0] != '\0') {
                         selectedNode->morphWeights[s_newMorphName] = 0.0f;
                     }
                 }
-                if (ImGui::SmallButton("Reset All Morph Weights")) {
+                if (ImGui::SmallButton(TR("Reset All Morph Weights"))) {
                     for (auto& kv : selectedNode->morphWeights) kv.second = 0.0f;
                 }
             }
         }
 
-        if (ImGui::CollapsingHeader("Multiplayer & Authority", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::Checkbox("Replicate Transform Over Network", &selectedNode->replicateTransform);
+        if (ImGui::CollapsingHeader(TR("Multiplayer & Authority"), ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::Checkbox(TR("Replicate Transform Over Network"), &selectedNode->replicateTransform);
             int netId = static_cast<int>(selectedNode->networkId);
             if (ImGui::InputInt("Network Entity ID", &netId)) {
                 selectedNode->networkId = (netId >= 0) ? static_cast<uint32_t>(netId) : 0;
@@ -3062,7 +3088,7 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
             ImGui::Spacing();
             ImGui::Separator();
             ImGui::TextColored(ImVec4(0.35f, 0.85f, 1.0f, 1.0f), "Declarative Property Replication:");
-            ImGui::Checkbox("Enable Declarative Sync", &selectedNode->replicationConfig.enabled);
+            ImGui::Checkbox(TR("Enable Declarative Sync"), &selectedNode->replicationConfig.enabled);
             if (selectedNode->replicationConfig.enabled) {
                 bool syncPos = selectedNode->replicationConfig.HasRule("position");
                 if (ImGui::Checkbox("Sync Position (OnChange, 20Hz)", &syncPos)) {
@@ -3094,14 +3120,14 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
                 selectedNode->collisionMask = static_cast<uint32_t>(colMask);
             }
 
-            if (ImGui::Button("Open Multiplayer & Networking Panel >>", ImVec2(-1, 24))) {
+            if (ImGui::Button(TR("Open Multiplayer & Networking Panel >>"), ImVec2(-1, 24))) {
                 m_showNetworkingWindow = true;
             }
         }
     }
 
     // Script Component (Universal: available for Camera, Mesh, Light, Empty, etc.)
-    if (ImGui::CollapsingHeader("Script Component", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ImGui::CollapsingHeader(TR("Script Component"), ImGuiTreeNodeFlags_DefaultOpen)) {
         float availW = ImGui::GetContentRegionAvail().x;
         float btnW = 68.0f;
         float clearW = 24.0f;
@@ -3117,7 +3143,7 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
             if (ImGui::InputText("##ScriptFile", scriptBuf, sizeof(scriptBuf))) {
                 selectedNode->scriptPath = scriptBuf;
             }
-            if (ImGui::Button("Browse...", ImVec2(availW - clearW - spacing, 0))) {
+            if (ImGui::Button(TR("Browse..."), ImVec2(availW - clearW - spacing, 0))) {
                 std::string chosen;
                 if (OpenScriptFileDialog(chosen, "Select Lua Script")) {
                     selectedNode->scriptPath = chosen;
@@ -3136,7 +3162,7 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
                 ImGui::SetTooltip("%s", selectedNode->scriptPath.c_str());
             }
             ImGui::SameLine();
-            if (ImGui::Button("Browse...##Script", ImVec2(btnW, 0))) {
+            if (ImGui::Button(TR("Browse...##Script"), ImVec2(btnW, 0))) {
                 std::string chosen;
                 if (OpenScriptFileDialog(chosen, "Select Lua Script")) {
                     selectedNode->scriptPath = chosen;
@@ -3186,7 +3212,7 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
         if (selectedNode->nodeType == NodeType::Camera) {
             ImGui::Spacing();
             ImGui::TextColored(ImVec4(0.3f, 0.8f, 1.0f, 1.0f), "Camera Quick Presets:");
-            if (ImGui::Button("+ Create & Attach Free-Fly Camera Script", ImVec2(-1, 26))) {
+            if (ImGui::Button(TR("+ Create & Attach Free-Fly Camera Script"), ImVec2(-1, 26))) {
                 fs::path targetDir = !m_projectRoot.empty() ? (fs::path(m_projectRoot) / "scripts") : fs::path("scripts");
                 try {
                     fs::create_directories(targetDir);
@@ -3243,7 +3269,7 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.80f, 0.20f, 0.20f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.92f, 0.28f, 0.28f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.60f, 0.15f, 0.15f, 1.0f));
-    std::string deleteBtnLabel = "Delete "" + selectedNode->name + "" from Scene [Del]";
+    std::string deleteBtnLabel = std::string(TR("Delete")) + " "" + selectedNode->name + "" " + TR("from Scene [Del]");
     if (ImGui::Button(deleteBtnLabel.c_str(), ImVec2(-1, 32))) {
         scene.DeleteNode(selectedNode->id);
     }
@@ -3392,7 +3418,7 @@ void EditorUI::RenderViewport(Scene& scene, Camera& camera, Graphics::IRenderTar
     if (!m_showViewportWindow) return;
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    bool open = ImGui::Begin("3D Viewport", &m_showViewportWindow, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    bool open = ImGui::Begin(TR("3D Viewport###ViewportWindow"), &m_showViewportWindow, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::PopStyleVar();
 
     if (!open) {
@@ -4090,7 +4116,7 @@ void EditorUI::RenderViewport(Scene& scene, Camera& camera, Graphics::IRenderTar
     } else {
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.40f, 0.22f, 1.0f));
     }
-    if (ImGui::Button(isPlay ? "Game Active [Play]" : "Play Game [Play]", ImVec2(110, 24))) {
+    if (ImGui::Button(isPlay ? TR("Game Active [Play]") : TR("Play Game [Play]"), ImVec2(110, 24))) {
         gameLoop.Play(scene);
         m_showGameWindow = true;
         m_uiRendererState.ResetPopups();
@@ -4103,14 +4129,14 @@ void EditorUI::RenderViewport(Scene& scene, Camera& camera, Graphics::IRenderTar
     } else {
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.35f, 0.32f, 0.22f, 1.0f));
     }
-    if (ImGui::Button("Pause [||]", ImVec2(75, 24))) {
+    if (ImGui::Button(TR("Pause [||]"), ImVec2(75, 24))) {
         gameLoop.Pause();
     }
     ImGui::PopStyleColor();
 
     ImGui::SameLine();
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.65f, 0.22f, 0.22f, 1.0f));
-    if (ImGui::Button("Stop [X]", ImVec2(75, 24))) {
+    if (ImGui::Button(TR("Stop [X]"), ImVec2(75, 24))) {
         gameLoop.Stop(scene);
         m_showGameWindow = false;
         m_uiRendererState.ResetPopups();
@@ -4119,11 +4145,11 @@ void EditorUI::RenderViewport(Scene& scene, Camera& camera, Graphics::IRenderTar
 
     ImGui::SameLine();
     if (isPlay) {
-        ImGui::TextColored(ImVec4(0.35f, 0.95f, 0.45f, 1.0f), "| GAME RUNNING in Standalone Window");
+        ImGui::TextColored(ImVec4(0.35f, 0.95f, 0.45f, 1.0f), "%s", TR("| GAME RUNNING in Standalone Window"));
     } else if (isPause) {
-        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.25f, 1.0f), "| GAME PAUSED");
+        ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.25f, 1.0f), "%s", TR("| GAME PAUSED"));
     } else {
-        ImGui::TextDisabled("| Editor Mode");
+        ImGui::TextDisabled("%s", TR("| Editor Mode"));
     }
 
     ImGui::Spacing();
@@ -4133,57 +4159,57 @@ void EditorUI::RenderViewport(Scene& scene, Camera& camera, Graphics::IRenderTar
     // Row 1: Transform Controls & Selection
     bool isTranslate = (m_currentGizmoOperation == ImGuizmo::TRANSLATE);
     if (isTranslate) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.35f, 0.65f, 0.95f, 1.0f));
-    if (ImGui::Button("Translate [W]")) m_currentGizmoOperation = ImGuizmo::TRANSLATE;
+    if (ImGui::Button(TR("Translate [W]"))) m_currentGizmoOperation = ImGuizmo::TRANSLATE;
     if (isTranslate) ImGui::PopStyleColor();
 
     ImGui::SameLine();
     bool isRotate = (m_currentGizmoOperation == ImGuizmo::ROTATE);
     if (isRotate) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.35f, 0.65f, 0.95f, 1.0f));
-    if (ImGui::Button("Rotate [E]")) m_currentGizmoOperation = ImGuizmo::ROTATE;
+    if (ImGui::Button(TR("Rotate [E]"))) m_currentGizmoOperation = ImGuizmo::ROTATE;
     if (isRotate) ImGui::PopStyleColor();
 
     ImGui::SameLine();
     bool isScale = (m_currentGizmoOperation == ImGuizmo::SCALE);
     if (isScale) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.35f, 0.65f, 0.95f, 1.0f));
-    if (ImGui::Button("Scale [R]")) m_currentGizmoOperation = ImGuizmo::SCALE;
+    if (ImGui::Button(TR("Scale [R]"))) m_currentGizmoOperation = ImGuizmo::SCALE;
     if (isScale) ImGui::PopStyleColor();
 
     ImGui::SameLine();
-    if (ImGui::Button(m_currentGizmoMode == ImGuizmo::LOCAL ? "Local" : "World")) {
+    if (ImGui::Button(m_currentGizmoMode == ImGuizmo::LOCAL ? TR("Local") : TR("World"))) {
         m_currentGizmoMode = (m_currentGizmoMode == ImGuizmo::LOCAL) ? ImGuizmo::WORLD : ImGuizmo::LOCAL;
     }
 
     ImGui::SameLine();
-    ImGui::Checkbox("Snap", &m_useSnap);
+    ImGui::Checkbox(TR("Snap"), &m_useSnap);
 
     // Row 2: Render & Shading Mode Buttons
     ImGui::Spacing();
     bool isSolid = (m_polygonMode == PolygonMode::Solid);
     if (isSolid) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.30f, 0.55f, 0.85f, 1.0f));
-    if (ImGui::Button("Solid")) m_polygonMode = PolygonMode::Solid;
+    if (ImGui::Button(TR("Solid"))) m_polygonMode = PolygonMode::Solid;
     if (isSolid) ImGui::PopStyleColor();
 
     ImGui::SameLine();
     bool isWire = (m_polygonMode == PolygonMode::Wireframe);
     if (isWire) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.30f, 0.55f, 0.85f, 1.0f));
-    if (ImGui::Button("Wireframe")) m_polygonMode = PolygonMode::Wireframe;
+    if (ImGui::Button(TR("Wireframe"))) m_polygonMode = PolygonMode::Wireframe;
     if (isWire) ImGui::PopStyleColor();
 
     ImGui::SameLine();
     bool isShadedWire = (m_polygonMode == PolygonMode::WireframeOnShaded);
     if (isShadedWire) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.30f, 0.55f, 0.85f, 1.0f));
-    if (ImGui::Button("Wire+Shaded")) m_polygonMode = PolygonMode::WireframeOnShaded;
+    if (ImGui::Button(TR("Wire+Shaded"))) m_polygonMode = PolygonMode::WireframeOnShaded;
     if (isShadedWire) ImGui::PopStyleColor();
 
     ImGui::SameLine();
-    if (ImGui::Button(m_showGrid ? "Grid: ON" : "Grid: OFF")) {
+    if (ImGui::Button(m_showGrid ? TR("Grid: ON") : TR("Grid: OFF"))) {
         m_showGrid = !m_showGrid;
     }
 
     ImGui::SameLine();
     bool isRulerActive = m_rulerToolState.active;
     if (isRulerActive) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.65f, 0.15f, 1.0f));
-    if (ImGui::Button(isRulerActive ? "Ruler: ON [M]" : "Ruler: OFF [M]")) {
+    if (ImGui::Button(isRulerActive ? TR("Ruler: ON [M]") : TR("Ruler: OFF [M]"))) {
         SetRulerActive(!isRulerActive);
         m_rulerToolState.showRulerWindow = m_rulerToolState.active;
     }
@@ -4191,15 +4217,17 @@ void EditorUI::RenderViewport(Scene& scene, Camera& camera, Graphics::IRenderTar
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("3D Ruler & Measurement Tool [M]\nMeasure 3D distances, dimensions & angles in the viewport.\nClick to place Point A and Point B. Drag handles to adjust.");
 
     ImGui::SameLine();
-    if (ImGui::Button("Reset Cam")) camera.Reset();
+    if (ImGui::Button(TR("Reset Cam"))) camera.Reset();
     ImGui::SameLine();
-    if (ImGui::Button("Front")) camera.SetPresetView(0.0f, 0.0f);
+    if (ImGui::Button(TR("Front"))) camera.SetPresetView(0.0f, 0.0f);
     ImGui::SameLine();
-    if (ImGui::Button("Top")) camera.SetPresetView(0.0f, 89.0f);
+    if (ImGui::Button(TR("Top"))) camera.SetPresetView(0.0f, 89.0f);
     ImGui::SameLine();
-    if (ImGui::Button("Side")) camera.SetPresetView(90.0f, 0.0f);
+    if (ImGui::Button(TR("Bottom"))) camera.SetPresetView(0.0f, -89.0f);
     ImGui::SameLine();
-    if (ImGui::Button("Iso")) camera.SetPresetView(45.0f, 25.0f);
+    if (ImGui::Button(TR("Side"))) camera.SetPresetView(90.0f, 0.0f);
+    ImGui::SameLine();
+    if (ImGui::Button(TR("Iso"))) camera.SetPresetView(45.0f, 25.0f);
 
     // Touch & Viewport Navigation Controls
     ImGui::SameLine();
@@ -4208,17 +4236,17 @@ void EditorUI::RenderViewport(Scene& scene, Camera& camera, Graphics::IRenderTar
 
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.48f, 0.78f, 1.0f));
     ImGui::PushButtonRepeat(true);
-    if (ImGui::Button("Zoom +", ImVec2(56, 0))) camera.Zoom(1.5f);
+    if (ImGui::Button(TR("Zoom +"), ImVec2(56, 0))) camera.Zoom(1.5f);
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Zoom In (Tap or hold on touch screens)");
 
     ImGui::SameLine();
-    if (ImGui::Button("Zoom -", ImVec2(56, 0))) camera.Zoom(-1.5f);
+    if (ImGui::Button(TR("Zoom -"), ImVec2(56, 0))) camera.Zoom(-1.5f);
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Zoom Out (Tap or hold on touch screens)");
     ImGui::PopButtonRepeat();
     ImGui::PopStyleColor();
 
     ImGui::SameLine();
-    if (ImGui::Button("Focus [F]")) {
+    if (ImGui::Button(TR("Focus [F]"))) {
         auto sel = scene.GetSelectedNode();
         if (sel) camera.FocusOn(sel->GetWorldPosition(scene));
     }
@@ -4269,7 +4297,7 @@ void EditorUI::RenderViewport(Scene& scene, Camera& camera, Graphics::IRenderTar
     if (overlaySelectedNode) {
         ImGui::SameLine();
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.78f, 0.20f, 0.20f, 1.0f));
-        if (ImGui::Button("Delete Selected [Del]")) {
+        if (ImGui::Button(TR("Delete Selected [Del]"))) {
             scene.DeleteSelected();
         }
         ImGui::PopStyleColor();
@@ -4399,7 +4427,7 @@ void EditorUI::RenderViewport(Scene& scene, Camera& camera, Graphics::IRenderTar
 
 void EditorUI::RenderCameraPreview(Scene& scene, Camera& camera, Graphics::IRenderTarget& previewOffscreen, Gameplay::GameLoop& gameLoop) {
     if (!m_showCameraPreviewWindow) return;
-    if (!ImGui::Begin("Camera Preview", &m_showCameraPreviewWindow)) {
+    if (!ImGui::Begin(TR("Camera Preview###CameraPreviewWindow"), &m_showCameraPreviewWindow)) {
         ImGui::End();
         return;
     }
@@ -4498,7 +4526,7 @@ void EditorUI::RenderCameraPreview(Scene& scene, Camera& camera, Graphics::IRend
 
 void EditorUI::RenderAnimationTimeline(Scene& scene, Animation::AnimationPlayer& animPlayer) {
     if (!m_showTimelineWindow) return;
-    if (!ImGui::Begin("Animation Timeline", &m_showTimelineWindow)) {
+    if (!ImGui::Begin(TR("Animation Timeline###TimelineWindow"), &m_showTimelineWindow)) {
         ImGui::End();
         return;
     }
@@ -4624,7 +4652,7 @@ void EditorUI::RenderAnimationStateMachine(Scene& scene) {
     if (!m_showAnimStateMachineWindow) return;
 
     ImGui::SetNextWindowSize(ImVec2(980, 580), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Animation State Machine Graph", &m_showAnimStateMachineWindow)) {
+    if (!ImGui::Begin(TR("Animation State Machine Graph###AnimStateMachineWindow"), &m_showAnimStateMachineWindow)) {
         ImGui::End();
         return;
     }
@@ -5147,7 +5175,7 @@ void EditorUI::RenderGameWindow(Scene& scene, Graphics::IRenderTarget& gameOffsc
 
     bool isOpen = true;
     ImGuiWindowFlags winFlags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
-    if (ImGui::Begin("Game [Standalone Window]", &isOpen, winFlags)) {
+    if (ImGui::Begin(TR("Game [Standalone Window]###GameStandaloneWindow"), &isOpen, winFlags)) {
         m_isGameWindowFocused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
         bool isPlay = gameLoop.IsPlaying();
         bool isPause = gameLoop.IsPaused();
@@ -5341,7 +5369,7 @@ void EditorUI::InsertScriptTemplate(int index) {
 
 void EditorUI::RenderScriptEditor() {
     if (!m_showScriptEditor) return;
-    if (!ImGui::Begin("Script Editor", &m_showScriptEditor)) {
+    if (!ImGui::Begin(TR("Script Editor###ScriptEditorWindow"), &m_showScriptEditor)) {
         ImGui::End();
         return;
     }
@@ -5688,7 +5716,7 @@ void EditorUI::RenderExportGameModal(Scene& scene) {
             ImGui::Spacing();
 
             // 2. Export Destination Folder
-            ImGui::Text("Destination Directory:");
+            ImGui::Text("%s", TR("Destination Directory:"));
             ImGui::SetNextItemWidth(520.0f);
             ImGui::InputText("##ExportDir", m_exportDirBuffer, sizeof(m_exportDirBuffer));
             ImGui::SameLine();
@@ -5768,7 +5796,7 @@ void EditorUI::RenderExportGameModal(Scene& scene) {
             ImGui::Spacing();
 
             // 2. Destination Directory
-            ImGui::Text("Destination Directory:");
+            ImGui::Text("%s", TR("Destination Directory:"));
             ImGui::SetNextItemWidth(520.0f);
             ImGui::InputText("##ExportWebDir", m_exportWebDirBuffer, sizeof(m_exportWebDirBuffer));
             ImGui::SameLine();
@@ -5847,7 +5875,7 @@ void EditorUI::RenderExportGameModal(Scene& scene) {
             ImGui::Spacing();
 
             // 2. Export Destination Folder
-            ImGui::Text("Destination Directory:");
+            ImGui::Text("%s", TR("Destination Directory:"));
             ImGui::SetNextItemWidth(520.0f);
             ImGui::InputText("##ExportLinuxDir", m_exportLinuxDirBuffer, sizeof(m_exportLinuxDirBuffer));
             ImGui::SameLine();
@@ -6360,7 +6388,7 @@ bool EditorUI::ExportGame(Scene& scene, const std::string& destinationDir, const
 void EditorUI::RenderEnvironmentAndPostProcessWindow(Scene& scene) {
     if (!m_showEnvironmentWindow) return;
     ImGui::SetNextWindowSize(ImVec2(480, 560), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("Rendering, GI & Post-Processing", &m_showEnvironmentWindow)) {
+    if (ImGui::Begin(TR("Rendering, GI & Post-Processing###EnvironmentWindow"), &m_showEnvironmentWindow)) {
         auto& env = scene.GetEnvironment();
         if (ImGui::CollapsingHeader("HDR & Tonemapping (ACES Filmic)", ImGuiTreeNodeFlags_DefaultOpen)) {
             ImGui::Checkbox("Enable ACES Filmic Tonemapping", &env.enableACES);
@@ -6953,7 +6981,7 @@ void EditorUI::RenderEnvironmentAndPostProcessWindow(Scene& scene) {
 void EditorUI::RenderShaderGraphWindow(Scene& scene) {
     if (!m_showShaderGraphWindow) return;
     ImGui::SetNextWindowSize(ImVec2(680, 540), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("Visual Shader Graph Editor", &m_showShaderGraphWindow)) {
+    if (ImGui::Begin(TR("Visual Shader Graph Editor###ShaderGraphWindow"), &m_showShaderGraphWindow)) {
         if (!m_shaderGraphInitialized) {
             m_shaderGraphInitialized = true;
             uint32_t outId = m_shaderGraph.GetMasterNodeId();
@@ -7084,7 +7112,7 @@ void EditorUI::RenderShaderGraphWindow(Scene& scene) {
 void EditorUI::RenderAudioMixerWindow(Scene& scene) {
     if (!m_showAudioMixerWindow) return;
     ImGui::SetNextWindowSize(ImVec2(480, 460), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("Audio Mixer & Reverb Zones", &m_showAudioMixerWindow)) {
+    if (ImGui::Begin(TR("Audio Mixer & Reverb Zones###AudioMixerWindow"), &m_showAudioMixerWindow)) {
         auto& audio = Audio::AudioEngine::Get();
         ImGui::TextColored(ImVec4(0.35f, 0.95f, 0.75f, 1.0f), "Master & Sub-Bus Volume Mixer:");
         const char* buses[] = { "Master", "Music", "SFX", "Voice", "Ambient" };
@@ -7203,14 +7231,14 @@ void EditorUI::DrawMaterialPreview(const std::string& key, const Node& material,
 void EditorUI::RenderGpuProfilerWindow() {
     if (!m_showGpuProfilerWindow) return;
     ImGui::SetNextWindowSize(ImVec2(560, 520), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("GPU Profiler", &m_showGpuProfilerWindow)) DrawGpuTimings();
+    if (ImGui::Begin(TR("GPU Profiler###GpuProfilerWindow"), &m_showGpuProfilerWindow)) DrawGpuTimings();
     ImGui::End();
 }
 
 void EditorUI::RenderNavMeshWindow(Scene& scene) {
     if (!m_showNavMeshWindow) return;
     ImGui::SetNextWindowSize(ImVec2(460, 440), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("Navigation & NavMesh Baker", &m_showNavMeshWindow)) {
+    if (ImGui::Begin(TR("Navigation & NavMesh Baker###NavMeshWindow"), &m_showNavMeshWindow)) {
         ImGui::TextColored(ImVec4(0.35f, 0.85f, 1.0f, 1.0f), "Walkable NavMesh Surface Generator:");
         ImGui::DragFloat3("World Bounds Min", glm::value_ptr(m_navBoundsMin), 0.5f);
         ImGui::DragFloat3("World Bounds Max", glm::value_ptr(m_navBoundsMax), 0.5f);
@@ -7248,7 +7276,7 @@ void EditorUI::RenderNetworkingWindow(Scene& scene, Gameplay::GameLoop* gameLoop
     Scene& activeScene = (gameLoop && (gameLoop->IsPlaying() || gameLoop->IsPaused())) ? gameLoop->GetActivePlayScene(scene) : scene;
     if (!m_showNetworkingWindow) return;
     ImGui::SetNextWindowSize(ImVec2(480, 440), ImGuiCond_FirstUseEver);
-    if (ImGui::Begin("Multiplayer & Networking", &m_showNetworkingWindow)) {
+    if (ImGui::Begin(TR("Multiplayer & Networking###NetworkingWindow"), &m_showNetworkingWindow)) {
         bool isGameRunning = (gameLoop && (gameLoop->IsPlaying() || gameLoop->IsPaused()));
         if (!isGameRunning) {
             ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1.0f, 0.7f, 0.1f, 1.0f));
@@ -7424,12 +7452,12 @@ void EditorUI::RenderEngineEmblem(ImDrawList* drawList, ImVec2 center, float rad
 void EditorUI::RenderAboutModal() {
     if (!m_showAboutModal) return;
 
-    ImGui::OpenPopup("About Tessera Game Engine");
+    ImGui::OpenPopup(TR("About Tessera Game Engine"));
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(500, 440), ImGuiCond_Appearing);
 
-    if (ImGui::BeginPopupModal("About Tessera Game Engine", &m_showAboutModal, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
+    if (ImGui::BeginPopupModal(TR("About Tessera Game Engine"), &m_showAboutModal, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove)) {
         ImDrawList* drawList = ImGui::GetWindowDrawList();
         ImVec2 winPos = ImGui::GetWindowPos();
         float winW = ImGui::GetWindowWidth();
@@ -7468,7 +7496,7 @@ void EditorUI::RenderAboutModal() {
         ImGui::Spacing();
 
         ImGui::SetCursorPosX(winW - 110.0f);
-        if (ImGui::Button("Close", ImVec2(95, 26))) {
+        if (ImGui::Button(TR("Close"), ImVec2(95, 26))) {
             m_showAboutModal = false;
             ImGui::CloseCurrentPopup();
         }
@@ -7481,7 +7509,7 @@ void EditorUI::RenderProjectFilesWindow(Scene& scene) {
     if (!m_showProjectFilesWindow) return;
 
     ImGui::SetNextWindowSize(ImVec2(750, 340), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Project Files", &m_showProjectFilesWindow)) {
+    if (!ImGui::Begin(TR("Project Files###ProjectFilesWindow"), &m_showProjectFilesWindow)) {
         ImGui::End();
         return;
     }
@@ -7504,7 +7532,7 @@ void EditorUI::RenderProjectFilesWindow(Scene& scene) {
     // 1. Up folder button (can navigate all the way up to system root/drives)
     bool hasParent = currentPath.has_parent_path() && currentPath != currentPath.root_path();
     ImGui::BeginDisabled(!hasParent);
-    if (ImGui::Button("[..] Up", ImVec2(55, 24))) {
+    if (ImGui::Button(TR("[..] Up"), ImVec2(55, 24))) {
         m_fileViewerCurrentDir = currentPath.parent_path().string();
         std::replace(m_fileViewerCurrentDir.begin(), m_fileViewerCurrentDir.end(), '\\', '/');
     }
@@ -7512,7 +7540,7 @@ void EditorUI::RenderProjectFilesWindow(Scene& scene) {
 
     // Quick Jump Buttons
     ImGui::SameLine();
-    if (ImGui::Button("Project")) {
+    if (ImGui::Button(TR("Project"))) {
         if (!m_projectRoot.empty() && std::filesystem::exists(m_projectRoot)) {
             m_fileViewerCurrentDir = std::filesystem::absolute(m_projectRoot).string();
             std::replace(m_fileViewerCurrentDir.begin(), m_fileViewerCurrentDir.end(), '\\', '/');
@@ -7521,7 +7549,7 @@ void EditorUI::RenderProjectFilesWindow(Scene& scene) {
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Jump to Active Project Directory");
 
     ImGui::SameLine();
-    if (ImGui::Button("Desktop")) {
+    if (ImGui::Button(TR("Desktop"))) {
         std::string d = GetDesktopDirectoryPath();
         if (!d.empty() && std::filesystem::exists(d)) {
             m_fileViewerCurrentDir = d;
@@ -7530,7 +7558,7 @@ void EditorUI::RenderProjectFilesWindow(Scene& scene) {
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Jump to Desktop");
 
     ImGui::SameLine();
-    if (ImGui::Button("Browse...##FVBrowse")) {
+    if (ImGui::Button(TR("Browse...##FVBrowse"))) {
         std::string chosen;
         if (BrowseForFolderDialog(chosen, "Select Folder to View in Project Files")) {
             m_fileViewerCurrentDir = chosen;
@@ -7540,7 +7568,7 @@ void EditorUI::RenderProjectFilesWindow(Scene& scene) {
 
     // 2. Breadcrumbs navigation
     ImGui::SameLine();
-    ImGui::TextDisabled("Path:");
+    ImGui::TextDisabled("%s", TR("Path:"));
     ImGui::SameLine();
 
     std::string pathStr = m_fileViewerCurrentDir;
@@ -7596,35 +7624,35 @@ void EditorUI::RenderProjectFilesWindow(Scene& scene) {
 
     // --- POPUPS FOR CREATING FOLDER / SCRIPT ---
     if (m_showCreateFolderPopup) {
-        ImGui::OpenPopup("Create New Folder##Popup");
+        ImGui::OpenPopup(TR("Create New Folder##Popup"));
         m_showCreateFolderPopup = false;
     }
-    if (ImGui::BeginPopupModal("Create New Folder##Popup", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Enter folder name:");
+    if (ImGui::BeginPopupModal(TR("Create New Folder##Popup"), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("%s", TR("Enter folder name:"));
         ImGui::InputText("##FolderName", m_newFolderName, sizeof(m_newFolderName));
         ImGui::Spacing();
-        if (ImGui::Button("Create", ImVec2(100, 24))) {
+        if (ImGui::Button(TR("Create"), ImVec2(100, 24))) {
             std::filesystem::path newP = std::filesystem::path(m_fileViewerCurrentDir) / m_newFolderName;
             std::error_code ec;
             std::filesystem::create_directories(newP, ec);
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(100, 24))) {
+        if (ImGui::Button(TR("Cancel"), ImVec2(100, 24))) {
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();
     }
 
     if (m_showCreateScriptPopup) {
-        ImGui::OpenPopup("Create Lua Script##Popup");
+        ImGui::OpenPopup(TR("Create Lua Script##Popup"));
         m_showCreateScriptPopup = false;
     }
-    if (ImGui::BeginPopupModal("Create Lua Script##Popup", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Enter script filename (with .lua):");
+    if (ImGui::BeginPopupModal(TR("Create Lua Script##Popup"), nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("%s", TR("Enter script filename (with .lua):"));
         ImGui::InputText("##ScriptName", m_newScriptName, sizeof(m_newScriptName));
         ImGui::Spacing();
-        if (ImGui::Button("Create", ImVec2(100, 24))) {
+        if (ImGui::Button(TR("Create"), ImVec2(100, 24))) {
             std::string sName = m_newScriptName;
             if (sName.find(".lua") == std::string::npos) sName += ".lua";
             std::filesystem::path newP = std::filesystem::path(m_fileViewerCurrentDir) / sName;
@@ -7643,7 +7671,7 @@ void EditorUI::RenderProjectFilesWindow(Scene& scene) {
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(100, 24))) {
+        if (ImGui::Button(TR("Cancel"), ImVec2(100, 24))) {
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();
@@ -8101,12 +8129,32 @@ void EditorUI::RenderProjectLauncher(Scene& scene, Camera& camera) {
         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 30.0f);
         ImGui::TextColored(ImVec4(0.25f, 0.78f, 1.0f, 1.0f), "TESSERA ENGINE");
         ImGui::SameLine();
-        ImGui::TextDisabled("| Project Hub & Workspace Manager");
+        ImGui::TextDisabled("| %s", TR("Project Hub & Workspace Manager"));
+
+        // Language selector on Project Loader
+        const auto& languages = Localization::Get().GetAvailableLanguages();
+        std::string currentLangName = Localization::Get().GetCurrentLanguageName();
+        float langComboWidth = 115.0f;
+        float rightMargin = !m_currentProjectName.empty() ? (225.0f + langComboWidth + 12.0f) : (langComboWidth + 15.0f);
+        ImGui::SameLine(hubWidth - rightMargin);
+        ImGui::SetNextItemWidth(langComboWidth);
+        if (ImGui::BeginCombo("##HubLangSelect", currentLangName.c_str())) {
+            for (const auto& lang : languages) {
+                bool isSelected = (lang.code == Localization::Get().GetCurrentLanguage());
+                if (ImGui::Selectable(lang.displayName.c_str(), isSelected)) {
+                    Localization::Get().SetLanguage(lang.code);
+                }
+                if (isSelected) {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
+            ImGui::EndCombo();
+        }
 
         if (!m_currentProjectName.empty()) {
             ImGui::SameLine(hubWidth - 230.0f);
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.40f, 0.65f, 1.0f));
-            if (ImGui::Button("Continue Current Project >>", ImVec2(210, 24))) {
+            if (ImGui::Button(TR("Continue Current Project >>"), ImVec2(210, 24))) {
                 m_startupState = StartupState::Editor;
             }
             ImGui::PopStyleColor();
@@ -8122,15 +8170,15 @@ void EditorUI::RenderProjectLauncher(Scene& scene, Camera& camera) {
 
         // LEFT COLUMN: Recent Projects & Open Existing
         ImGui::BeginChild("RecentProjectsCol", ImVec2(colLeftWidth, hubHeight - 110), true);
-        ImGui::TextColored(ImVec4(0.9f, 0.92f, 0.98f, 1.0f), "Recent Projects");
+        ImGui::TextColored(ImVec4(0.9f, 0.92f, 0.98f, 1.0f), "%s", TR("Recent Projects"));
         ImGui::Separator();
         ImGui::Spacing();
 
         auto recents = Project::GetRecentProjects();
         if (recents.empty()) {
-            ImGui::TextDisabled("No recent projects found.");
+            ImGui::TextDisabled("%s", TR("No recent projects found."));
             ImGui::Spacing();
-            ImGui::TextWrapped("Create a new project on the right, or browse your disk for an existing .tess project file.");
+            ImGui::TextWrapped("%s", TR("Create a new project on the right, or browse your disk for an existing .tess project file."));
         } else {
             for (size_t i = 0; i < recents.size(); ++i) {
                 const auto& rPath = recents[i];
@@ -8145,7 +8193,7 @@ void EditorUI::RenderProjectLauncher(Scene& scene, Camera& camera) {
                     ImGui::TextColored(ImVec4(0.35f, 0.85f, 1.0f, 1.0f), "%s", projName.c_str());
                     ImGui::SameLine(colLeftWidth - 95.0f);
                     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.52f, 0.28f, 1.0f));
-                    if (ImGui::Button("Open##Rec", ImVec2(75, 22))) {
+                    if (ImGui::Button(TR("Open##Rec"), ImVec2(75, 22))) {
                         if (m_onOpenProject) {
                             m_onOpenProject(rPath);
                             m_startupState = StartupState::Editor;
@@ -8153,7 +8201,7 @@ void EditorUI::RenderProjectLauncher(Scene& scene, Camera& camera) {
                     }
                     ImGui::PopStyleColor();
                 } else {
-                    ImGui::TextDisabled("%s [Missing]", projName.c_str());
+                    ImGui::TextDisabled("%s %s", projName.c_str(), TR("[Missing]"));
                 }
 
                 ImGui::TextDisabled("%s", rPath.c_str());
@@ -8167,7 +8215,7 @@ void EditorUI::RenderProjectLauncher(Scene& scene, Camera& camera) {
         ImGui::SetCursorPosY(hubHeight - 155.0f);
         ImGui::Separator();
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.38f, 0.60f, 1.0f));
-        if (ImGui::Button("Browse Existing Project File (*.tess)...", ImVec2(-1, 32))) {
+        if (ImGui::Button(TR("Browse Existing Project File (*.tess)..."), ImVec2(-1, 32))) {
             OpenProjectDialog();
         }
         ImGui::PopStyleColor();
@@ -8178,29 +8226,29 @@ void EditorUI::RenderProjectLauncher(Scene& scene, Camera& camera) {
 
         // RIGHT COLUMN: Create New Project
         ImGui::BeginChild("NewProjectCol", ImVec2(colRightWidth, hubHeight - 110), true);
-        ImGui::TextColored(ImVec4(0.9f, 0.92f, 0.98f, 1.0f), "Create New Project");
+        ImGui::TextColored(ImVec4(0.9f, 0.92f, 0.98f, 1.0f), "%s", TR("Create New Project"));
         ImGui::Separator();
         ImGui::Spacing();
 
-        ImGui::Text("Project Name:");
+        ImGui::Text("%s", TR("Project Name:"));
         ImGui::InputText("##LauncherProjName", m_launcherNewProjectName, sizeof(m_launcherNewProjectName));
 
         ImGui::Spacing();
-        ImGui::Text("Directory Location:");
+        ImGui::Text("%s", TR("Directory Location:"));
         float launcherBrowseW = 80.0f;
         float launcherDeskW = 65.0f;
         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - launcherBrowseW - launcherDeskW - 12.0f);
         ImGui::InputText("##LauncherProjDir", m_launcherNewProjectDir, sizeof(m_launcherNewProjectDir));
         ImGui::SameLine();
-        if (ImGui::Button("Browse...##LaunchDir", ImVec2(launcherBrowseW, 0))) {
+        if (ImGui::Button(TR("Browse...##LaunchDir"), ImVec2(launcherBrowseW, 0))) {
             std::string chosen;
-            if (BrowseForFolderDialog(chosen, "Select Location for New Project")) {
+            if (BrowseForFolderDialog(chosen, TR("Select Location for New Project"))) {
                 strncpy(m_launcherNewProjectDir, chosen.c_str(), sizeof(m_launcherNewProjectDir));
                 m_launcherNewProjectDir[sizeof(m_launcherNewProjectDir) - 1] = '\0';
             }
         }
         ImGui::SameLine();
-        if (ImGui::Button("Desktop##LaunchDesk", ImVec2(launcherDeskW, 0))) {
+        if (ImGui::Button(TR("Desktop##LaunchDesk"), ImVec2(launcherDeskW, 0))) {
             std::string d = GetDesktopDirectoryPath();
             if (!d.empty()) {
                 strncpy(m_launcherNewProjectDir, d.c_str(), sizeof(m_launcherNewProjectDir));
@@ -8214,10 +8262,10 @@ void EditorUI::RenderProjectLauncher(Scene& scene, Camera& camera) {
 
         ImGui::Spacing();
         ImGui::Separator();
-        ImGui::Text("Project Template:");
-        ImGui::RadioButton("3D Standard (PBR + Lighting + Camera)", &m_launcherTemplateIndex, 0);
-        ImGui::RadioButton("Blank Scene (Empty Slate)", &m_launcherTemplateIndex, 1);
-        ImGui::RadioButton("Third-Person Character Sandbox", &m_launcherTemplateIndex, 2);
+        ImGui::Text("%s", TR("Project Template:"));
+        ImGui::RadioButton(TR("3D Standard (PBR + Lighting + Camera)"), &m_launcherTemplateIndex, 0);
+        ImGui::RadioButton(TR("Blank Scene (Empty Slate)"), &m_launcherTemplateIndex, 1);
+        ImGui::RadioButton(TR("Third-Person Character Sandbox"), &m_launcherTemplateIndex, 2);
 
         ImGui::Spacing();
         ImGui::Separator();
@@ -8230,11 +8278,11 @@ void EditorUI::RenderProjectLauncher(Scene& scene, Camera& camera) {
 
         ImGui::SetCursorPosY(hubHeight - 155.0f);
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.60f, 0.35f, 1.0f));
-        if (ImGui::Button("+ Create & Launch Project", ImVec2(-1, 36))) {
+        if (ImGui::Button(TR("+ Create & Launch Project"), ImVec2(-1, 36))) {
             std::string pName = m_launcherNewProjectName;
             std::string pDir = m_launcherNewProjectDir;
             if (pName.empty()) {
-                m_launcherStatusMessage = "Project name cannot be empty.";
+                m_launcherStatusMessage = TR("Project name cannot be empty.");
             } else {
                 if (m_onNewProject) {
                     m_onNewProject(pDir, pName);
@@ -8261,7 +8309,7 @@ void EditorUI::RenderProjectLauncher(Scene& scene, Camera& camera) {
 
         // Footer status bar
         ImGui::Spacing();
-        ImGui::TextDisabled("Tip: You can switch or create projects at any time from File -> Project Launcher / Hub...");
+        ImGui::TextDisabled("%s", TR("Tip: You can switch or create projects at any time from File -> Project Launcher / Hub..."));
     }
     ImGui::End();
     ImGui::PopStyleColor(2);
@@ -8311,7 +8359,7 @@ void EditorUI::RenderCustomTitleBar(Scene& scene, Camera& camera, Gameplay::Game
             if (m_startupState == StartupState::Splash) {
                 ImGui::TextDisabled("Startup");
             } else if (m_startupState == StartupState::ProjectLauncher) {
-                ImGui::TextDisabled("Project Hub");
+                ImGui::TextDisabled("%s", TR("Project Hub"));
             } else {
                 // Editor Main Menus
                 RenderMainMenuBar(scene, camera, gameLoop);
@@ -8448,7 +8496,7 @@ bool EditorUI::IsMouseOverMenuBar(int clientX, int clientY) const {
 
 void EditorUI::RenderGameProfilerWindow(Scene& scene, Gameplay::GameLoop& gameLoop) {
     ImGui::SetNextWindowSize(ImVec2(820, 520), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Game Profiler & Resource Monitor###GameProfilerWindow", &m_showGameProfilerWindow)) {
+    if (!ImGui::Begin(TR("Game Profiler & Resource Monitor###GameProfilerWindow"), &m_showGameProfilerWindow)) {
         ImGui::End();
         return;
     }
@@ -9334,7 +9382,7 @@ void EditorUI::RenderRulerWindow(Scene& scene, Camera& camera) {
     if (!m_rulerToolState.showRulerWindow) return;
 
     ImGui::SetNextWindowSize(ImVec2(480, 560), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("3D Ruler & Measurement Tool", &m_rulerToolState.showRulerWindow)) {
+    if (!ImGui::Begin(TR("3D Ruler & Measurement Tool###RulerWindow"), &m_rulerToolState.showRulerWindow)) {
         ImGui::End();
         if (!m_rulerToolState.showRulerWindow) {
             SetRulerActive(false);
@@ -9563,7 +9611,7 @@ void EditorUI::RenderCutsceneSequencerWindow(Scene& scene, Camera& camera, Gamep
     if (!m_showCutsceneWindow) return;
 
     ImGui::SetNextWindowSize(ImVec2(820, 640), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Cutscene & Cinematic Sequencer", &m_showCutsceneWindow)) {
+    if (!ImGui::Begin(TR("Cutscene & Cinematic Sequencer###CutsceneWindow"), &m_showCutsceneWindow)) {
         ImGui::End();
         return;
     }
@@ -10025,6 +10073,264 @@ void EditorUI::RenderCutsceneSequencerWindow(Scene& scene, Camera& camera, Gamep
     // Keep active Play Scene's cutscene copy synced if editing live during Play Mode
     if (&activeScene != &scene) {
         activeScene.AddCutscene(seq);
+    }
+
+    ImGui::End();
+}
+
+
+void EditorUI::RenderGameLocalizationWindow() {
+    if (!m_showGameLocalizationWindow) return;
+
+    auto& gameLoc = GameLocalization::Get();
+    const auto& languages = gameLoc.GetAvailableLanguages();
+
+    // Verify selected language exists
+    bool hasSelected = false;
+    for (const auto& l : languages) {
+        if (l.code == m_selectedLocLang) {
+            hasSelected = true;
+            break;
+        }
+    }
+    if (!hasSelected && !languages.empty()) {
+        m_selectedLocLang = gameLoc.GetCurrentLanguage();
+    }
+
+    ImGui::SetNextWindowSize(ImVec2(880, 620), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin(TR("Game Localization Editor###GameLocalizationEditor"), &m_showGameLocalizationWindow)) {
+        ImGui::End();
+        return;
+    }
+
+    // Top Header: Title and Folder Info
+    std::string locDir = gameLoc.GetLocalizationDirectory();
+    ImGui::TextColored(ImVec4(0.35f, 0.75f, 1.0f, 1.0f), "%s", TR("Game Localization & Translation Manager"));
+    ImGui::SameLine();
+    ImGui::TextDisabled("| %s: %s", TR("Path"), locDir.c_str());
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // Toolbar Row
+    ImGui::Text("%s", TR("Editing Language:"));
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(220.0f);
+    std::string currentLabel = m_selectedLocLang + " (" + gameLoc.GetLanguageDisplayName(m_selectedLocLang) + ")";
+    if (ImGui::BeginCombo("##GameLocLangCombo", currentLabel.c_str())) {
+        for (const auto& lang : languages) {
+            bool isSelected = (m_selectedLocLang == lang.code);
+            std::string itemText = lang.code + " (" + lang.displayName + ")";
+            if (ImGui::Selectable(itemText.c_str(), isSelected)) {
+                m_selectedLocLang = lang.code;
+            }
+            if (isSelected) {
+                ImGui::SetItemDefaultFocus();
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    ImGui::SameLine();
+    if (ImGui::Button(TR("+ New Language"))) {
+        m_showAddLanguagePopup = !m_showAddLanguagePopup;
+    }
+
+    ImGui::SameLine();
+    if (ImGui::Button(TR("Save All Files"))) {
+        gameLoc.SaveAll();
+        m_locStatusMessage = TR("All translation files successfully saved to disk!");
+        m_locStatusTimer = 3.5f;
+    }
+
+    ImGui::SameLine();
+    if (ImGui::Button(TR("Reload"))) {
+        gameLoc.Reload();
+        m_locStatusMessage = TR("Translations reloaded from disk.");
+        m_locStatusTimer = 2.0f;
+    }
+
+    // Status message toast
+    if (m_locStatusTimer > 0.0f) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.3f, 0.95f, 0.45f, 1.0f), "  %s", m_locStatusMessage.c_str());
+        m_locStatusTimer -= ImGui::GetIO().DeltaTime;
+    }
+
+    // Add Language Drawer/Form
+    if (m_showAddLanguagePopup) {
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.18f, 0.22f, 0.28f, 0.8f));
+        ImGui::BeginChild("##AddLangDrawer", ImVec2(-1, 80), true);
+        ImGui::TextColored(ImVec4(0.45f, 0.85f, 1.0f, 1.0f), "%s", TR("Add New Game Language:"));
+        
+        ImGui::SetNextItemWidth(140.0f);
+        ImGui::InputTextWithHint("##NewLangCode", "Code (e.g. fr, de, it)", m_newLangCodeBuffer, sizeof(m_newLangCodeBuffer));
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(200.0f);
+        ImGui::InputTextWithHint("##NewLangName", "Name (e.g. Français)", m_newLangNameBuffer, sizeof(m_newLangNameBuffer));
+        ImGui::SameLine();
+        if (ImGui::Button(TR("Create Language"))) {
+            if (m_newLangCodeBuffer[0] != '\0') {
+                std::string code = m_newLangCodeBuffer;
+                std::string name = m_newLangNameBuffer;
+                if (gameLoc.AddLanguage(code, name)) {
+                    m_selectedLocLang = code;
+                    m_newLangCodeBuffer[0] = '\0';
+                    m_newLangNameBuffer[0] = '\0';
+                    m_showAddLanguagePopup = false;
+                    m_locStatusMessage = TR("New language created!");
+                    m_locStatusTimer = 3.0f;
+                }
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button(TR("Cancel"))) {
+            m_showAddLanguagePopup = false;
+        }
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // Add Key Section
+    ImGui::TextColored(ImVec4(0.95f, 0.8f, 0.35f, 1.0f), "%s", TR("Add New Translation Key:"));
+    ImGui::SetNextItemWidth(220.0f);
+    ImGui::InputTextWithHint("##NewLocKey", "Key (e.g. menu_play)", m_newLocKeyBuffer, sizeof(m_newLocKeyBuffer));
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(320.0f);
+    ImGui::InputTextWithHint("##NewLocDefVal", "English / Default Text", m_newLocDefaultValBuffer, sizeof(m_newLocDefaultValBuffer));
+    ImGui::SameLine();
+    if (ImGui::Button(TR("+ Add Key"))) {
+        if (m_newLocKeyBuffer[0] != '\0') {
+            if (gameLoc.AddKey(m_newLocKeyBuffer, m_newLocDefaultValBuffer)) {
+                gameLoc.SaveAll();
+                m_newLocKeyBuffer[0] = '\0';
+                m_newLocDefaultValBuffer[0] = '\0';
+                m_locStatusMessage = TR("Key added successfully!");
+                m_locStatusTimer = 2.5f;
+            }
+        }
+    }
+
+    ImGui::Spacing();
+
+    // Search / Filter
+    ImGui::SetNextItemWidth(300.0f);
+    ImGui::InputTextWithHint("##LocSearch", TR("Filter keys or translation text..."), m_locSearchFilter, sizeof(m_locSearchFilter));
+
+    std::string filterStr = m_locSearchFilter;
+    std::transform(filterStr.begin(), filterStr.end(), filterStr.begin(), ::tolower);
+
+    // Translations Table
+    ImGui::Spacing();
+    const auto& allKeys = gameLoc.GetAllKeys();
+    int totalKeys = static_cast<int>(allKeys.size());
+    int translatedCount = gameLoc.GetTranslatedCount(m_selectedLocLang);
+    float pct = totalKeys > 0 ? (float)translatedCount / (float)totalKeys * 100.0f : 100.0f;
+
+    ImGui::TextDisabled("Language: %s | Keys: %d | Translated: %d (%.0f%%)",
+        gameLoc.GetLanguageDisplayName(m_selectedLocLang).c_str(), totalKeys, translatedCount, pct);
+
+    ImVec2 tableSize = ImVec2(-1, ImGui::GetContentRegionAvail().y - 120.0f);
+    if (tableSize.y < 150.0f) tableSize.y = 150.0f;
+
+    if (ImGui::BeginTable("##LocGridTable", 5,
+        ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY,
+        tableSize)) {
+
+        ImGui::TableSetupColumn(TR("Key"), ImGuiTableColumnFlags_WidthFixed, 180.0f);
+        ImGui::TableSetupColumn(TR("Reference (English)"), ImGuiTableColumnFlags_WidthFixed, 220.0f);
+        std::string transColHeader = std::string(TR("Translation")) + " (" + m_selectedLocLang + ")";
+        ImGui::TableSetupColumn(transColHeader.c_str(), ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn(TR("Status"), ImGuiTableColumnFlags_WidthFixed, 100.0f);
+        ImGui::TableSetupColumn(TR("Actions"), ImGuiTableColumnFlags_WidthFixed, 70.0f);
+        ImGui::TableHeadersRow();
+
+        std::string keyToDelete = "";
+
+        int rowIdx = 0;
+        for (const auto& key : allKeys) {
+            std::string enVal = gameLoc.GetTranslation("en", key);
+            std::string curVal = gameLoc.GetTranslation(m_selectedLocLang, key);
+
+            // Filter check
+            if (!filterStr.empty()) {
+                std::string kLower = key;
+                std::string enLower = enVal;
+                std::string curLower = curVal;
+                std::transform(kLower.begin(), kLower.end(), kLower.begin(), ::tolower);
+                std::transform(enLower.begin(), enLower.end(), enLower.begin(), ::tolower);
+                std::transform(curLower.begin(), curLower.end(), curLower.begin(), ::tolower);
+
+                if (kLower.find(filterStr) == std::string::npos &&
+                    enLower.find(filterStr) == std::string::npos &&
+                    curLower.find(filterStr) == std::string::npos) {
+                    continue;
+                }
+            }
+
+            ImGui::TableNextRow();
+
+            // Col 0: Key
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextUnformatted(key.c_str());
+
+            // Col 1: English Reference
+            ImGui::TableSetColumnIndex(1);
+            if (m_selectedLocLang == "en") {
+                ImGui::TextDisabled("(Editing this below)");
+            } else {
+                ImGui::TextUnformatted(enVal.c_str());
+            }
+
+            // Col 2: Translation input
+            ImGui::TableSetColumnIndex(2);
+            char valBuf[512];
+            std::strncpy(valBuf, curVal.c_str(), sizeof(valBuf));
+            valBuf[sizeof(valBuf) - 1] = '\0';
+            std::string inputId = "##Val_" + key + "_" + std::to_string(rowIdx);
+            ImGui::SetNextItemWidth(-1.0f);
+            if (ImGui::InputText(inputId.c_str(), valBuf, sizeof(valBuf))) {
+                gameLoc.SetTranslation(m_selectedLocLang, key, valBuf);
+            }
+
+            // Col 3: Status
+            ImGui::TableSetColumnIndex(3);
+            if (!curVal.empty()) {
+                ImGui::TextColored(ImVec4(0.35f, 0.9f, 0.45f, 1.0f), "%s", TR("Translated"));
+            } else {
+                ImGui::TextColored(ImVec4(1.0f, 0.65f, 0.25f, 1.0f), "%s", TR("Untranslated"));
+            }
+
+            // Col 4: Delete
+            ImGui::TableSetColumnIndex(4);
+            std::string delBtnId = std::string(TR("Delete")) + "##Del_" + key;
+            if (ImGui::Button(delBtnId.c_str())) {
+                keyToDelete = key;
+            }
+
+            rowIdx++;
+        }
+
+        if (!keyToDelete.empty()) {
+            gameLoc.RemoveKey(keyToDelete);
+            gameLoc.SaveAll();
+        }
+
+        ImGui::EndTable();
+    }
+
+    // In-Game Integration Cheatsheet
+    ImGui::Spacing();
+    if (ImGui::CollapsingHeader(TR("In-Game Integration & Developer Cheatsheet"))) {
+        ImGui::BulletText("%s", TR("Option 1 (UI Node): Select any UITextNode or UIButtonNode, and set 'Localization Key' in Inspector."));
+        ImGui::BulletText("%s", TR("Option 2 (Lua Script Text): local title = TR(\"game_title\") or Localization.Translate(\"game_title\")"));
+        ImGui::BulletText("%s", TR("Option 3 (Change Language in Game Menu): Localization.SetLanguage(\"es\")"));
+        ImGui::BulletText("%s", TR("Option 4 (Player Dropdown Menu): local langs = Localization.GetAvailableLanguages()"));
     }
 
     ImGui::End();

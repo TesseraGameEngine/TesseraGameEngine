@@ -67,6 +67,7 @@
         <tr><td><strong>Save Project As...</strong></td><td>&mdash;</td><td>Duplicates the entire project directory into a new destination folder.</td></tr>
         <tr><td><strong>Recent Projects</strong></td><td>&mdash;</td><td>Cascading submenu displaying the last 10 opened project paths for instantaneous one-click loading.</td></tr>
         <tr><td><strong>Export Game (Windows & Web)...</strong></td><td><kbd>Ctrl+B</kbd></td><td>Opens the Game Exporter modal to package a standalone Windows executable (.exe), Linux Standalone (x86_64 / SteamOS), or Web / HTML5 (WebGL2) game.</td></tr>
+        <tr><td><strong>Game Localization...</strong></td><td><kbd>Ctrl+L</kbd></td><td>Opens the Game Localization & Translation Editor to manage game translation keys, create new languages, and edit project localization tables.</td></tr>
         <tr><td><strong>Project Input & Key Bindings...</strong></td><td><kbd>Ctrl+K</kbd></td><td>Opens the Project Input Settings modal to rebind keyboard, mouse, and gamepad input axes.</td></tr>
         <tr><td><strong>Import 3D Model...</strong></td><td>&mdash;</td><td>Opens a native file picker for external 3D models (<code>.fbx</code>, <code>.gltf</code>, <code>.glb</code>, <code>.obj</code>) and imports them into the scene.</td></tr>
       </tbody>
@@ -126,7 +127,12 @@
       <li><strong>World Coordinates</strong> vs <strong>Local Coordinates</strong>: Toggles coordinate frame orientation.</li>
     </ul>
 
-    <h3>1.7 Help Menu</h3>
+    <h3>1.7 Language Menu</h3>
+    <ul>
+      <li><strong>Editor Language Selector</strong>: Switches the entire Tessera editor interface between available engine languages (English, Español, etc.). Missing keys automatically fall back to embedded English tables.</li>
+    </ul>
+
+    <h3>1.8 Help Menu</h3>
     <ul>
       <li><strong>Open HTML Documentation...</strong>: Launches your default web browser and opens this offline documentation suite directly from <code>docs/index.html</code>.</li>
     </ul>
@@ -145,6 +151,7 @@
       <li><strong>Visual Shader Graph Editor</strong> (<kbd>Shift+G</kbd>): Toggles the node-based Shader Graph canvas (Save, Save As..., Load..., Apply to Selected Object).</li>
       <li><strong>Audio Mixer & Reverb Zones</strong> (<kbd>Shift+A</kbd>): Toggles the 4-channel audio mixer and DSP panel.</li>
       <li><strong>Navigation & NavMesh Baker</strong> (<kbd>Shift+N</kbd>): Toggles the NavMesh generator and path visualizer.</li>
+      <li><strong>Game Localization Editor</strong> (<kbd>Ctrl+L</kbd>): Toggles the game localization manager to create and edit project translations, new languages, and key-value tables.</li>
       <li><strong>Multiplayer & Networking</strong> (<kbd>Shift+P</kbd>): Toggles the Client-Server connection and authority panel.</li>
       <li><strong>Animation State Machine Graph</strong> (<kbd>Shift+M</kbd>): Toggles the visual animation graph canvas.</li>
       <li><strong>Cutscene &amp; Cinematic Sequencer</strong> (<kbd>Shift+C</kbd>): Toggles the in-engine cutscene sequencer (location triggers, multi-shot camera choreography, character walk-to-mark &amp; animation transitions, Sepia/B&amp;W/Noir/Vignette/DoF camera effects, audio/silent subtitles, and skippable playback).</li>
@@ -162,6 +169,7 @@
         <tr><td><kbd>Ctrl+S</kbd></td><td>File</td><td>Save Project & Scene</td></tr>
         <tr><td><kbd>Ctrl+B</kbd></td><td>Build</td><td>Export Standalone Game modal</td></tr>
         <tr><td><kbd>Ctrl+K</kbd></td><td>Settings</td><td>Project Input & Key Bindings modal</td></tr>
+        <tr><td><kbd>Ctrl+L</kbd></td><td>Project / Window</td><td>Game Localization & Translation Editor</td></tr>
         <tr><td><kbd>Ctrl+A</kbd></td><td>Scene</td><td>Open Quick Add Node Palette modal</td></tr>
         <tr><td><kbd>Ctrl+Z</kbd></td><td>Edit</td><td>Undo last action</td></tr>
         <tr><td><kbd>Ctrl+Y</kbd></td><td>Edit</td><td>Redo last action</td></tr>

@@ -49,6 +49,16 @@ void Project::AddRecentProject(const std::string& path) {
     }
 
     JsonValue root = JsonValue::Object();
+    std::string settingsPath = GetEditorSettingsFilePath();
+    if (fs::exists(settingsPath)) {
+        std::ifstream inFile(settingsPath);
+        if (inFile.is_open()) {
+            std::string content((std::istreambuf_iterator<char>(inFile)), std::istreambuf_iterator<char>());
+            inFile.close();
+            root = JsonValue::Parse(content);
+            if (!root.IsObject()) root = JsonValue::Object();
+        }
+    }
     JsonValue arr = JsonValue::Array();
     for (const auto& r : updated) {
         arr.Push(r);

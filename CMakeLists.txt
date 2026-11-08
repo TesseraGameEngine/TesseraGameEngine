@@ -19,6 +19,9 @@ project(Tessera CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+if(MSVC)
+    add_compile_options(/utf-8)
+endif()
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     include(CheckCXXCompilerFlag)
@@ -195,6 +198,8 @@ set(SOURCES
     src/Scene/Nodes/NodeFactory.cpp
     src/Scene/Scene.cpp
     src/Project/Project.cpp
+    src/Localization/Localization.cpp
+    src/Localization/GameLocalization.cpp
     src/Animation/Animation.cpp
     src/Animation/Skeleton.cpp
     src/Animation/IKSolver.cpp
@@ -290,6 +295,8 @@ set(HEADERS
     src/Scene/Node.h
     src/Scene/Scene.h
     src/Project/Project.h
+    src/Localization/Localization.h
+    src/Localization/GameLocalization.h
     src/Utils/SimpleJson.h
     src/Renderer/VulkanContext.h
     src/Renderer/VulkanBuffer.h
@@ -401,6 +408,13 @@ add_custom_command(TARGET Tessera POST_BUILD
         "$<TARGET_FILE_DIR:Tessera>/shaders"
 )
 
+# Copy lang directory to output directory
+add_custom_command(TARGET Tessera POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/lang"
+        "$<TARGET_FILE_DIR:Tessera>/lang"
+)
+
 # Copy assets to output directory
 add_custom_command(TARGET Tessera POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
@@ -420,6 +434,8 @@ endif()
 # Test Suite Executable
 add_executable(EngineTestSuite
     tests/MasterTestSuite.cpp
+    src/Localization/Localization.cpp
+    src/Localization/GameLocalization.cpp
     src/Core/Camera.cpp
     src/Core/InputManager.cpp
     src/Core/UndoRedoManager.cpp

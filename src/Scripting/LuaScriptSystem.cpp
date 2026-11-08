@@ -1,5 +1,6 @@
 #include "Resource/ResourceManager.h"
 #include "LuaScriptSystem.h"
+#include "Localization/GameLocalization.h"
 #include "Core/InputManager.h"
 #include "Physics/PhysicsWorld.h"
 #include "Scene/Nodes/3D/ParticleNode.h"
@@ -570,6 +571,35 @@ static int Self_SetText(lua_State* L) {
         if (node) node->uiText = text;
     }
     return 0;
+}
+
+static int Self_SetLocKey(lua_State* L) {
+    uint32_t id = GetSelfId(L);
+    const char* key = luaL_checkstring(L, 2);
+    lua_pushstring(L, key);
+    lua_setfield(L, 1, "uiLocKey");
+    if (s_instance && s_instance->GetCurrentScene()) {
+        auto node = s_instance->GetCurrentScene()->GetNodeById(id);
+        if (node) node->uiLocKey = key;
+    }
+    return 0;
+}
+
+static int Self_GetLocKey(lua_State* L) {
+    uint32_t id = GetSelfId(L);
+    if (s_instance && s_instance->GetCurrentScene()) {
+        auto node = s_instance->GetCurrentScene()->GetNodeById(id);
+        if (node) {
+            lua_pushstring(L, node->uiLocKey.c_str());
+            return 1;
+        }
+    }
+    lua_getfield(L, 1, "uiLocKey");
+    if (!lua_isstring(L, -1)) {
+        lua_pop(L, 1);
+        lua_pushstring(L, "");
+    }
+    return 1;
 }
 
 static int Self_GetText(lua_State* L) {
@@ -1589,6 +1619,8 @@ static void PushNodeTable(lua_State* L, Node& node) {
         // Direct methods on self:
         lua_pushcfunction(L, Self_SetText); lua_setfield(L, -2, "SetText");
         lua_pushcfunction(L, Self_GetText); lua_setfield(L, -2, "GetText");
+        lua_pushcfunction(L, Self_SetLocKey); lua_setfield(L, -2, "SetLocKey");
+        lua_pushcfunction(L, Self_GetLocKey); lua_setfield(L, -2, "GetLocKey");
         lua_pushcfunction(L, Self_SetVisible); lua_setfield(L, -2, "SetVisible");
         lua_pushcfunction(L, Self_GetVisible); lua_setfield(L, -2, "GetVisible");
         lua_pushcfunction(L, Self_SetProgress); lua_setfield(L, -2, "SetProgress");
@@ -1903,6 +1935,67 @@ static int Lua_SetUIText(lua_State* L) {
         node->uiText = text;
     }
     return 0;
+}
+
+static int Lua_SetUILocKey(lua_State* L) {
+    if (!s_instance || !s_instance->GetCurrentScene()) return 0;
+    uint32_t id = static_cast<uint32_t>(luaL_checkinteger(L, 1));
+    const char* key = luaL_checkstring(L, 2);
+    auto node = s_instance->GetCurrentScene()->GetNodeById(id);
+    if (node && node->IsUINode()) {
+        node->uiLocKey = key;
+    }
+    return 0;
+}
+
+static int Lua_GetUILocKey(lua_State* L) {
+    if (!s_instance || !s_instance->GetCurrentScene()) {
+        lua_pushstring(L, "");
+        return 1;
+    }
+    uint32_t id = static_cast<uint32_t>(luaL_checkinteger(L, 1));
+    auto node = s_instance->GetCurrentScene()->GetNodeById(id);
+    if (node && node->IsUINode()) {
+        lua_pushstring(L, node->uiLocKey.c_str());
+    } else {
+        lua_pushstring(L, "");
+    }
+    return 1;
+}
+
+static int Lua_Loc_Translate(lua_State* L) {
+    const char* key = luaL_checkstring(L, 1);
+    const char* defVal = (lua_gettop(L) >= 2 && lua_isstring(L, 2)) ? lua_tostring(L, 2) : "";
+    std::string res = GameLocalization::Get().Translate(key, defVal);
+    lua_pushstring(L, res.c_str());
+    return 1;
+}
+
+static int Lua_Loc_SetLanguage(lua_State* L) {
+    const char* code = luaL_checkstring(L, 1);
+    bool ok = GameLocalization::Get().SetLanguage(code);
+    lua_pushboolean(L, ok);
+    return 1;
+}
+
+static int Lua_Loc_GetLanguage(lua_State* L) {
+    std::string cur = GameLocalization::Get().GetCurrentLanguage();
+    lua_pushstring(L, cur.c_str());
+    return 1;
+}
+
+static int Lua_Loc_GetAvailableLanguages(lua_State* L) {
+    const auto& langs = GameLocalization::Get().GetAvailableLanguages();
+    lua_createtable(L, static_cast<int>(langs.size()), 0);
+    for (size_t i = 0; i < langs.size(); ++i) {
+        lua_createtable(L, 0, 2);
+        lua_pushstring(L, langs[i].code.c_str());
+        lua_setfield(L, -2, "code");
+        lua_pushstring(L, langs[i].displayName.c_str());
+        lua_setfield(L, -2, "name");
+        lua_rawseti(L, -2, static_cast<lua_Integer>(i + 1));
+    }
+    return 1;
 }
 
 static int Lua_GetUIText(lua_State* L) {
@@ -2556,6 +2649,8 @@ void LuaScriptSystem::RegisterEngineAPI() {
     lua_setfield(L, -2, "GetUIText");
     lua_pushcfunction(L, Lua_GetUIText);
     lua_setfield(L, -2, "GetText");
+    lua_pushcfunction(L, Lua_SetUILocKey); lua_setfield(L, -2, "SetLocKey");
+    lua_pushcfunction(L, Lua_GetUILocKey); lua_setfield(L, -2, "GetLocKey");
 
     lua_pushcfunction(L, Lua_SetUIProgress);
     lua_setfield(L, -2, "SetUIProgress");
@@ -2723,6 +2818,19 @@ void LuaScriptSystem::RegisterEngineAPI() {
     lua_pushcfunction(L, Lua_Video_StopCutaway); lua_setfield(L, -2, "StopCutaway");
     lua_pushcfunction(L, Lua_Video_IsCutawayPlaying); lua_setfield(L, -2, "IsCutawayPlaying");
     lua_setglobal(L, "Video");
+
+    // Game Localization global table
+    lua_newtable(L);
+    lua_pushcfunction(L, Lua_Loc_Translate); lua_setfield(L, -2, "Translate");
+    lua_pushcfunction(L, Lua_Loc_Translate); lua_setfield(L, -2, "Get");
+    lua_pushcfunction(L, Lua_Loc_SetLanguage); lua_setfield(L, -2, "SetLanguage");
+    lua_pushcfunction(L, Lua_Loc_GetLanguage); lua_setfield(L, -2, "GetLanguage");
+    lua_pushcfunction(L, Lua_Loc_GetAvailableLanguages); lua_setfield(L, -2, "GetAvailableLanguages");
+    lua_pushcfunction(L, Lua_Loc_GetAvailableLanguages); lua_setfield(L, -2, "GetLanguages");
+    lua_setglobal(L, "Localization");
+
+    // Shortcut global TR()
+    lua_register(L, "TR", Lua_Loc_Translate);
 
 }
 

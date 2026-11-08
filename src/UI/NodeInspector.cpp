@@ -1,3 +1,5 @@
+#include "Localization/Localization.h"
+#include "Localization/GameLocalization.h"
 #include "NodeInspector.h"
 #include "UINodeRenderer.h"
 #include "Core/UndoRedoManager.h"
@@ -26,7 +28,7 @@ void NodeInspector::RenderTransform(Scene& scene, const std::shared_ptr<Node>& n
     };
 
     ImGui::BeginDisabled(!Core::UndoRedoManager::Get().CanUndo());
-    if (ImGui::SmallButton("Undo")) {
+    if (ImGui::SmallButton(TR("Undo"))) {
         Core::UndoRedoManager::Get().Undo(scene);
     }
     ImGui::EndDisabled();
@@ -36,7 +38,7 @@ void NodeInspector::RenderTransform(Scene& scene, const std::shared_ptr<Node>& n
 
     sameLineIfRoom(48.0f);
     ImGui::BeginDisabled(!Core::UndoRedoManager::Get().CanRedo());
-    if (ImGui::SmallButton("Redo")) {
+    if (ImGui::SmallButton(TR("Redo"))) {
         Core::UndoRedoManager::Get().Redo(scene);
     }
     ImGui::EndDisabled();
@@ -45,13 +47,13 @@ void NodeInspector::RenderTransform(Scene& scene, const std::shared_ptr<Node>& n
     }
 
     sameLineIfRoom(48.0f);
-    if (ImGui::SmallButton("Copy")) {
+    if (ImGui::SmallButton(TR("Copy"))) {
         scene.CopyNode(node->id);
     }
 
     sameLineIfRoom(52.0f);
     ImGui::BeginDisabled(!scene.HasClipboardData());
-    if (ImGui::SmallButton("Paste")) {
+    if (ImGui::SmallButton(TR("Paste"))) {
         JsonValue before = scene.Serialize();
         int32_t beforeSel = scene.GetSelectedId();
         scene.PasteNode();
@@ -60,14 +62,14 @@ void NodeInspector::RenderTransform(Scene& scene, const std::shared_ptr<Node>& n
     ImGui::EndDisabled();
 
     sameLineIfRoom(75.0f);
-    if (ImGui::SmallButton("Duplicate")) {
+    if (ImGui::SmallButton(TR("Duplicate"))) {
         JsonValue before = scene.Serialize();
         int32_t beforeSel = scene.GetSelectedId();
         scene.DuplicateNode(node->id);
         Core::UndoRedoManager::Get().RecordSnapshot(before, scene.Serialize(), beforeSel, scene.GetSelectedId(), "Duplicate Node");
     }
 
-    if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ImGui::CollapsingHeader(TR("Transform"), ImGuiTreeNodeFlags_DefaultOpen)) {
         static glm::vec3 s_dragStartPos{0.0f}, s_dragStartRot{0.0f}, s_dragStartScale{1.0f};
         static uint32_t s_dragNodeId = 0;
 
@@ -89,18 +91,18 @@ void NodeInspector::RenderTransform(Scene& scene, const std::shared_ptr<Node>& n
             }
         };
 
-        ImGui::Text("Local Position:");
+        ImGui::Text("%s", TR("Local Position:"));
         ImGui::SetNextItemWidth(-1.0f);
         ImGui::DragFloat3("##Position", glm::value_ptr(node->position), 0.05f);
         recordTransformIfFinished();
 
-        ImGui::Text("Local Rotation (Degrees):");
+        ImGui::Text("%s", TR("Local Rotation (Degrees):"));
         ImGui::SetNextItemWidth(-1.0f);
         ImGui::DragFloat3("##Rotation", glm::value_ptr(node->rotation), 0.5f);
         recordTransformIfFinished();
 
         if (node->nodeType != NodeType::Camera && node->nodeType != NodeType::Light) {
-            ImGui::Text("Local Scale:");
+            ImGui::Text("%s", TR("Local Scale:"));
             ImGui::SetNextItemWidth(-1.0f);
             ImGui::DragFloat3("##Scale", glm::value_ptr(node->scale), 0.05f, 0.001f, 100.0f);
             recordTransformIfFinished();
@@ -108,10 +110,10 @@ void NodeInspector::RenderTransform(Scene& scene, const std::shared_ptr<Node>& n
 
         glm::vec3 worldPos = node->GetWorldPosition(scene);
         ImGui::Spacing();
-        ImGui::TextWrapped("World Position: (%.2f, %.2f, %.2f)", worldPos.x, worldPos.y, worldPos.z);
+        ImGui::TextWrapped("%s: (%.2f, %.2f, %.2f)", TR("World Position"), worldPos.x, worldPos.y, worldPos.z);
 
         ImGui::Spacing();
-        if (ImGui::Button("Reset Transform")) {
+        if (ImGui::Button(TR("Reset Transform"))) {
             auto cmd = std::make_shared<Core::TransformCommand>(
                 node->id,
                 node->position, node->rotation, node->scale,
@@ -125,10 +127,10 @@ void NodeInspector::RenderTransform(Scene& scene, const std::shared_ptr<Node>& n
 
 void NodeInspector::RenderUIProperties(Scene& scene, const std::shared_ptr<Node>& node, NodeInspectorState& state) {
     if (!node || !node->IsUINode()) return;
-    if (ImGui::CollapsingHeader("2D UI Component Properties", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::Checkbox("Visible", &node->uiVisible);
+    if (ImGui::CollapsingHeader(TR("2D UI Component Properties"), ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Checkbox(TR("Visible"), &node->uiVisible);
         ImGui::SameLine();
-        ImGui::Checkbox("Enabled", &node->uiEnabled);
+        ImGui::Checkbox(TR("Enabled"), &node->uiEnabled);
 
         const char* anchorNames[] = {
             "Top-Left", "Top-Center", "Top-Right",
@@ -136,23 +138,37 @@ void NodeInspector::RenderUIProperties(Scene& scene, const std::shared_ptr<Node>
             "Bottom-Left", "Bottom-Center", "Bottom-Right"
         };
         int curAnchor = static_cast<int>(node->uiAnchor);
-        ImGui::Text("Anchor Preset:");
+        ImGui::Text("%s", TR("Anchor Preset:"));
         ImGui::SetNextItemWidth(-1.0f);
         if (ImGui::Combo("##AnchorPreset", &curAnchor, anchorNames, IM_ARRAYSIZE(anchorNames))) {
             node->uiAnchor = static_cast<UIAnchor>(curAnchor);
         }
 
-        ImGui::Text("Canvas Offset (X, Y):");
+        ImGui::Text("%s", TR("Canvas Offset (X, Y):"));
         ImGui::SetNextItemWidth(-1.0f);
         ImGui::DragFloat2("##CanvasOffset", glm::value_ptr(node->uiPosition), 1.0f);
 
-        ImGui::Text("Size (W, H):");
+        ImGui::Text("%s", TR("Size (W, H):"));
         ImGui::SetNextItemWidth(-1.0f);
         ImGui::DragFloat2("##UISize", glm::value_ptr(node->uiSize), 1.0f, 1.0f, 4000.0f);
 
         ImGui::Spacing();
+        ImGui::TextColored(ImVec4(0.45f, 0.85f, 1.0f, 1.0f), "%s", TR("Localization Key (Optional):"));
+        char locKeyBuf[128];
+        std::strncpy(locKeyBuf, node->uiLocKey.c_str(), sizeof(locKeyBuf));
+        locKeyBuf[sizeof(locKeyBuf) - 1] = '\0';
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::InputText("##UILocKey", locKeyBuf, sizeof(locKeyBuf))) {
+            node->uiLocKey = locKeyBuf;
+        }
+        if (!node->uiLocKey.empty()) {
+            std::string resolved = GameLocalization::Get().Translate(node->uiLocKey, node->uiText);
+            ImGui::TextDisabled("Preview [%s]: \"%s\"", GameLocalization::Get().GetCurrentLanguage().c_str(), resolved.c_str());
+        }
+
+        ImGui::Spacing();
         ImGui::Separator();
-        ImGui::TextColored(ImVec4(0.45f, 0.85f, 1.0f, 1.0f), "Custom TrueType Font (.ttf):");
+        ImGui::TextColored(ImVec4(0.45f, 0.85f, 1.0f, 1.0f), "%s", TR("Custom TrueType Font (.ttf):"));
         char fontBuf[512];
         std::strncpy(fontBuf, node->uiFontPath.c_str(), sizeof(fontBuf));
         fontBuf[sizeof(fontBuf) - 1] = '\0';
@@ -165,7 +181,7 @@ void NodeInspector::RenderUIProperties(Scene& scene, const std::shared_ptr<Node>
                     UINodeRenderer::LoadCustomTTFFont(node->uiFontPath, node->uiFontSize);
                 }
             }
-            if (ImGui::Button("Browse .ttf", ImVec2(-1.0f, 0.0f))) {
+            if (ImGui::Button(TR("Browse .ttf"), ImVec2(-1.0f, 0.0f))) {
 #ifdef _WIN32
                 OPENFILENAMEA ofn;
                 char szFile[MAX_PATH] = "";
@@ -193,7 +209,7 @@ void NodeInspector::RenderUIProperties(Scene& scene, const std::shared_ptr<Node>
                 }
             }
             ImGui::SameLine();
-            if (ImGui::Button("Browse .ttf", ImVec2(90.0f, 0.0f))) {
+            if (ImGui::Button(TR("Browse .ttf"), ImVec2(90.0f, 0.0f))) {
 #ifdef _WIN32
                 OPENFILENAMEA ofn;
                 char szFile[MAX_PATH] = "";
@@ -213,7 +229,7 @@ void NodeInspector::RenderUIProperties(Scene& scene, const std::shared_ptr<Node>
 #endif
             }
         }
-        ImGui::Text("Font Size (px):");
+        ImGui::Text("%s", TR("Font Size (px):"));
         ImGui::SetNextItemWidth(-1.0f);
         if (ImGui::SliderFloat("##UIFontSize", &node->uiFontSize, 8.0f, 72.0f, "%.1f px")) {
             if (!node->uiFontPath.empty()) {

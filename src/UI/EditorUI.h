@@ -27,6 +27,8 @@ using Graphics::PolygonMode;
 #include "UI/UINodeRenderer.h"
 #include "UI/NodeInspector.h"
 #include "UI/RulerTool.h"
+#include "Localization/Localization.h"
+#include "Localization/GameLocalization.h"
 
 class EditorUI {
 public:
@@ -180,6 +182,7 @@ public:
             m_fileViewerCurrentDir = std::filesystem::absolute(m_projectRoot).string();
             std::replace(m_fileViewerCurrentDir.begin(), m_fileViewerCurrentDir.end(), '\\', '/');
         }
+        GameLocalization::Get().SetProjectRoot(m_projectRoot);
     }
     void SetNewProjectCallback(std::function<void(const std::string& parentDir, const std::string& name)> cb) { m_onNewProject = cb; }
     void SetOpenProjectCallback(std::function<void(const std::string& filePath)> cb) { m_onOpenProject = cb; }
@@ -249,6 +252,7 @@ private:
     void RenderCutsceneSequencerWindow(Scene& scene, Camera& camera, Gameplay::GameLoop& gameLoop);
     void RenderShaderGraphWindow(Scene& scene);
     void RenderAudioMixerWindow(Scene& scene);
+    void RenderGameLocalizationWindow();
     void RenderNavMeshWindow(Scene& scene);
     void RenderGpuProfilerWindow();
     void DrawGpuTimings();
@@ -371,6 +375,16 @@ private:
     bool m_showAudioMixerWindow{false};
     bool m_showNavMeshWindow{false};
     bool m_showNetworkingWindow{false};
+    bool m_showGameLocalizationWindow{false};
+    char m_newLocKeyBuffer[128]{""};
+    char m_newLocDefaultValBuffer[256]{""};
+    char m_newLangCodeBuffer[32]{""};
+    char m_newLangNameBuffer[64]{""};
+    char m_locSearchFilter[128]{""};
+    std::string m_selectedLocLang{"en"};
+    std::string m_locStatusMessage{""};
+    float m_locStatusTimer{0.0f};
+    bool m_showAddLanguagePopup{false};
 
     float m_hdrExposure{1.0f};
     bool m_enableACES{true};

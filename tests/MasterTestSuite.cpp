@@ -31,6 +31,8 @@
 #include "Renderer/Upscaling/TemporalUpscaler.h"
 #include "Core/LargeWorldCoordinates.h"
 #include "Renderer/RayTracing/MetalRayTracing.h"
+#include "Localization/Localization.h"
+#include "Localization/GameLocalization.h"
 #include <sol/sol.hpp>
 #include <fstream>
 #include <cstring>
@@ -4842,4 +4844,167 @@ TEST_CASE(RoadmapExport, LinuxStandaloneGameExport) {
     // Clean up test export directory
     std::error_code ec;
     std::filesystem::remove_all(outDir, ec);
+}
+
+// =========================================================================
+// 89. Localization & Multi-Language System Tests
+// =========================================================================
+
+TEST_CASE(Localization, DefaultEnglishAndSpanishBaseline) {
+    auto& loc = Localization::Get();
+    loc.Init();
+
+    // 1. English mode
+    ASSERT_TRUE(loc.SetLanguage("en", false));
+    ASSERT_EQ(loc.GetCurrentLanguage(), "en");
+    ASSERT_EQ(std::string(TR("Recent Projects")), "Recent Projects");
+    ASSERT_EQ(std::string(TR("Create New Project")), "Create New Project");
+    ASSERT_EQ(std::string(TR("File")), "File");
+    ASSERT_EQ(std::string(TR("Edit")), "Edit");
+
+    // 2. Spanish mode
+    ASSERT_TRUE(loc.SetLanguage("es", false));
+    ASSERT_EQ(loc.GetCurrentLanguage(), "es");
+    ASSERT_EQ(std::string(TR("Recent Projects")), "Proyectos Recientes");
+    ASSERT_EQ(std::string(TR("Create New Project")), "Crear Nuevo Proyecto");
+    ASSERT_EQ(std::string(TR("File")), "Archivo");
+    ASSERT_EQ(std::string(TR("Edit")), "Editar");
+    ASSERT_EQ(std::string(TR("Scene")), "Escena");
+    ASSERT_EQ(std::string(TR("Language")), "Idioma");
+
+    // 3. ImGui ID suffixes preservation
+    ASSERT_EQ(std::string(TR("Open##Rec")), "Abrir##Rec");
+    ASSERT_EQ(std::string(TR("Scene Hierarchy###HierarchyWindow")), "Jerarquía de Escena###HierarchyWindow");
+
+    // 4. Fallback for untranslated key
+    ASSERT_EQ(std::string(TR("SomeNonExistentKey123")), "SomeNonExistentKey123");
+
+    // Restore English
+    loc.SetLanguage("en", false);
+}
+
+TEST_CASE(Localization, DynamicLanguageAdditionAndDiscovery) {
+    auto& loc = Localization::Get();
+    loc.Init();
+
+    std::string langDir = loc.GetLangDirectory();
+    std::filesystem::path customLangPath = std::filesystem::path(langDir) / "test_it.json";
+
+    // 1. Create Italian translation file dynamically
+    {
+        JsonValue itJson = JsonValue::Object();
+        itJson["code"] = "it";
+        itJson["name"] = "Italiano";
+        JsonValue stringsObj = JsonValue::Object();
+        stringsObj["Recent Projects"] = "Progetti Recenti";
+        stringsObj["Create New Project"] = "Crea Nuovo Progetto";
+        stringsObj["File"] = "File";
+        stringsObj["Edit"] = "Modifica";
+        itJson["strings"] = stringsObj;
+
+        std::ofstream out(customLangPath);
+        ASSERT_TRUE(out.is_open());
+        out << itJson.Serialize(2);
+    }
+
+    // 2. Rescan directory
+    loc.ScanLanguages();
+
+    const auto& langs = loc.GetAvailableLanguages();
+    bool foundItalian = false;
+    for (const auto& l : langs) {
+        if (l.code == "it") {
+            foundItalian = true;
+            ASSERT_EQ(l.displayName, "Italiano");
+            break;
+        }
+    }
+    ASSERT_TRUE(foundItalian);
+
+    // 3. Switch to Italian
+    ASSERT_TRUE(loc.SetLanguage("it", false));
+    ASSERT_EQ(loc.GetCurrentLanguage(), "it");
+    ASSERT_EQ(std::string(TR("Recent Projects")), "Progetti Recenti");
+    ASSERT_EQ(std::string(TR("Create New Project")), "Crea Nuovo Progetto");
+    ASSERT_EQ(std::string(TR("Edit")), "Modifica");
+
+    // 4. Untranslated key falls back to English
+    ASSERT_EQ(std::string(TR("Camera")), "Camera");
+
+    // 5. Cleanup test file and rescan
+    std::error_code ec;
+    std::filesystem::remove(customLangPath, ec);
+    loc.ScanLanguages();
+    loc.SetLanguage("en", false);
+}
+
+TEST_CASE(Localization, EditorSettingsPersistence) {
+    auto& loc = Localization::Get();
+    loc.Init();
+
+    // Set to Spanish and save
+    loc.SetLanguage("es", true);
+
+    // Verify editor_settings.json contains language: es
+    std::ifstream file("editor_settings.json");
+    ASSERT_TRUE(file.is_open());
+    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    file.close();
+
+    JsonValue root = JsonValue::Parse(content);
+    ASSERT_TRUE(root.HasKey("language"));
+    ASSERT_EQ(root["language"].AsString(), "es");
+
+    // Revert back to English and save
+    loc.SetLanguage("en", true);
+}
+
+
+// =========================================================================
+// 90. Game Localization & Developer Translation Manager Tests
+// =========================================================================
+
+TEST_CASE(GameLocalization, KeyValueAndLanguageManagement) {
+    namespace fs = std::filesystem;
+    std::string testDir = "test_game_localization_proj";
+    fs::remove_all(testDir);
+    fs::create_directories(testDir);
+
+    auto& gameLoc = GameLocalization::Get();
+    gameLoc.Init(testDir);
+
+    // Verify default files generated
+    ASSERT_TRUE(gameLoc.HasKey("menu_play"));
+    ASSERT_EQ(gameLoc.Translate("menu_play"), "Play");
+
+    // Switch to Spanish
+    ASSERT_TRUE(gameLoc.SetLanguage("es"));
+    ASSERT_EQ(gameLoc.Translate("menu_play"), "Jugar");
+
+    // Add a brand new game translation key
+    ASSERT_TRUE(gameLoc.AddKey("quest_intro", "Find the lost artifact"));
+    ASSERT_EQ(gameLoc.GetTranslation("en", "quest_intro"), "Find the lost artifact");
+
+    // Before translating to Spanish, it should fall back to English
+    ASSERT_EQ(gameLoc.Translate("quest_intro"), "Find the lost artifact");
+
+    // Set Spanish translation
+    gameLoc.SetTranslation("es", "quest_intro", "Encuentra el artefacto perdido");
+    ASSERT_EQ(gameLoc.Translate("quest_intro"), "Encuentra el artefacto perdido");
+
+    // Add a brand new language (French)
+    ASSERT_TRUE(gameLoc.AddLanguage("fr", "Français"));
+    gameLoc.SetTranslation("fr", "quest_intro", "Trouvez l'artefact perdu");
+
+    ASSERT_TRUE(gameLoc.SetLanguage("fr"));
+    ASSERT_EQ(gameLoc.Translate("quest_intro"), "Trouvez l'artefact perdu");
+
+    // Save and reload from disk
+    ASSERT_TRUE(gameLoc.SaveAll());
+    gameLoc.Reload();
+    ASSERT_TRUE(gameLoc.SetLanguage("fr"));
+    ASSERT_EQ(gameLoc.Translate("quest_intro"), "Trouvez l'artefact perdu");
+
+    // Clean up
+    fs::remove_all(testDir);
 }

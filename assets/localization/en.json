@@ -1,0 +1,11 @@
+{
+  "__language_name": "English",
+  "dialog_welcome": "Welcome, adventurer!",
+  "game_title": "My Awesome Game",
+  "hud_health": "Health: ",
+  "hud_score": "Score: ",
+  "menu_language": "Language",
+  "menu_options": "Options",
+  "menu_play": "Play",
+  "menu_quit": "Quit"
+}

@@ -1234,6 +1234,7 @@ JsonValue Scene::Serialize() const {
             uiObj["size"] = uisz;
             uiObj["anchor"] = UIAnchorToString(node->uiAnchor);
             uiObj["text"] = node->uiText;
+            if (!node->uiLocKey.empty()) uiObj["locKey"] = node->uiLocKey;
             uiObj["placeholder"] = node->uiPlaceholder;
             uiObj["fontSize"] = node->uiFontSize;
             uiObj["fontPath"] = node->uiFontPath;
@@ -2025,6 +2026,7 @@ bool Scene::Deserialize(const JsonValue& json, std::function<bool(const std::str
             }
             node->uiAnchor = StringToUIAnchor(ui["anchor"].AsString("Center"));
             node->uiText = ui["text"].AsString("Button");
+            if (ui.HasKey("locKey")) node->uiLocKey = ui["locKey"].AsString();
             node->uiPlaceholder = ui["placeholder"].AsString("Enter text...");
             node->uiFontSize = ui["fontSize"].AsFloat(16.0f);
             if (ui.HasKey("fontPath")) node->uiFontPath = ui["fontPath"].AsString();

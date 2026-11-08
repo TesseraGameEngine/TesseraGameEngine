@@ -34,6 +34,7 @@ static std::ofstream g_log("engine.log");
 #include "Animation/MorphTarget.h"
 #include "Video/VideoPlayer.h"
 #include "Project/Project.h"
+#include "Localization/Localization.h"
 #include "Scripting/LuaScriptSystem.h"
 #include "Renderer/VulkanContext.h"
 #include "Renderer/RayTracing/RayTracingManager.h"
@@ -508,6 +509,7 @@ private:
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
         io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
 
+        Localization::Get().Init();
         m_editorUI.Init();
 
         // 3. Setup Platform/Renderer backends

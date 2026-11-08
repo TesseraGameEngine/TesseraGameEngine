@@ -1,3 +1,4 @@
+#include "Localization/Localization.h"
 #include "ColliderNode.h"
 #include "Scene/Scene.h"
 #include <imgui.h>
@@ -29,10 +30,10 @@ std::shared_ptr<Node> ColliderNode::Clone() const {
 }
 
 void ColliderNode::RenderInspectorProperties(Scene& scene, NodeInspectorState& state) {
-    if (ImGui::CollapsingHeader("Collider Properties", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ImGui::CollapsingHeader(TR("Collider Properties"), ImGuiTreeNodeFlags_DefaultOpen)) {
         const char* colTypes[] = { "Box", "Sphere", "Capsule", "Mesh" };
         int currentCol = static_cast<int>(colliderType);
-        if (ImGui::Combo("Collider Shape", &currentCol, colTypes, IM_ARRAYSIZE(colTypes))) {
+        if (ImGui::Combo(TR("Collider Shape"), &currentCol, colTypes, IM_ARRAYSIZE(colTypes))) {
             colliderType = static_cast<ColliderType>(currentCol);
             switch (colliderType) {
                 case ColliderType::Box: type = ShapeType::Cube; break;
@@ -42,19 +43,19 @@ void ColliderNode::RenderInspectorProperties(Scene& scene, NodeInspectorState& s
             }
         }
 
-        ImGui::Checkbox("Is Trigger (Overlap Only)", &isTrigger);
+        ImGui::Checkbox(TR("Is Trigger (Overlap Only)"), &isTrigger);
 
         if (colliderType == ColliderType::Box) {
-            ImGui::DragFloat3("Box Size", glm::value_ptr(colliderSize), 0.05f, 0.01f, 100.0f);
+            ImGui::DragFloat3(TR("Box Size"), glm::value_ptr(colliderSize), 0.05f, 0.01f, 100.0f);
         } else if (colliderType == ColliderType::Sphere) {
-            ImGui::DragFloat("Sphere Radius", &colliderRadius, 0.02f, 0.01f, 50.0f);
+            ImGui::DragFloat(TR("Sphere Radius"), &colliderRadius, 0.02f, 0.01f, 50.0f);
         } else if (colliderType == ColliderType::Capsule) {
-            ImGui::DragFloat("Capsule Radius", &colliderRadius, 0.02f, 0.01f, 50.0f);
-            ImGui::DragFloat("Capsule Height", &colliderHeight, 0.05f, 0.01f, 50.0f);
+            ImGui::DragFloat(TR("Capsule Radius"), &colliderRadius, 0.02f, 0.01f, 50.0f);
+            ImGui::DragFloat(TR("Capsule Height"), &colliderHeight, 0.05f, 0.01f, 50.0f);
         }
 
-        ImGui::DragFloat3("Center Offset", glm::value_ptr(colliderCenter), 0.05f);
-        ImGui::SliderFloat("Bounciness", &bounciness, 0.0f, 1.0f);
-        ImGui::SliderFloat("Friction", &friction, 0.0f, 1.0f);
+        ImGui::DragFloat3(TR("Center Offset"), glm::value_ptr(colliderCenter), 0.05f);
+        ImGui::SliderFloat(TR("Bounciness"), &bounciness, 0.0f, 1.0f);
+        ImGui::SliderFloat(TR("Friction"), &friction, 0.0f, 1.0f);
     }
 }

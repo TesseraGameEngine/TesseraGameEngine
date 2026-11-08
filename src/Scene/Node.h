@@ -776,6 +776,7 @@ struct Node {
     glm::vec4 uiPressColor{0.15f, 0.15f, 0.2f, 1.0f};
 
     std::string uiText{"Button"};
+    std::string uiLocKey{""};
     std::string uiPlaceholder{"Enter text..."};
     std::string uiFontPath{""};
     float uiFontSize{16.0f};
@@ -796,6 +797,7 @@ struct Node {
     std::string uiOnClickAction{""};
 
     virtual bool IsUINode() const;
+    std::string GetResolvedUIText() const;
 
     // Transform calculation
     glm::mat4 GetLocalTransformMatrix() const;

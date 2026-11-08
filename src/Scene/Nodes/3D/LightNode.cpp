@@ -1,3 +1,4 @@
+#include "Localization/Localization.h"
 #include "LightNode.h"
 #include "Scene/Scene.h"
 #include <imgui.h>
@@ -26,46 +27,46 @@ std::shared_ptr<Node> LightNode::Clone() const {
 void LightNode::RenderInspectorProperties(Scene& scene, NodeInspectorState& state) {
     (void)scene;
     (void)state;
-    if (ImGui::CollapsingHeader("Light Properties", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ImGui::CollapsingHeader(TR("Light Properties"), ImGuiTreeNodeFlags_DefaultOpen)) {
         const char* lightTypes[] = { "Directional", "Point", "Spot", "Area (Rect)" };
         int currentType = static_cast<int>(lightType);
-        ImGui::Text("Light Type:");
+        ImGui::Text("%s", TR("Light Type:"));
         ImGui::SetNextItemWidth(-1.0f);
         if (ImGui::Combo("##LightType", &currentType, lightTypes, IM_ARRAYSIZE(lightTypes))) {
             lightType = static_cast<LightType>(currentType);
         }
 
         ImGui::Spacing();
-        ImGui::Text("Light Color:");
+        ImGui::Text("%s", TR("Light Color:"));
         ImGui::SetNextItemWidth(-1.0f);
         if (ImGui::ColorEdit3("##LightColor", glm::value_ptr(lightColor))) {
             color = glm::vec4(lightColor, 1.0f);
         }
 
         ImGui::Spacing();
-        ImGui::Text("Intensity:");
+        ImGui::Text("%s", TR("Intensity:"));
         ImGui::SetNextItemWidth(-1.0f);
         ImGui::SliderFloat("##Intensity", &lightIntensity, 0.0f, 25.0f, "%.2f");
 
-        ImGui::Checkbox("Cast Realtime Shadows", &castShadows);
+        ImGui::Checkbox(TR("Cast Realtime Shadows"), &castShadows);
         if (castShadows) {
-            ImGui::Text("Shadow Bias:");
+            ImGui::Text("%s", TR("Shadow Bias:"));
             ImGui::SetNextItemWidth(-1.0f);
             ImGui::SliderFloat("##ShadowBias", &shadowBias, 0.0001f, 0.05f, "%.4f");
         }
 
         if (lightType == LightType::Point || lightType == LightType::Spot || lightType == LightType::AreaRect) {
-            ImGui::Text("Range / Falloff (m):");
+            ImGui::Text("%s", TR("Range / Falloff (m):"));
             ImGui::SetNextItemWidth(-1.0f);
             ImGui::DragFloat("##Range", &lightRange, 0.5f, 1.0f, 250.0f, "%.1f m");
         }
 
         if (lightType == LightType::Spot) {
-            ImGui::Text("Inner Cone Angle:");
+            ImGui::Text("%s", TR("Inner Cone Angle:"));
             ImGui::SetNextItemWidth(-1.0f);
             ImGui::SliderFloat("##InnerCone", &spotInnerConeAngle, 1.0f, 89.0f, "%.1f deg");
 
-            ImGui::Text("Outer Cone Angle:");
+            ImGui::Text("%s", TR("Outer Cone Angle:"));
             ImGui::SetNextItemWidth(-1.0f);
             ImGui::SliderFloat("##OuterCone", &spotOuterConeAngle, 1.0f, 89.5f, "%.1f deg");
             if (spotOuterConeAngle < spotInnerConeAngle) {
@@ -73,10 +74,10 @@ void LightNode::RenderInspectorProperties(Scene& scene, NodeInspectorState& stat
             }
         }
         if (lightType == LightType::AreaRect) {
-            ImGui::Text("Area Width / Height (m):");
+            ImGui::Text("%s", TR("Area Width / Height (m):"));
             ImGui::SetNextItemWidth(-1.0f);
             ImGui::DragFloat2("##AreaSize", glm::value_ptr(areaLightSize), 0.1f, 0.1f, 50.0f, "%.2f m");
-            ImGui::Checkbox("Two-Sided Emission", &areaLightTwoSided);
+            ImGui::Checkbox(TR("Two-Sided Emission"), &areaLightTwoSided);
         }
     }
 }

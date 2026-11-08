@@ -79,7 +79,8 @@ void UIButtonNode::DrawUI(Scene& scene, ImDrawList* drawList, ImVec2 canvasPos, 
         ImVec2 iconPos(rectMin.x + 8.0f, rectMin.y + (uiSize.y - iconSize) * 0.5f);
         drawList->AddRectFilled(iconPos, ImVec2(iconPos.x + iconSize, iconPos.y + iconSize), IM_COL32(255, 255, 255, 80), 2.0f);
     }
-    ImVec2 textSize = ImGui::CalcTextSize(uiText.c_str());
+    std::string resolvedText = GetResolvedUIText();
+    ImVec2 textSize = ImGui::CalcTextSize(resolvedText.c_str());
     ImVec2 textPos = ImVec2(rectMin.x + (uiSize.x - textSize.x) * 0.5f, rectMin.y + (uiSize.y - textSize.y) * 0.5f);
-    drawList->AddText(textPos, fgCol, uiText.c_str());
+    drawList->AddText(textPos, fgCol, resolvedText.c_str());
 }

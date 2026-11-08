@@ -1,5 +1,6 @@
 #include "Node.h"
 #include "Scene.h"
+#include "Localization/GameLocalization.h"
 #include <imgui.h>
 #include <ImGuizmo.h>
 #include <glm/gtc/type_ptr.hpp>
@@ -113,4 +114,12 @@ void Node::DrawUI(Scene& scene, ImDrawList* drawList, ImVec2 canvasPos, float ca
                   bool isEditorMode, Gameplay::GameLoop* gameLoop, UINodeRendererState& state,
                   ImVec2 rectMin, ImVec2 rectMax, bool isHovered, bool isClicked) {
     // Base fallback
+}
+
+
+std::string Node::GetResolvedUIText() const {
+    if (!uiLocKey.empty()) {
+        return GameLocalization::Get().Translate(uiLocKey, uiText);
+    }
+    return uiText;
 }

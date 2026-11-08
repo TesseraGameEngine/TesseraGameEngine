@@ -37,5 +37,6 @@ void UITextNode::DrawUI(Scene& scene, ImDrawList* drawList, ImVec2 canvasPos, fl
                       bool isEditorMode, Gameplay::GameLoop* gameLoop, UINodeRendererState& state,
                       ImVec2 rectMin, ImVec2 rectMax, bool isHovered, bool isClicked) {
     ImU32 fgCol = ImGui::ColorConvertFloat4ToU32(ImVec4(uiTextColor.r, uiTextColor.g, uiTextColor.b, uiTextColor.a * (uiEnabled ? 1.0f : 0.45f)));
-    drawList->AddText(rectMin, fgCol, uiText.c_str());
+    std::string resolvedText = GetResolvedUIText();
+    drawList->AddText(rectMin, fgCol, resolvedText.c_str());
 }

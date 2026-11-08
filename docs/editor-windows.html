@@ -412,6 +412,23 @@
   </a>
 </div>
 
+
+    <h2>11. Game Localization & Translation Editor Window (<kbd>Ctrl+L</kbd>)</h2>
+    <p>Available under <code>Project -&gt; Game Localization...</code>, <code>Window -&gt; Game Localization Editor</code>, or via the <kbd>Ctrl+L</kbd> shortcut. This workspace empowers game developers to create, translate, and organize player-facing game text across any number of languages directly inside the engine:</p>
+
+    <div class="callout callout-info">
+      <strong>Folder Storage:</strong> Game translations are stored in <code>assets/localization/&lt;code&gt;.json</code> inside the project root. When exporting a standalone game build, Tessera automatically bundles the entire <code>assets/</code> directory so your game ships with all translations embedded.
+    </div>
+
+    <h3>Key Capabilities</h3>
+    <ul>
+      <li><strong>Language Selector & Creation:</strong> Switch active editing language via a dropdown (e.g. English, Spanish). Click <code>[+ New Language]</code> to add a new language (e.g. <code>fr</code> - Français, <code>de</code> - Deutsch, <code>ja</code> - 日本語) which automatically creates the corresponding <code>.json</code> file with all project keys.</li>
+      <li><strong>Key-Value Translation Grid:</strong> Define translation keys (e.g. <code>menu_play</code>, <code>quest_hero_intro</code>) along with default English reference text. Each key displays its current translation in an editable text box.</li>
+      <li><strong>Real-Time Search & Status Badges:</strong> Filter translation keys or translated text instantly. Color-coded badges indicate whether a key is <code>Translated</code> (green) or <code>Untranslated</code> (orange).</li>
+      <li><strong>Zero-Code UI Binding:</strong> Any 2D UI Node (such as <code>UITextNode</code> or <code>UIButtonNode</code>) can be assigned a <code>Localization Key</code> in the Inspector. The node automatically displays the translated text in whatever language the player selects in-game!</li>
+      <li><strong>In-Game Lua Integration:</strong> Scripts can call <code>TR("key")</code> or <code>Localization.Translate("key")</code>, and query <code>Localization.GetAvailableLanguages()</code> to populate in-game language option menus. Changing language via <code>Localization.SetLanguage(code)</code> dynamically refreshes all UI text on the next frame.</li>
+    </ul>
+
   </main>
 </body>
 </html>

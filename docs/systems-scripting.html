@@ -383,6 +383,48 @@
 
 
 
+
+    <h3>2.16 Localization & Internationalization Global API (<code>Localization</code> & <code>TR</code>)</h3>
+    <p>Tessera provides native game localization support in Lua. Game developers can look up translated strings dynamically, change the player's active language at runtime, and query available languages to build in-game language selection menus.</p>
+
+    <table>
+      <thead>
+        <tr><th>Function</th><th>Parameters</th><th>Returns</th><th>Description</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>TR(key, [default])</code></td><td><code>key: string, [default: string]</code></td><td><code>string</code></td><td>Global shorthand function. Returns the translated text for <code>key</code> in the player's active language, falling back to English or <code>default</code>.</td></tr>
+        <tr><td><code>Localization.Translate(key, [default])</code></td><td><code>key: string, [default: string]</code></td><td><code>string</code></td><td>Resolves a translation key using the active game language table.</td></tr>
+        <tr><td><code>Localization.Get(key)</code></td><td><code>key: string</code></td><td><code>string</code></td><td>Alias for <code>Localization.Translate</code>.</td></tr>
+        <tr><td><code>Localization.SetLanguage(code)</code></td><td><code>code: string</code></td><td><code>boolean</code></td><td>Sets the active game language (e.g. <code>"en"</code>, <code>"es"</code>, <code>"fr"</code>). Automatically updates all UI nodes bound via Localization Key on the next frame.</td></tr>
+        <tr><td><code>Localization.GetLanguage()</code></td><td>&mdash;</td><td><code>string</code></td><td>Returns the current active game language code (e.g. <code>"es"</code>).</td></tr>
+        <tr><td><code>Localization.GetAvailableLanguages()</code></td><td>&mdash;</td><td><code>table</code></td><td>Returns an array of available languages discovered in <code>assets/localization/</code>: <code>{ { code = "en", name = "English" }, { code = "es", name = "Español" }, ... }</code>.</td></tr>
+        <tr><td><code>self:SetLocKey(key)</code></td><td><code>key: string</code></td><td>&mdash;</td><td>Binds a translation key directly to this UI node.</td></tr>
+        <tr><td><code>self:GetLocKey()</code></td><td>&mdash;</td><td><code>string</code></td><td>Returns the bound translation key of this UI node.</td></tr>
+        <tr><td><code>Scene.SetLocKey(nodeId, key)</code></td><td><code>nodeId: int, key: string</code></td><td>&mdash;</td><td>Sets the localization key on a specific UI node by ID.</td></tr>
+      </tbody>
+    </table>
+
+    <div class="code-block-header">Example: Building an In-Game Language Selector & Localized Dialogue in Lua</div>
+    <pre><code>-- Attached to an In-Game Settings Menu or Dialogue Node
+function OnReady()
+    -- 1. Populate dropdown or menu with available languages:
+    local languages = Localization.GetAvailableLanguages()
+    for i, lang in ipairs(languages) do
+        print("Available Language: " .. lang.code .. " (" .. lang.name .. ")")
+    end
+
+    -- 2. Display localized NPC dialogue:
+    local greeting = TR("dialog_welcome", "Welcome, traveler!")
+    self:SetText(greeting)
+end
+
+-- Called when the player selects a language in the options menu
+function OnLanguageSelected(selectedLangCode)
+    Localization.SetLanguage(selectedLangCode) -- e.g. "es"
+    print("Game language changed to: " .. Localization.GetLanguage())
+    -- All UI elements with a Localization Key update immediately!
+end</code></pre>
+
     <h2>3. Production-Ready Script Templates</h2>
 
 

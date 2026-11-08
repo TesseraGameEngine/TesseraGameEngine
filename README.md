@@ -8,7 +8,7 @@ A high-performance, modern, photorealistic 3D Game Engine and Editor built from 
 ![Lua 5.4](https://img.shields.io/badge/Scripting-Lua_5.4_Sol2-blue.svg)
 ![GUI](https://img.shields.io/badge/GUI-Dear_ImGui_Docking-orange.svg)
 ![Platform](https://img.shields.io/badge/Platform-Windows_|_Linux_|_Web_HTML5-success.svg)
-![Tests](https://img.shields.io/badge/Tests-88_Passed_|_0_Failed-brightgreen.svg)
+![Tests](https://img.shields.io/badge/Tests-92_Passed_|_0_Failed-brightgreen.svg)
 
 ---
 
@@ -45,6 +45,7 @@ A high-performance, modern, photorealistic 3D Game Engine and Editor built from 
    - [5.5 UI Auto-Layout Containers (`UIBoxContainer` & `UIGridContainer`)](#55-ui-auto-layout-containers-uiboxcontainer--uigridcontainer)
    - [5.6 Declarative Multiplayer Property Sync](#56-declarative-multiplayer-property-sync)
    - [5.7 3D Precision Viewport Ruler & Measurement Tool (`M`)](#57-3d-precision-viewport-ruler--measurement-tool-m)
+   - [5.8 Multi-Language Localization System (Engine & Games)](#58-multi-language-localization-system-engine--games)
 6. [Developer Workflows, Tutorials & Packaging](#6-developer-workflows-tutorials--packaging)
    - [6.1 Asset Pipeline (glTF/GLB, FBX, OBJ, BC1–BC7 Textures)](#61-asset-pipeline-gltfglb-fbx-obj-bc1bc7-textures)
    - [6.2 Animation Timeline, Skeletal Rigging & IK](#62-animation-timeline-skeletal-rigging--ik)
@@ -72,11 +73,13 @@ engine/
 ├── CMakeLists.txt              # Fully self-contained CMake build configuration
 ├── README.md                   # Unified technical manual, architecture guide & roadmap
 ├── docs/                       # Offline HTML documentation suite (open docs/index.html)
+├── lang/                       # Engine editor UI translation dictionaries (en.json, es.json, etc.)
 ├── shaders/                    # Vulkan GLSL shaders + shared includes (compiled to SPIR-V by glslc)
 ├── thirdparty/                 # 100% self-contained dependencies (GLFW, GLM, ImGui, Jolt, Lua, OpenFBX, STB)
 ├── src/
 │   ├── main.cpp                # Application entry, swapchain, view management & engine loop
 │   ├── Core/                   # Camera, InputManager, UndoRedoManager, EngineIconData
+│   ├── Localization/           # Engine UI Localization & Game Project Localization Manager
 │   ├── Project/                # .tess project configuration & recent workspace management
 │   ├── Scene/                  # Node hierarchy, Scene graph, .scene serialization, glTF/FBX/OBJ loaders,
 │   │   ├── Nodes/3D/           # MeshNode, CharacterNode, LightNode, CameraNode, TerrainNode, ParticleNode, etc.
@@ -439,6 +442,30 @@ self:AddReplicationRule("animState", "OnChange", 20.0)
 
 ### 5.7 3D Precision Viewport Ruler & Measurement Tool (`M`)
 Press <kbd>M</kbd> (or click **`[Ruler: ON/OFF [M]]`** on the viewport toolbar) to measure 3D distances directly in the scene with surface raycast snapping, node-center snapping, orthogonal Cartesian delta triads ($\Delta X, \Delta Y, \Delta Z$), physical 1 m / 0.25 m tick marks, elevation angle, 8-wind compass azimuth, and live unit conversion (`m`, `cm`, `mm`, `ft`, `in`).
+
+---
+
+### 5.8 Multi-Language Localization System (Engine & Games)
+
+Tessera features a dual-layer internationalization architecture supporting both **Engine Localization** (translating the editor tools) and **Game Localization** (translating player-facing game text):
+
+#### 1. Engine UI Localization
+- **Location**: `lang/*.json` next to the executable.
+- **Languages Out-of-the-Box**: English (`en.json`) and Spanish (`es.json`), with over 370 curated keys covering all menus, viewports, inspector tabs, and dialogs.
+- **Embedded In-Memory Fallbacks**: All strings are pre-compiled into the executable's `.rdata`. If `Tessera.exe` runs on a machine without the `lang/` folder or on a read-only filesystem, the engine operates 100% reliably and self-heals by auto-generating default language files if writable.
+- **Switching**: Selectable instantly from the Project Launcher Hub or the top-level **Language** menu bar.
+
+#### 2. Game Localization & Translation Editor Window (`Ctrl+L`)
+- **Access**: `Project -> Game Localization...` or `Window -> Game Localization Editor` (`Ctrl+L`).
+- **Project Storage**: Saved in `assets/localization/<lang>.json` within the project root, automatically packaged into standalone Windows, Linux, and Web builds.
+- **Features**:
+  - Add new languages dynamically (`+ New Language`) with custom ISO codes and native display names.
+  - Key-Value translation grid with real-time text/key search, English reference text, and `Translated` / `Untranslated` status badges.
+- **Zero-Code UI Binding**: Assign a `Localization Key` (e.g. `menu_start`) to any `UITextNode` or `UIButtonNode` in the Inspector. The node automatically resolves and displays the translated text for whatever game language is active.
+- **Lua Script API**:
+  - `TR("key")` / `Localization.Translate("key")`: Resolves a key in the player's active language.
+  - `Localization.SetLanguage("es")`: Changes the active game language at runtime.
+  - `Localization.GetAvailableLanguages()`: Queries available project languages to build in-game player options menus.
 
 ---
 

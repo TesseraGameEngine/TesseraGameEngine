@@ -201,6 +201,15 @@
 
 
     
+    <h2>3. UI Text Localization System</h2>
+    <p>All text-bearing UI nodes (including <code>UITextNode</code>, <code>UIButtonNode</code>, <code>UICheckboxNode</code>, etc.) support direct binding to the engine's translation dictionary:</p>
+    <ul>
+      <li><strong>Localization Key</strong>: Enter a key (e.g. <code>menu_play</code>, <code>settings_audio</code>) in the Node Inspector's <strong>Localization Key (Optional)</strong> field.</li>
+      <li><strong>Dynamic Resolution</strong>: Instead of hardcoded text, the widget dynamically queries <code>GameLocalization</code> for the active game language.</li>
+      <li><strong>Live In-Game Switching</strong>: When the player switches languages via <code>Localization.SetLanguage(code)</code> or an in-game menu, all bound UI elements update immediately on the next frame without reloading scenes or restarting the game.</li>
+      <li><strong>Automatic Fallback</strong>: If a string is not yet translated in the active language, it seamlessly falls back to English, preventing blank UI labels.</li>
+    </ul>
+
     <h2>4. Auto-Layout Containers: Box & Grid Containers</h2>
     <p>Tessera includes smart auto-layout containers that eliminate the need for manual pixel placement when designing adaptive interfaces:</p>
     

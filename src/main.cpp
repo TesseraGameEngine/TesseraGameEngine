@@ -586,6 +586,8 @@ private:
         } else if (!std::filesystem::exists(actualPath)) {
             if (std::filesystem::exists(std::string("assets/models/") + filepath)) {
                 actualPath = std::string("assets/models/") + filepath;
+            } else if (std::filesystem::exists(std::string("projects/Headland/") + filepath)) {
+                actualPath = std::string("projects/Headland/") + filepath;
             }
         }
 
@@ -1174,6 +1176,8 @@ private:
                     if (!std::filesystem::exists(fullPath)) {
                         if (std::filesystem::exists("assets/models/" + rawPath)) fullPath = "assets/models/" + rawPath;
                         else if (std::filesystem::exists("assets/" + rawPath)) fullPath = "assets/" + rawPath;
+                        else if (std::filesystem::exists("projects/Headland/" + rawPath)) fullPath = "projects/Headland/" + rawPath;
+                        else if (std::filesystem::exists("projects/Headland/assets/" + rawPath)) fullPath = "projects/Headland/assets/" + rawPath;
                     }
                     LoadedMesh loadedMesh;
                     std::string ext = std::filesystem::path(fullPath).extension().string();
@@ -4048,6 +4052,8 @@ private:
             candidates.push_back(fs::path(worldRoot).parent_path() / name);
         }
         candidates.push_back(fs::path("assets/models") / name);
+        candidates.push_back(fs::path("projects/Headland") / name);
+        candidates.push_back(fs::path("projects/Headland/assets") / name);
         std::error_code ec;
         for (const auto& path : candidates) {
             if (!fs::exists(path, ec)) continue;

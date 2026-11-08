@@ -385,6 +385,16 @@ std::shared_ptr<VulkanTexture> VulkanTexture::LoadFromFile(const std::string& fi
     }
 
     if (!pixels) {
+        std::string fallback = "projects/Headland/" + clean;
+        pixels = stbi_load(fallback.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+    }
+
+    if (!pixels) {
+        std::string fallback = "projects/Headland/assets/" + clean;
+        pixels = stbi_load(fallback.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+    }
+
+    if (!pixels) {
         std::cerr << "[VulkanTexture] Failed to load texture image from: " << filepath << " - Falling back to white texture." << std::endl;
         return CreateDefaultWhite();
     }
@@ -412,6 +422,8 @@ std::string ResolveTextureFile(const std::string& filepath) {
     if (std::filesystem::exists(clean, ec)) return clean;
     if ((clean.rfind("/Users/", 0) == 0 || clean.rfind("/users/", 0) == 0) && std::filesystem::exists("C:" + clean, ec)) return "C:" + clean;
     if (std::filesystem::exists("../" + clean, ec)) return "../" + clean;
+    if (std::filesystem::exists("projects/Headland/" + clean, ec)) return "projects/Headland/" + clean;
+    if (std::filesystem::exists("projects/Headland/assets/" + clean, ec)) return "projects/Headland/assets/" + clean;
     return {};
 }
 

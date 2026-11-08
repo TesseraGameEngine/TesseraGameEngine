@@ -4,7 +4,7 @@
     python tools/fetch_assets.py --dry-run       # list what would be downloaded, and the size
     python tools/fetch_assets.py --only pine_tree_01 coast_sand_01
 
-Files go to assets/external/polyhaven/ (git-ignored):
+Files go to projects/Headland/assets/external/polyhaven/ (git-ignored):
     models/<id>/<id>_<res>.gltf (+ .bin, textures/)
     textures/<id>/<id>_<map>_<res>.jpg
     CREDITS.md
@@ -190,7 +190,7 @@ def apply_alpha_masks(plan):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--manifest", default=os.path.join(ROOT, "tools", "assets_manifest.json"))
-    ap.add_argument("--out", default=os.path.join(ROOT, "assets", "external", "polyhaven"))
+    ap.add_argument("--out", default=os.path.join(ROOT, "projects", "Headland", "assets", "external", "polyhaven"))
     ap.add_argument("--dry-run", action="store_true", help="list the downloads and their total size")
     ap.add_argument("--only", nargs="*", help="only these asset ids")
     ap.add_argument("--jobs", type=int, default=6, help="parallel downloads")

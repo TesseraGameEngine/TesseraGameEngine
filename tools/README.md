@@ -16,7 +16,7 @@ Build it in three steps from the repository root:
 python tools/fetch_assets.py
 
 # 2. Turn the scanned models (up to millions of triangles) into real-scale LOD chains
-build/Release/Tessera.exe --optimize-models=assets/external/polyhaven/models
+build/Release/Tessera.exe --optimize-models=projects/Headland/assets/external/polyhaven/models
 
 # 3. Generate the world (terrain, materials, scatter, camp, streaming manifest)
 build/Release/Tessera.exe --build-world=projects/Headland/scenes --world-preview=island.png

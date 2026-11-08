@@ -22,7 +22,7 @@ namespace Tools {
 
 struct WorldBuildOptions {
     std::string outputDir{"projects/Headland/scenes"};
-    std::string assetRoot{"assets/external/polyhaven"};
+    std::string assetRoot{"projects/Headland/assets/external/polyhaven"};
     unsigned seed{7};
     std::string previewPng; // optional: a top-down height / material map of the island
 };

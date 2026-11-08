@@ -13,7 +13,9 @@ public:
 
     static std::shared_ptr<VulkanTexture> CreateDefaultWhite();
     static std::shared_ptr<VulkanTexture> CreateDefaultNormal();
-    static std::shared_ptr<VulkanTexture> LoadFromFile(const std::string& filepath);
+    // srgb: the file holds colour (albedo, emissive): sampled through an sRGB format, so shaders
+    // read linear values. Data maps (roughness, metallic, AO, height) and normals stay linear.
+    static std::shared_ptr<VulkanTexture> LoadFromFile(const std::string& filepath, bool srgb = false);
     // How material textures are block-compressed at load (when the GPU supports BC formats)
     enum class CompressionQuality {
         Off,      // plain RGBA8
@@ -22,8 +24,9 @@ public:
     };
     // What a texture holds, which decides its compressed format
     enum class TextureUsage {
-        Color,    // albedo, metallic, roughness, AO, emissive
-        NormalMap // tangent-space normals: only X and Y are stored (BC5); shaders rebuild Z
+        Color,     // albedo, emissive: sRGB-encoded colour (decoded to linear when sampled)
+        NormalMap, // tangent-space normals: only X and Y are stored (BC5); shaders rebuild Z
+        Data       // roughness, metallic, AO, height: linear values
     };
     // Material texture, block-compressed per the current quality, with a CPU-built mip chain. The
     // result is cached under cache/textures/ (keyed by path, size, modification time and format)

@@ -7,6 +7,7 @@ const int TEX_ALBEDO    = 1;
 const int TEX_NORMAL    = 2;
 const int TEX_METALLIC  = 4;
 const int TEX_ROUGHNESS = 8;
+const int TEX_PACKED_MR = 128; // glTF packed metallic-roughness: roughness in G, metallic in B
 const int TEX_AO        = 16;
 const int TEX_EMISSIVE  = 32;
 const int TEX_HEIGHT    = 64;

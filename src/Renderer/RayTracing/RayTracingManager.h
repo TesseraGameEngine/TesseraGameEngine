@@ -35,8 +35,10 @@ public:
     // (data may be null when the key is already registered and unchanged). Return false to leave
     // the node out of the acceleration structure.
     using MeshResolver = std::function<bool(const Node& node, std::string& cacheKey, const MeshData*& data)>;
-    // Fills material data (albedo, roughness, textures...) for a node's instance
-    using MaterialResolver = std::function<void(const Node& node, RayTracingInstance& instance)>;
+    // Fills material data (albedo, roughness, textures...) for a node's instance. Meshes with
+    // submeshes get one instance per submesh (its own BLAS), `submesh` saying which; -1 = no
+    // submeshes (the node's own material).
+    using MaterialResolver = std::function<void(const Node& node, int submesh, RayTracingInstance& instance)>;
 
     // Scene Synchronization: registers BLASes for the scene's meshes (through `meshResolver`,
     // or the built-in primitive shapes when none is given) and hands the instance list to the
@@ -71,11 +73,15 @@ private:
     ~RayTracingManager();
 
     struct CachedMesh {
-        RayTracingMeshHandle handle{kInvalidMeshHandle};
+        RayTracingMeshHandle handle{kInvalidMeshHandle};   // first part
+        std::vector<RayTracingMeshHandle> parts;           // one BLAS per submesh (or just `handle`)
+        bool perSubmesh{false};                            // parts are the mesh's submeshes
         const void* source{nullptr};   // the MeshData it was built from (to spot changes)
         size_t vertexCount{0};
         size_t indexCount{0};
     };
+    // Registers a mesh as one BLAS per submesh (each with only the vertices it uses)
+    bool RegisterMeshParts(const std::string& cacheKey, const MeshData& data);
 
     std::unique_ptr<IRayTracingBackend> m_backend;
     RayTracingSettings m_fallbackSettings;

@@ -72,3 +72,5 @@ CMakeCache.txt
 
 # Generated test worlds (tools/make_stream_test_world.py)
 projects/DefaultProject/scenes/streamtest/
+projects/Headland/scenes/
+projects/DefaultProject/scenes/asset_gallery.scene

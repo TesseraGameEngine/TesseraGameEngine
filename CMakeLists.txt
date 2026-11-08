@@ -233,6 +233,8 @@ set(SOURCES
     src/Streaming/DirectStorageQueue.cpp
     src/Streaming/WorldPartitionManager.cpp
     src/Streaming/WorldStreamer.cpp
+    src/Tools/ModelOptimizer.cpp
+    src/Tools/WorldBuilder.cpp
     src/Physics/PhysicsWorld.cpp
     src/Physics/XPBDClothSim.cpp
     src/Navigation/NavMesh.cpp

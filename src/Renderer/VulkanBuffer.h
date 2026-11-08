@@ -78,7 +78,10 @@ enum TextureFlagBits : int {
     TEX_ROUGHNESS = 1 << 3,
     TEX_AO        = 1 << 4,
     TEX_EMISSIVE  = 1 << 5,
-    TEX_HEIGHT    = 1 << 6
+    TEX_HEIGHT    = 1 << 6,
+    // The metallic and roughness slots hold one glTF-style packed texture: roughness in G,
+    // metallic in B (R is often ambient occlusion). Set when both slots name the same file.
+    TEX_PACKED_MR = 1 << 7
 };
 
 // Bits for PushConstantData::materialFlags (must match shader.frag)

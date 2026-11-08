@@ -2,6 +2,7 @@
 #include "DirectStorageQueue.h"
 #include "Scene/Scene.h"
 #include "Scene/Node.h"
+#include "Scene/Nodes/3D/TerrainNode.h"
 #include "Utils/SimpleJson.h"
 #include <algorithm>
 #include <chrono>
@@ -161,6 +162,10 @@ void WorldStreamer::PrepareOnWorker(const std::shared_ptr<Shared>& shared, const
             if (node && node->type == ShapeType::Custom && !node->customMeshName.empty() &&
                 node->nodeType != NodeType::Terrain) {
                 names.insert(node->customMeshName);
+                // Its levels of detail are models too
+                for (const auto& lod : node->lodLevels) {
+                    if (!lod.meshKey.empty()) names.insert(lod.meshKey);
+                }
             }
         }
         prepared->meshNames.assign(names.begin(), names.end());
@@ -259,6 +264,11 @@ bool WorldStreamer::Activate(Scene& scene, Sector& sector) {
         }
         node->childrenIds.erase(std::remove(node->childrenIds.begin(), node->childrenIds.end(), 0u), node->childrenIds.end());
         node->streamSector = key;
+        // Terrain meshes are keyed by node id: the new id gets its own mesh
+        if (auto terrain = std::dynamic_pointer_cast<TerrainNode>(node)) {
+            terrain->customMeshName = terrain->GetTerrainMeshKey();
+            terrain->isMeshDirty = true;
+        }
         scene.AttachNode(node);
         attached.push_back(node);
     }

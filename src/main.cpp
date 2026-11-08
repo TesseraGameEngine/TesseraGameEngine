@@ -45,6 +45,8 @@ static std::ofstream g_log("engine.log");
 #include "Core/LargeWorldCoordinates.h" 
 #include "Streaming/WorldPartitionManager.h"
 #include "Streaming/WorldStreamer.h"
+#include "Tools/ModelOptimizer.h"
+#include "Tools/WorldBuilder.h"
 #include <mutex>
 #include <unordered_set> 
 #include "Core/EngineIconData.h"
@@ -116,6 +118,8 @@ struct GameConfig {
     bool bakeLighting{false};
     // --gpu-profile: log the GPU time of every pass (averaged) on exit
     bool gpuProfileLog{false};
+    // --start-at=<node name>: (standalone) the active camera starts where that node is
+    std::string startAt;
 
     static GameConfig Detect(int argc, char* argv[]) {
         GameConfig cfg;
@@ -138,6 +142,9 @@ struct GameConfig {
                 cfg.bakeLighting = true;
             } else if (arg == "--gpu-profile") {
                 cfg.gpuProfileLog = true;
+            } else if (arg.rfind("--start-at=", 0) == 0) {
+                // Standalone: the camera starts at this node's position and rotation
+                cfg.startAt = arg.substr(11);
             } else if (arg == "--no-raytracing") {
                 // Use the rasterised fallback (shadow maps, SSR) even on ray tracing GPUs
                 VulkanContext::Get().SetRayTracingAllowed(false);
@@ -1186,6 +1193,18 @@ private:
                 auto sun = m_scene.AddLightNode(LightType::Directional, "SunLight");
                 sun->position = glm::vec3(5.0f, 10.0f, 5.0f);
                 sun->lightIntensity = 1.0f;
+            }
+
+            // 4b. --start-at: the camera starts at a named node (viewpoints for screenshots)
+            if (!m_gameConfig.startAt.empty()) {
+                auto spot = m_scene.GetNodeByName(m_gameConfig.startAt);
+                auto cam = m_scene.GetActiveCamera();
+                if (spot && cam) {
+                    cam->position = spot->GetWorldPosition(m_scene);
+                    cam->rotation = spot->rotation;
+                } else {
+                    std::cerr << "[Standalone] --start-at: no node named '" << m_gameConfig.startAt << "'" << std::endl;
+                }
             }
 
             // 5. Start Gameplay Simulation
@@ -3189,8 +3208,8 @@ private:
                 auto meshResolver = [this](const Node& node, std::string& key, const MeshData*& data) {
                     return ResolveRayTracingMesh(node, key, data);
                 };
-                auto materialResolver = [this](const Node& node, Graphics::RayTracing::RayTracingInstance& inst) {
-                    ResolveRayTracingMaterial(node, inst);
+                auto materialResolver = [this](const Node& node, int submesh, Graphics::RayTracing::RayTracingInstance& inst) {
+                    ResolveRayTracingMaterial(node, submesh, inst);
                 };
                 if (rtOn) {
                     auto gameCam = activePlayScene.GetActiveCamera();
@@ -3209,12 +3228,13 @@ private:
                 if (rtOn) {
                     const VkDescriptorSet gameSet = vkRT->GetDescriptorSet(1);
                     const VkDescriptorSet editorSet = sameScene ? gameSet : vkRT->GetDescriptorSet(0);
-                    m_pipeline.SetViewRayTracing(VulkanPipeline::kViewPreview, gameSet);
-                    m_pipeline.SetViewRayTracing(VulkanPipeline::kViewPreviewMirror, gameSet);
-                    m_pipeline.SetViewRayTracing(VulkanPipeline::kViewPreviewProbe, gameSet);
-                    m_pipeline.SetViewRayTracing(VulkanPipeline::kViewEditor, editorSet);
-                    m_pipeline.SetViewRayTracing(VulkanPipeline::kViewEditorMirror, editorSet);
-                    m_pipeline.SetViewRayTracing(VulkanPipeline::kViewEditorProbe, editorSet);
+                    const bool rts = rtMgr.GetSettings().enableRTS;
+                    m_pipeline.SetViewRayTracing(VulkanPipeline::kViewPreview, gameSet, rts);
+                    m_pipeline.SetViewRayTracing(VulkanPipeline::kViewPreviewMirror, gameSet, rts);
+                    m_pipeline.SetViewRayTracing(VulkanPipeline::kViewPreviewProbe, gameSet, rts);
+                    m_pipeline.SetViewRayTracing(VulkanPipeline::kViewEditor, editorSet, rts);
+                    m_pipeline.SetViewRayTracing(VulkanPipeline::kViewEditorMirror, editorSet, rts);
+                    m_pipeline.SetViewRayTracing(VulkanPipeline::kViewEditorProbe, editorSet, rts);
                 }
             }
         }
@@ -4035,8 +4055,12 @@ private:
         m_residentMeshNames.erase(name);
     }
 
-    // A streamed-out terrain tile's generated mesh (its key is unique to the node id)
-    void ReleaseTerrainMesh(const std::string& key) {
+    // A streamed-out terrain tile's generated mesh and splat map (keys are unique to the node id)
+    void ReleaseTerrainMesh(const std::string& key, const std::string& splatKey) {
+        if (!splatKey.empty()) {
+            m_pipeline.ReleaseRuntimeTexture(splatKey);
+            m_uploadedSplats.erase(splatKey);
+        }
         if (key.empty()) return;
         Graphics::RayTracing::RayTracingManager::Get().UnregisterMesh("terrain:" + key);
         m_terrainCpuMeshes.erase(key);
@@ -4080,7 +4104,10 @@ private:
                     if (physics.IsInitialized()) physics.RemoveBodiesForNode(n->id);
                     Scripting::LuaScriptSystem::Get().DestroyNodeScript(n->id);
                 }
-                if (n->nodeType == NodeType::Terrain) ReleaseTerrainMesh(n->customMeshName);
+                if (n->nodeType == NodeType::Terrain) {
+                    auto terrain = std::dynamic_pointer_cast<TerrainNode>(n);
+                    ReleaseTerrainMesh(n->customMeshName, terrain ? terrain->GetSplatTextureKey() : std::string());
+                }
                 if (sc.GetSelectedId() == static_cast<int32_t>(n->id)) sc.ClearSelection();
             }
         };
@@ -4175,9 +4202,22 @@ private:
         return true;
     }
 
-    // Surface data for shading ray hits: the node's material, with the albedo texture (its own,
-    // or its first textured submesh's) for colour and alpha-tested cutouts
-    void ResolveRayTracingMaterial(const Node& node, Graphics::RayTracing::RayTracingInstance& inst) {
+    // Surface data for shading ray hits: the submesh's material (models with several), else the
+    // node's, with the albedo texture for colour and alpha-tested cutouts
+    void ResolveRayTracingMaterial(const Node& node, int submesh, Graphics::RayTracing::RayTracingInstance& inst) {
+        if (submesh >= 0 && node.type == ShapeType::Custom && node.texturePath.empty()) {
+            auto it = m_cpuMeshes.find(node.customMeshName);
+            if (it != m_cpuMeshes.end() && submesh < static_cast<int>(it->second.meshData.submeshes.size())) {
+                const SubmeshSection& sub = it->second.meshData.submeshes[submesh];
+                inst.albedo = glm::vec3(sub.diffuseColor);
+                inst.roughness = sub.roughness;
+                inst.metallic = sub.metallic;
+                inst.emissive = sub.emissiveColor * sub.emissiveIntensity;
+                inst.alphaCutoff = std::max(node.alphaCutoff, sub.alphaCutoff);
+                inst.albedoTexture = sub.diffuseTexturePath;
+                return;
+            }
+        }
         std::string albedo = node.texturePath;
         if (albedo.empty() && node.type == ShapeType::Custom) {
             auto it = m_cpuMeshes.find(node.customMeshName);
@@ -4310,6 +4350,14 @@ private:
 };
 
 int main(int argc, char* argv[]) {
+    // Offline tools (no window): model optimizer
+    {
+        bool handled = false;
+        int rc = Tools::RunModelOptimizerCommandLine(argc, argv, handled);
+        if (handled) return rc;
+        rc = Tools::RunWorldBuilderCommandLine(argc, argv, handled);
+        if (handled) return rc;
+    }
     try {
         LOG("main() started");
         EngineApp app;

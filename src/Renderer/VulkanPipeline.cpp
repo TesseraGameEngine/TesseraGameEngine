@@ -105,6 +105,7 @@ void VulkanPipeline::Cleanup() {
     auto& ctx = VulkanContext::Get();
     VkDevice device = ctx.GetDevice();
 
+    FlushPendingReleases(true);
     DestroyOcclusionResources();
     m_giVolume.Cleanup();
     m_vxgiVolume.Cleanup();
@@ -314,9 +315,10 @@ void VulkanPipeline::BindMaterialSet(VkCommandBuffer cmd, VkPipelineLayout layou
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &set, 4, offsets);
 }
 
-void VulkanPipeline::SetViewRayTracing(int viewSlot, VkDescriptorSet set) {
+void VulkanPipeline::SetViewRayTracing(int viewSlot, VkDescriptorSet set, bool rayTracedShadows) {
     if (viewSlot < 0 || viewSlot >= kViewCount) return;
     m_viewRTSets[viewSlot] = (m_graphicsPipelineRT != VK_NULL_HANDLE) ? set : VK_NULL_HANDLE;
+    m_viewRTShadows[viewSlot] = m_viewRTSets[viewSlot] != VK_NULL_HANDLE && rayTracedShadows;
 }
 
 void VulkanPipeline::BindForwardPipeline(VkCommandBuffer cmd, VkPipeline pipeline) const {
@@ -336,9 +338,44 @@ void VulkanPipeline::BindForwardPipeline(VkCommandBuffer cmd, VkPipeline pipelin
     }
 }
 
+void VulkanPipeline::ReleaseRuntimeTexture(const std::string& key) {
+    auto it = m_runtimeTextures.find(key);
+    if (it == m_runtimeTextures.end()) return;
+    PendingRelease release;
+    release.frame = m_frameCounter;
+    release.texture = it->second;
+    m_runtimeTextures.erase(it);
+    // Material sets naming it (keys are '|'-separated texture names)
+    const std::string token = "|" + key + "|";
+    for (auto set = m_textureDescriptorSets.begin(); set != m_textureDescriptorSets.end();) {
+        if ((set->first + "|").find(token) != std::string::npos) {
+            release.sets.push_back(set->second);
+            set = m_textureDescriptorSets.erase(set);
+        } else {
+            ++set;
+        }
+    }
+    m_pendingReleases.push_back(std::move(release));
+}
+
+void VulkanPipeline::FlushPendingReleases(bool all) {
+    VkDevice device = VulkanContext::Get().GetDevice();
+    auto it = m_pendingReleases.begin();
+    while (it != m_pendingReleases.end()) {
+        if (all || it->frame + kFramesInFlight + 1 <= m_frameCounter) {
+            if (!it->sets.empty()) vkFreeDescriptorSets(device, m_descriptorPool, static_cast<uint32_t>(it->sets.size()), it->sets.data());
+            if (it->texture) it->texture->Cleanup();
+            it = m_pendingReleases.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
 void VulkanPipeline::BeginFrame(uint32_t frameInFlight) {
     m_frameIndex = frameInFlight % kFramesInFlight;
     ++m_frameCounter;
+    FlushPendingReleases(false);
     m_particleUploadCursor = 0;
     ReleaseParticleUploads(false);
     m_instanceCursor = 0;
@@ -1436,24 +1473,27 @@ void VulkanPipeline::UpdateUniformBufferSlot(int viewSlot, const UniformBufferOb
 void VulkanPipeline::CreateDescriptorPool() {
     auto& ctx = VulkanContext::Get();
 
+    const uint32_t sets = kMaxMaterialSets;
     VkDescriptorPoolSize poolSizes[4]{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-    poolSizes[0].descriptorCount = 256;
+    poolSizes[0].descriptorCount = sets;
 
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = 256 * (kMaterialBindingCount - 1 - 4);
+    poolSizes[1].descriptorCount = sets * (kMaterialBindingCount - 1 - 4);
 
     poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC;
-    poolSizes[2].descriptorCount = 256 * 3;
+    poolSizes[2].descriptorCount = sets * 3;
 
     poolSizes[3].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSizes[3].descriptorCount = 256;
+    poolSizes[3].descriptorCount = sets;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    // Sets of streamed-out materials are freed individually (ReleaseRuntimeTexture)
+    poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
     poolInfo.poolSizeCount = 4;
     poolInfo.pPoolSizes = poolSizes;
-    poolInfo.maxSets = 256;
+    poolInfo.maxSets = sets;
 
     if (vkCreateDescriptorPool(ctx.GetDevice(), &poolInfo, nullptr, &m_descriptorPool) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create descriptor pool!");
@@ -1654,21 +1694,21 @@ void VulkanPipeline::SetViewTexture(int viewSlot, uint32_t binding, VkImageView 
     }
 }
 
-std::shared_ptr<VulkanTexture> VulkanPipeline::GetOrLoadTexture(const std::string& path, bool normalMap) {
+std::shared_ptr<VulkanTexture> VulkanPipeline::GetOrLoadTexture(const std::string& path, VulkanTexture::TextureUsage usage) {
     if (path.empty()) return m_defaultTexture;
     if (path[0] == '@') {
         auto runtime = m_runtimeTextures.find(path);
         return (runtime != m_runtimeTextures.end() && runtime->second) ? runtime->second : m_defaultTexture;
     }
 
-    const std::string key = normalMap ? path + "|normal" : path;
+    const std::string key = usage == VulkanTexture::TextureUsage::NormalMap ? path + "|normal"
+                          : usage == VulkanTexture::TextureUsage::Data ? path + "|data" : path;
     auto it = m_textures.find(key);
     if (it != m_textures.end()) {
         return it->second;
     }
 
-    auto tex = VulkanTexture::LoadCompressedFromFile(path, normalMap ? VulkanTexture::TextureUsage::NormalMap
-                                                                      : VulkanTexture::TextureUsage::Color);
+    auto tex = VulkanTexture::LoadCompressedFromFile(path, usage);
     m_textures[key] = tex;
     return tex;
 }
@@ -1704,19 +1744,19 @@ VkDescriptorSet VulkanPipeline::GetOrCreateDescriptorSet(
     const std::shared_ptr<VulkanTexture> textures[kMaterialTextureCount] = {
         // Block-compressed (see VulkanTexture::CompressionQuality); normal maps as BC5
         !albedoPath.empty() ? GetOrLoadTexture(albedoPath) : m_defaultTexture,
-        !normalPath.empty() ? GetOrLoadTexture(normalPath, true) : m_defaultNormalTexture,
-        !metallicPath.empty() ? GetOrLoadTexture(metallicPath) : m_defaultTexture,
-        !roughnessPath.empty() ? GetOrLoadTexture(roughnessPath) : m_defaultTexture,
-        !aoPath.empty() ? GetOrLoadTexture(aoPath) : m_defaultTexture,
+        !normalPath.empty() ? GetOrLoadTexture(normalPath, VulkanTexture::TextureUsage::NormalMap) : m_defaultNormalTexture,
+        !metallicPath.empty() ? GetOrLoadTexture(metallicPath, VulkanTexture::TextureUsage::Data) : m_defaultTexture,
+        !roughnessPath.empty() ? GetOrLoadTexture(roughnessPath, VulkanTexture::TextureUsage::Data) : m_defaultTexture,
+        !aoPath.empty() ? GetOrLoadTexture(aoPath, VulkanTexture::TextureUsage::Data) : m_defaultTexture,
         !emissivePath.empty() ? GetOrLoadTexture(emissivePath) : m_defaultTexture,
         !detailAlbedoPath.empty() ? GetOrLoadTexture(detailAlbedoPath) : m_defaultTexture,
-        !detailNormalPath.empty() ? GetOrLoadTexture(detailNormalPath, true) : m_defaultNormalTexture,
+        !detailNormalPath.empty() ? GetOrLoadTexture(detailNormalPath, VulkanTexture::TextureUsage::NormalMap) : m_defaultNormalTexture,
         terrainTextures ? GetOrLoadTexture(terrainTextures[0]) : m_defaultTexture,
         terrainTextures ? GetOrLoadTexture(terrainTextures[1]) : m_defaultTexture,
         terrainTextures ? GetOrLoadTexture(terrainTextures[2]) : m_defaultTexture,
         terrainTextures ? GetOrLoadTexture(terrainTextures[3]) : m_defaultTexture,
         terrainTextures ? GetOrLoadTexture(terrainTextures[4]) : m_defaultTexture,
-        !heightPath.empty() ? GetOrLoadTexture(heightPath) : m_defaultTexture
+        !heightPath.empty() ? GetOrLoadTexture(heightPath, VulkanTexture::TextureUsage::Data) : m_defaultTexture
     };
 
     auto& ctx = VulkanContext::Get();
@@ -1728,6 +1768,11 @@ VkDescriptorSet VulkanPipeline::GetOrCreateDescriptorSet(
 
     VkDescriptorSet newSet{VK_NULL_HANDLE};
     if (vkAllocateDescriptorSets(ctx.GetDevice(), &allocInfo, &newSet) != VK_SUCCESS) {
+        if (!m_descriptorPoolFullLogged) {
+            std::cerr << "[VulkanPipeline] Material descriptor pool is full (" << kMaxMaterialSets
+                      << " sets): further materials draw untextured" << std::endl;
+            m_descriptorPoolFullLogged = true;
+        }
         return m_descriptorSets[uboIndex];
     }
 
@@ -1741,6 +1786,11 @@ void VulkanPipeline::SetRuntimeTexture(const std::string& key, const unsigned ch
     auto it = m_runtimeTextures.find(key);
     if (it != m_runtimeTextures.end() && it->second && it->second->GetWidth() == width && it->second->GetHeight() == height) {
         it->second->UpdatePixels(rgba);
+        return;
+    }
+    if (it == m_runtimeTextures.end()) {
+        // Brand new (e.g. a streamed-in terrain tile's splat map): no set uses it yet, nothing to wait for
+        m_runtimeTextures[key] = VulkanTexture::CreateFromPixels(rgba, width, height);
         return;
     }
     // New (or resized): material sets made with the old one are dropped and remade on next use
@@ -2240,6 +2290,8 @@ void VulkanPipeline::RenderScene(VkCommandBuffer cmd, const Scene& scene,
         VkDescriptorSet set;
         PushConstantData push; // model unused
         std::vector<InstanceData> instances;
+        uint32_t firstIndex{0}; // index range (indexCount 0 = the whole mesh): a submesh
+        uint32_t indexCount{0};
     };
 
     // Helper lambda to draw nodes
@@ -2249,14 +2301,21 @@ void VulkanPipeline::RenderScene(VkCommandBuffer cmd, const Scene& scene,
 
         std::vector<DrawBatch> batches;
         std::unordered_map<std::string, size_t> batchIndex;
-        auto AddToBatch = [&](const GPUMesh* mesh, VkDescriptorSet set, const PushConstantData& pc) {
+        auto AddToBatch = [&](const GPUMesh* mesh, VkDescriptorSet set, const PushConstantData& pc,
+                              uint32_t firstIndex = 0, uint32_t indexCount = 0) {
             PushConstantData keyPush = pc;
             keyPush.model = glm::mat4(0.0f);
             std::string key(reinterpret_cast<const char*>(&mesh), sizeof(mesh));
             key.append(reinterpret_cast<const char*>(&set), sizeof(set));
             key.append(reinterpret_cast<const char*>(&keyPush), sizeof(keyPush));
+            key.append(reinterpret_cast<const char*>(&firstIndex), sizeof(firstIndex));
             auto [it, inserted] = batchIndex.try_emplace(key, batches.size());
-            if (inserted) batches.push_back(DrawBatch{ mesh, set, keyPush, {} });
+            if (inserted) {
+                DrawBatch batch{ mesh, set, keyPush, {} };
+                batch.firstIndex = firstIndex;
+                batch.indexCount = indexCount;
+                batches.push_back(std::move(batch));
+            }
             batches[it->second].instances.push_back(InstanceData{ pc.model, pc.model });
         };
 
@@ -2415,7 +2474,8 @@ void VulkanPipeline::RenderScene(VkCommandBuffer cmd, const Scene& scene,
                               (!node->roughnessMapPath.empty() ? TEX_ROUGHNESS : 0) |
                               (!node->aoMapPath.empty() ? TEX_AO : 0) |
                               (!node->emissiveMapPath.empty() ? TEX_EMISSIVE : 0) |
-                              (!node->heightMapPath.empty() ? TEX_HEIGHT : 0);
+                              (!node->heightMapPath.empty() ? TEX_HEIGHT : 0) |
+                              (!node->metallicMapPath.empty() && node->metallicMapPath == node->roughnessMapPath ? TEX_PACKED_MR : 0);
             pc.alphaCutoff = node->alphaCutoff;
             pc.materialFlags = (node->doubleSided ? MAT_DOUBLE_SIDED : 0) |
                                (pipeline == m_graphicsPipelineTransparent ? MAT_TRANSPARENT : 0) |
@@ -2473,11 +2533,20 @@ void VulkanPipeline::RenderScene(VkCommandBuffer cmd, const Scene& scene,
             // Opaque meshes with identical mesh, material and settings are drawn together below.
             // Sorted transparents, mirrors, colliders and decals keep their own draws.
             // Multi-material submesh draws (glTF primitives / FBX material partitions)
-            if (mesh.submeshes.size() > 1 && !overrideColor.has_value() && node->nodeType != NodeType::Collider && node->nodeType != NodeType::Decal) {
-                VkBuffer subVertexBuffers[] = { mesh.vertexBuffer };
-                VkDeviceSize subOffsets[] = { 0 };
-                vkCmdBindVertexBuffers(cmd, 0, 1, subVertexBuffers, subOffsets);
-                vkCmdBindIndexBuffer(cmd, mesh.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+            // A single textured material counts too when the node has no texture of its own
+            // (models placed by tools / scene files keep their material in the model)
+            const bool useSubmeshMaterials = !mesh.submeshes.empty() &&
+                (mesh.submeshes.size() > 1 || (node->texturePath.empty() && !mesh.submeshes[0].diffuseTexturePath.empty()));
+            if (useSubmeshMaterials && !overrideColor.has_value() && node->nodeType != NodeType::Collider && node->nodeType != NodeType::Decal) {
+                // Opaque submesh draws are instanced across nodes (forests of the same tree);
+                // see-through and mirror ones keep their own draws
+                const bool subBatchable = pipeline != m_graphicsPipelineTransparent && !node->isMirror;
+                if (!subBatchable) {
+                    VkBuffer subVertexBuffers[] = { mesh.vertexBuffer };
+                    VkDeviceSize subOffsets[] = { 0 };
+                    vkCmdBindVertexBuffers(cmd, 0, 1, subVertexBuffers, subOffsets);
+                    vkCmdBindIndexBuffer(cmd, mesh.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+                }
                 for (const SubmeshSection& sub : mesh.submeshes) {
                     if (sub.indexCount == 0) continue;
                     const std::string& subAlbedo = !sub.diffuseTexturePath.empty() ? sub.diffuseTexturePath : node->texturePath;
@@ -2492,6 +2561,7 @@ void VulkanPipeline::RenderScene(VkCommandBuffer cmd, const Scene& scene,
                     subPc.color = sub.diffuseColor;
                     subPc.roughness = sub.roughness;
                     subPc.metallic = sub.metallic;
+                    subPc.alphaCutoff = std::max(pc.alphaCutoff, sub.alphaCutoff);
                     if (sub.emissiveIntensity > 0.0f) {
                         subPc.emissiveColorAndIntensity = glm::vec4(sub.emissiveColor, sub.emissiveIntensity);
                     }
@@ -2501,7 +2571,12 @@ void VulkanPipeline::RenderScene(VkCommandBuffer cmd, const Scene& scene,
                                          (!subRough.empty() ? TEX_ROUGHNESS : 0) |
                                          (!subAO.empty() ? TEX_AO : 0) |
                                          (!subEmit.empty() ? TEX_EMISSIVE : 0) |
-                                         (!node->heightMapPath.empty() ? TEX_HEIGHT : 0);
+                                         (!node->heightMapPath.empty() ? TEX_HEIGHT : 0) |
+                                         (!subMetal.empty() && subMetal == subRough ? TEX_PACKED_MR : 0);
+                    if (subBatchable) {
+                        AddToBatch(&mesh, subSet, subPc, sub.firstIndex, sub.indexCount);
+                        continue;
+                    }
                     BindMaterialSet(cmd, m_pipelineLayout, subSet);
                     vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstantData), &subPc);
                     vkCmdDrawIndexed(cmd, sub.indexCount, 1, sub.firstIndex, 0, 0);
@@ -2559,14 +2634,14 @@ void VulkanPipeline::RenderScene(VkCommandBuffer cmd, const Scene& scene,
                 PushConstantData pc = batch.push;
                 pc.materialFlags |= MAT_INSTANCED;
                 vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstantData), &pc);
-                vkCmdDrawIndexed(cmd, batch.mesh->indexCount, count, 0, 0, first);
+                vkCmdDrawIndexed(cmd, batch.indexCount ? batch.indexCount : batch.mesh->indexCount, count, batch.firstIndex, 0, first);
             } else {
                 // A single object, or this frame's instance budget is used up: plain draws
                 for (const InstanceData& instance : batch.instances) {
                     PushConstantData pc = batch.push;
                     pc.model = instance.model;
                     vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstantData), &pc);
-                    vkCmdDrawIndexed(cmd, batch.mesh->indexCount, 1, 0, 0, 0);
+                    vkCmdDrawIndexed(cmd, batch.indexCount ? batch.indexCount : batch.mesh->indexCount, 1, batch.firstIndex, 0, 0);
                 }
             }
         }
@@ -3284,6 +3359,8 @@ void VulkanPipeline::RenderNormalDepthPrepass(VkCommandBuffer cmd, const Scene& 
         VkDescriptorSet set;
         PrepassPushConstants push; // only the packed bottom-row values are set
         std::vector<InstanceData> instances;
+        uint32_t firstIndex{0};    // index range drawn (indexCount 0 = the whole mesh)
+        uint32_t indexCount{0};
     };
     std::vector<PrepassBatch> batches;
     std::unordered_map<std::string, size_t> batchIndex;
@@ -3311,6 +3388,48 @@ void VulkanPipeline::RenderNormalDepthPrepass(VkCommandBuffer cmd, const Scene& 
         const GPUMesh* mesh = ResolveNodeMesh(*node, meshes, customMeshes, distToCam);
         if (!mesh || mesh->indexCount == 0) continue;
 
+        // Models with cut-out submeshes (leaf and needle cards): each submesh is drawn with its own
+        // albedo map and cutoff, so the gaps between leaves don't occlude (SSAO, SSR, depth)
+        bool submeshCutouts = false;
+        if (node->texturePath.empty()) {
+            for (const auto& sub : mesh->submeshes) {
+                if (sub.alphaCutoff > 0.0f && !sub.diffuseTexturePath.empty()) { submeshCutouts = true; break; }
+            }
+        }
+        if (submeshCutouts) {
+            const glm::mat4 model = node->GetWorldTransformMatrix(scene);
+            const auto key = std::make_pair(viewSlot, node->id);
+            auto prevIt = m_prevModelMatrices.find(key);
+            const glm::mat4 prevModel = (prevIt != m_prevModelMatrices.end()) ? prevIt->second : model;
+            m_prevModelMatrices[key] = model;
+            for (const auto& sub : mesh->submeshes) {
+                if (sub.indexCount == 0) continue;
+                const float cutoff = std::max(node->alphaCutoff, sub.alphaCutoff);
+                const bool cut = cutoff > 0.0f && !sub.diffuseTexturePath.empty();
+                VkDescriptorSet subSet = cut ? GetOrCreateDescriptorSet(uboIdx, sub.diffuseTexturePath, "", "", "", "", "")
+                                             : m_descriptorSets[uboIdx];
+                PrepassPushConstants keyPush{};
+                keyPush.model[0][3] = node->color.a;
+                keyPush.model[1][3] = cut ? cutoff : 0.0f;
+                keyPush.model[2][3] = static_cast<float>((cut ? 1 : 0) | (node->doubleSided ? 2 : 0));
+                keyPush.prevModel[0][3] = sub.roughness;
+                keyPush.prevModel[1][3] = sub.metallic;
+                std::string batchKey(reinterpret_cast<const char*>(&mesh), sizeof(mesh));
+                batchKey.append(reinterpret_cast<const char*>(&subSet), sizeof(subSet));
+                batchKey.append(reinterpret_cast<const char*>(&keyPush), sizeof(keyPush));
+                batchKey.append(reinterpret_cast<const char*>(&sub.firstIndex), sizeof(sub.firstIndex));
+                auto [bit, binserted] = batchIndex.try_emplace(batchKey, batches.size());
+                if (binserted) {
+                    PrepassBatch batch{ mesh, mesh->vertexBuffer, subSet, keyPush, {} };
+                    batch.firstIndex = sub.firstIndex;
+                    batch.indexCount = sub.indexCount;
+                    batches.push_back(std::move(batch));
+                }
+                batches[bit->second].instances.push_back(InstanceData{ model, prevModel });
+            }
+            continue;
+        }
+
         // Only the albedo map matters here (for alpha cutout)
         const bool hasRoughnessMap = !node->roughnessMapPath.empty();
         const bool hasMetallicMap = !node->metallicMapPath.empty();
@@ -3330,7 +3449,8 @@ void VulkanPipeline::RenderNormalDepthPrepass(VkCommandBuffer cmd, const Scene& 
         const bool hasAlbedo = node->alphaCutoff > 0.0f && !node->texturePath.empty();
         pc.model[0][3] = node->color.a;
         pc.model[1][3] = node->alphaCutoff;
-        pc.model[2][3] = static_cast<float>((hasAlbedo ? 1 : 0) | (node->doubleSided ? 2 : 0) | (hasRoughnessMap ? 16 : 0) | (hasMetallicMap ? 32 : 0));
+        pc.model[2][3] = static_cast<float>((hasAlbedo ? 1 : 0) | (node->doubleSided ? 2 : 0) | (hasRoughnessMap ? 16 : 0) | (hasMetallicMap ? 32 : 0) |
+                                               (hasRoughnessMap && node->roughnessMapPath == node->metallicMapPath ? 64 : 0));
         pc.prevModel[0][3] = node->roughness; // surface values for screen-space reflections
         pc.prevModel[1][3] = node->metallic;
 
@@ -3382,7 +3502,7 @@ void VulkanPipeline::RenderNormalDepthPrepass(VkCommandBuffer cmd, const Scene& 
             PrepassPushConstants pc = batch.push; // flag 4: matrices from the instance buffer
             pc.model[2][3] = static_cast<float>(static_cast<int>(pc.model[2][3] + 0.5f) | 4);
             vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PrepassPushConstants), &pc);
-            vkCmdDrawIndexed(cmd, batch.mesh->indexCount, count, 0, 0, first);
+            vkCmdDrawIndexed(cmd, batch.indexCount ? batch.indexCount : batch.mesh->indexCount, count, batch.firstIndex, 0, first);
         } else {
             for (const InstanceData& instance : batch.instances) {
                 PrepassPushConstants pc = batch.push;
@@ -3394,7 +3514,7 @@ void VulkanPipeline::RenderNormalDepthPrepass(VkCommandBuffer cmd, const Scene& 
                 }
                 pc.prevModel[3][3] = 1.0f;
                 vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PrepassPushConstants), &pc);
-                vkCmdDrawIndexed(cmd, batch.mesh->indexCount, 1, 0, 0, 0);
+                vkCmdDrawIndexed(cmd, batch.indexCount ? batch.indexCount : batch.mesh->indexCount, 1, batch.firstIndex, 0, 0);
             }
         }
     }
@@ -3568,6 +3688,9 @@ void VulkanPipeline::RenderShadowPass(VkCommandBuffer cmd, const Scene& scene,
         ubo.shelterParams = m_shelterParams[slot];
     }
     if (ubo.enableShadows != 1) return;
+    // Ray-traced shadows replace the sun cascades and local shadow maps for this view (lights
+    // too far away to be traced stay unshadowed, as they would be past the shadow distance)
+    if (m_viewRTShadows[viewSlot]) return;
 
     // ---- Sun: the first shadow-casting directional light, with cascades ----
     int sunIndex = -1;

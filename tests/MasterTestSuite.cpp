@@ -4279,7 +4279,7 @@ TEST_CASE(RoadmapRayTracing, SceneSyncUsesRealGeometryAndContexts) {
         data = currentRock;
         return true;
     };
-    RayTracingManager::MaterialResolver material = [](const Node& node, RayTracingInstance& inst) {
+    RayTracingManager::MaterialResolver material = [](const Node& node, int, RayTracingInstance& inst) {
         if (node.name == "Leaves") inst.albedoTexture = "leaves.png";
     };
 

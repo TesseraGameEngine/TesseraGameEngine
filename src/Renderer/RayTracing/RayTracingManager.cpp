@@ -4,6 +4,8 @@
 #include "Scene/Scene.h"
 #include "Scene/Nodes/3D/MeshNode.h"
 #include <iostream>
+#include <algorithm>
+#include <unordered_map>
 
 namespace Graphics {
 namespace RayTracing {
@@ -108,6 +110,7 @@ RayTracingMeshHandle RayTracingManager::RegisterMesh(const std::string& cacheKey
     if (handle != kInvalidMeshHandle) {
         CachedMesh cached;
         cached.handle = handle;
+        cached.parts = { handle };
         cached.vertexCount = vertices.size();
         cached.indexCount = indices.size();
         m_meshCache[cacheKey] = cached;
@@ -115,11 +118,47 @@ RayTracingMeshHandle RayTracingManager::RegisterMesh(const std::string& cacheKey
     return handle;
 }
 
+bool RayTracingManager::RegisterMeshParts(const std::string& cacheKey, const MeshData& data) {
+    if (!m_backend) return false;
+    if (data.submeshes.empty()) {
+        return RegisterMesh(cacheKey, data.vertices, data.indices) != kInvalidMeshHandle;
+    }
+    CachedMesh cached;
+    cached.perSubmesh = true;
+    cached.vertexCount = data.vertices.size();
+    cached.indexCount = data.indices.size();
+    for (const auto& sub : data.submeshes) {
+        // Only the vertices this submesh uses, re-indexed
+        std::vector<Vertex> verts;
+        std::vector<uint32_t> idx;
+        std::unordered_map<uint32_t, uint32_t> remap;
+        const size_t end = std::min<size_t>(static_cast<size_t>(sub.firstIndex) + sub.indexCount, data.indices.size());
+        for (size_t i = sub.firstIndex; i < end; ++i) {
+            const uint32_t src = data.indices[i];
+            if (src >= data.vertices.size()) continue;
+            auto it = remap.find(src);
+            if (it == remap.end()) {
+                it = remap.emplace(src, static_cast<uint32_t>(verts.size())).first;
+                verts.push_back(data.vertices[src]);
+            }
+            idx.push_back(it->second);
+        }
+        idx.resize(idx.size() / 3 * 3);
+        const RayTracingMeshHandle h = idx.empty() ? kInvalidMeshHandle : m_backend->CreateBLAS(verts, idx);
+        cached.parts.push_back(h); // invalid parts keep their submesh slot (skipped when instancing)
+    }
+    cached.handle = cached.parts.empty() ? kInvalidMeshHandle : cached.parts.front();
+    m_meshCache[cacheKey] = std::move(cached);
+    return true;
+}
+
 void RayTracingManager::UnregisterMesh(const std::string& cacheKey) {
     auto it = m_meshCache.find(cacheKey);
     if (it != m_meshCache.end()) {
         if (m_backend) {
-            m_backend->DestroyBLAS(it->second.handle);
+            for (RayTracingMeshHandle h : it->second.parts) {
+                if (h != kInvalidMeshHandle) m_backend->DestroyBLAS(h);
+            }
         }
         m_meshCache.erase(it);
     }
@@ -185,7 +224,6 @@ void RayTracingManager::SyncScene(const Scene& scene, uint32_t context,
         const bool resolved = meshResolver ? meshResolver(*node, cacheKey, data) : builtinResolver(*node, cacheKey, data);
         if (!resolved || cacheKey.empty()) continue;
 
-        RayTracingMeshHandle handle = kInvalidMeshHandle;
         auto it = m_meshCache.find(cacheKey);
         if (it != m_meshCache.end()) {
             // Same key, different data (re-imported model, sculpted terrain): rebuild it
@@ -195,35 +233,41 @@ void RayTracingManager::SyncScene(const Scene& scene, uint32_t context,
             if (changed && it->second.source != nullptr) {
                 UnregisterMesh(cacheKey);
                 it = m_meshCache.end();
-            } else {
-                if (data) it->second.source = data;
-                handle = it->second.handle;
+            } else if (data) {
+                it->second.source = data;
             }
         }
         if (it == m_meshCache.end()) {
             if (!data || data->vertices.empty()) continue;
-            handle = RegisterMesh(cacheKey, data->vertices, data->indices);
-            auto cached = m_meshCache.find(cacheKey);
-            if (cached != m_meshCache.end()) cached->second.source = data;
+            // Meshes with several materials: a BLAS per submesh, so each has its own surface
+            // (bark stays solid while leaves are alpha-tested)
+            if (data->submeshes.size() > 1) RegisterMeshParts(cacheKey, *data);
+            else RegisterMesh(cacheKey, data->vertices, data->indices);
+            it = m_meshCache.find(cacheKey);
+            if (it == m_meshCache.end()) continue;
+            it->second.source = data;
         }
-        if (handle == kInvalidMeshHandle) continue;
+        const CachedMesh& cached = it->second;
+        const bool hasSubmeshes = cached.perSubmesh || (data && data->submeshes.size() == 1);
 
-        RayTracingInstance inst;
-        inst.nodeId = node->id;
-        inst.meshHandle = handle;
-        inst.transform = world;
-        inst.customId = node->id;
-        inst.mask = kRTMaskOpaque;
-        inst.albedo = glm::vec3(node->color);
-        inst.roughness = node->roughness;
-        inst.metallic = node->metallic;
-        inst.emissive = node->emissiveColor * node->emissiveIntensity;
-        inst.alphaCutoff = node->alphaCutoff;
-        if (materialResolver) materialResolver(*node, inst);
-        inst.isOpaque = inst.alphaCutoff <= 0.001f || inst.albedoTexture.empty();
-        if (!inst.isOpaque) inst.mask = kRTMaskFoliage;
-
-        instances.push_back(std::move(inst));
+        for (size_t part = 0; part < cached.parts.size(); ++part) {
+            if (cached.parts[part] == kInvalidMeshHandle) continue;
+            RayTracingInstance inst;
+            inst.nodeId = node->id;
+            inst.meshHandle = cached.parts[part];
+            inst.transform = world;
+            inst.customId = node->id;
+            inst.mask = kRTMaskOpaque;
+            inst.albedo = glm::vec3(node->color);
+            inst.roughness = node->roughness;
+            inst.metallic = node->metallic;
+            inst.emissive = node->emissiveColor * node->emissiveIntensity;
+            inst.alphaCutoff = node->alphaCutoff;
+            if (materialResolver) materialResolver(*node, hasSubmeshes ? static_cast<int>(part) : -1, inst);
+            inst.isOpaque = inst.alphaCutoff <= 0.001f || inst.albedoTexture.empty();
+            if (!inst.isOpaque) inst.mask = kRTMaskFoliage;
+            instances.push_back(std::move(inst));
+        }
     }
 
     m_backend->BuildTLAS(instances, context);

@@ -1,0 +1,78 @@
+{
+  "source": "Poly Haven (https://polyhaven.com) - all assets CC0 (public domain)",
+  "modelResolution": "1k",
+  "textureResolution": "2k",
+  "models": {
+    "trees": [
+      "fir_tree_01",
+      "fir_sapling",
+      "fir_sapling_medium",
+      "pine_sapling_small",
+      "island_tree_01",
+      "island_tree_02",
+      "tree_small_02",
+      "dead_tree_trunk"
+    ],
+    "plants": [
+      "fern_02",
+      "grass_medium_01",
+      "grass_medium_02",
+      "nettle_plant",
+      "moss_01",
+      "dandelion_01",
+      "shrub_02",
+      "shrub_03",
+      "shrub_04",
+      "wild_rooibos_bush"
+    ],
+    "rocks": [
+      "boulder_01",
+      "coast_rocks_01",
+      "coast_rocks_02",
+      "coast_rocks_05",
+      "coast_land_rocks_02",
+      "coastal_cliff_01",
+      "coastal_cliff_02",
+      "rock_moss_set_01",
+      "rock_face_01",
+      "namaqualand_stones_01"
+    ],
+    "debris": [
+      "pine_roots",
+      "bark_debris_01",
+      "dry_branches_medium_01",
+      "tree_stump_01",
+      "tree_stump_02"
+    ],
+    "camp": [
+      "modular_wooden_pier",
+      "ship_pinnace",
+      "wooden_barrels_01",
+      "barrel_03",
+      "wooden_crate_01",
+      "wooden_crate_02",
+      "wooden_lantern_01",
+      "stone_fire_pit",
+      "wooden_picnic_table",
+      "wooden_bucket_01",
+      "lifebuoy",
+      "ocean_buoy",
+      "wooden_axe",
+      "folding_wooden_stool"
+    ]
+  },
+  "textures": {
+    "terrain_sand": "coast_sand_01",
+    "terrain_grass": "aerial_grass_rock",
+    "terrain_forest": "forest_ground_04",
+    "terrain_rock": "rock_face_03",
+    "shore_wet_sand": "damp_beach_sand"
+  },
+  "textureMaps": [
+    "Diffuse",
+    "nor_gl",
+    "Rough",
+    "AO"
+  ],
+  "note": "Scanned trees are millions of triangles: run Tessera --optimize-models after fetching (see tools/README.md) to build decimated real-scale LODs."
+}

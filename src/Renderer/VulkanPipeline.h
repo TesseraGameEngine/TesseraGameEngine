@@ -138,6 +138,12 @@ public:
     // A texture made from pixels (an editor-painted map), named by a key starting with '@' that
     // material sets can use like a path. Created on first use, updated in place after.
     void SetRuntimeTexture(const std::string& key, const unsigned char* rgba, uint32_t width, uint32_t height);
+    // Frees a runtime texture ('@' key) and the material sets that use it, once the frames in
+    // flight are done with them (streamed-out terrain tiles)
+    void ReleaseRuntimeTexture(const std::string& key);
+    // Material descriptor sets: enough for big streamed worlds (each terrain tile has its own
+    // splat map, per view)
+    static constexpr uint32_t kMaxMaterialSets = 4096;
     bool HasFluids() const { return !m_fluidBodies.empty(); }
     void CreateFluidPipelines(VkRenderPass particlePass, VkRenderPass thicknessPass, VkRenderPass smoothPass);
     // thickness: the thickness pass instead of the distance pass
@@ -146,7 +152,9 @@ public:
     void DrawFluidSmooth(VkCommandBuffer cmd, int viewSlot, int pass);
 
     // Material texture (block-compressed per VulkanTexture's quality setting); normalMap: BC5
-    std::shared_ptr<VulkanTexture> GetOrLoadTexture(const std::string& path, bool normalMap = false);
+    // usage: colour maps are sRGB (decoded to linear); data maps and normals are linear
+    std::shared_ptr<VulkanTexture> GetOrLoadTexture(const std::string& path,
+                                                    VulkanTexture::TextureUsage usage = VulkanTexture::TextureUsage::Color);
 
     // Points a view's material descriptor sets at one of its per-view textures (kSSAOBinding,
     // kSceneColorBinding or kMirrorBinding). Call after Init and whenever the image is recreated;
@@ -236,7 +244,8 @@ public:
     // pipelines (frag_rt.spv) are then created. Each frame, SetViewRayTracing gives a view the
     // set to trace against (VK_NULL_HANDLE = draw that view with the rasterised fallback).
     void SetRayTracingSetLayout(VkDescriptorSetLayout layout) { m_rtSetLayout = layout; }
-    void SetViewRayTracing(int viewSlot, VkDescriptorSet set);
+    // rayTracedShadows: the view traces its shadows, so its shadow maps aren't rendered
+    void SetViewRayTracing(int viewSlot, VkDescriptorSet set, bool rayTracedShadows = false);
     bool HasRayTracingPipelines() const { return m_graphicsPipelineRT != VK_NULL_HANDLE; }
 
     // Occlusion culling for the main views (kViewEditor / kViewPreview). Each frame the bounding
@@ -380,6 +389,7 @@ private:
     VkDescriptorSetLayout m_rtSetLayout{VK_NULL_HANDLE};       // owned by VulkanRayTracing
     VkDescriptorSetLayout m_emptySetLayout{VK_NULL_HANDLE};    // set 1 placeholder without ray tracing
     VkDescriptorSet m_viewRTSets[kViewCount]{};
+    bool m_viewRTShadows[kViewCount]{};
     int m_activeRTView{-1};                                     // view RenderScene is drawing with RT
     // Binds a forward-shaded pipeline for the view being rendered: its ray-traced variant (and
     // set 1) when that view traces rays this frame
@@ -539,6 +549,15 @@ private:
     VkDeviceSize m_particleUploadCursor{0};
     std::vector<std::pair<ParticleUpload, uint64_t>> m_retiredParticleUploads; // with the frame they were replaced in
     uint64_t m_frameCounter{0};
+    // Released runtime textures and material sets, freed after the frames that may use them
+    struct PendingRelease {
+        uint64_t frame{0};
+        std::vector<VkDescriptorSet> sets;
+        std::shared_ptr<VulkanTexture> texture;
+    };
+    std::vector<PendingRelease> m_pendingReleases;
+    bool m_descriptorPoolFullLogged{false};
+    void FlushPendingReleases(bool all);
     VkDeviceSize UploadParticleQuads(const std::vector<ParticleQuad>& quads, VkBuffer& buffer);
     void ReleaseParticleUploads(bool all);
     std::map<uint32_t, GpuParticleDraw> m_gpuParticleDraws;

@@ -39,8 +39,10 @@ void main() {
 
     vec3 worldNormal = normalize(gl_FrontFacing ? inWorldNormal : -inWorldNormal);
     // w packs metallic and roughness as 4-bit values (exact in a 16-bit float): 1 + metal * 16 + rough
-    float roughness = ((flags & 16) != 0) ? inSurface.x * texture(roughnessMap, inTexCoord).r : inSurface.x;
-    float metallic  = ((flags & 32) != 0) ? inSurface.y * texture(metallicMap, inTexCoord).r  : inSurface.y;
+    // 64: glTF packed metallic-roughness (roughness in G, metallic in B)
+    const bool packedMR = (flags & 64) != 0;
+    float roughness = ((flags & 16) != 0) ? inSurface.x * (packedMR ? texture(roughnessMap, inTexCoord).g : texture(roughnessMap, inTexCoord).r) : inSurface.x;
+    float metallic  = ((flags & 32) != 0) ? inSurface.y * (packedMR ? texture(metallicMap, inTexCoord).b : texture(metallicMap, inTexCoord).r) : inSurface.y;
     float packedSurface = 1.0 + floor(clamp(metallic, 0.0, 1.0) * 15.0 + 0.5) * 16.0 +
                           floor(clamp(roughness, 0.0, 1.0) * 15.0 + 0.5);
 

@@ -366,7 +366,7 @@ std::shared_ptr<VulkanTexture> VulkanTexture::CreateDefaultNormal() {
     return texture;
 }
 
-std::shared_ptr<VulkanTexture> VulkanTexture::LoadFromFile(const std::string& filepath) {
+std::shared_ptr<VulkanTexture> VulkanTexture::LoadFromFile(const std::string& filepath, bool srgb) {
     int texWidth, texHeight, texChannels;
     std::string clean = filepath;
     std::replace(clean.begin(), clean.end(), '\\', '/');
@@ -391,7 +391,8 @@ std::shared_ptr<VulkanTexture> VulkanTexture::LoadFromFile(const std::string& fi
 
     auto texture = std::make_shared<VulkanTexture>();
     texture->m_filePath = filepath;
-    bool ok = texture->InitFromMemory(pixels, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), VK_FORMAT_R8G8B8A8_UNORM);
+    bool ok = texture->InitFromMemory(pixels, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight),
+                                      srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM);
     stbi_image_free(pixels);
 
     if (!ok) {
@@ -468,6 +469,9 @@ constexpr uint32_t kCacheMagic = 0x31434254; // "TBC1"
 const char* FormatName(VkFormat format) {
     switch (format) {
         case VK_FORMAT_BC1_RGB_UNORM_BLOCK: return "BC1";
+        case VK_FORMAT_BC1_RGB_SRGB_BLOCK: return "BC1 sRGB";
+        case VK_FORMAT_BC3_SRGB_BLOCK: return "BC3 sRGB";
+        case VK_FORMAT_BC7_SRGB_BLOCK: return "BC7 sRGB";
         case VK_FORMAT_BC3_UNORM_BLOCK: return "BC3";
         case VK_FORMAT_BC5_UNORM_BLOCK: return "BC5";
         case VK_FORMAT_BC7_UNORM_BLOCK: return "BC7";
@@ -527,11 +531,12 @@ void WriteCompressedCache(const std::string& path, VkFormat format, uint32_t wid
 } // namespace
 
 std::shared_ptr<VulkanTexture> VulkanTexture::LoadCompressedFromFile(const std::string& filepath, TextureUsage usage) {
+    const bool srgb = usage == TextureUsage::Color;
     if (s_compressionQuality == CompressionQuality::Off || !VulkanContext::Get().SupportsTextureCompressionBC()) {
-        return LoadFromFile(filepath);
+        return LoadFromFile(filepath, srgb);
     }
     const std::string file = ResolveTextureFile(filepath);
-    if (file.empty()) return LoadFromFile(filepath); // reports the failure and returns white
+    if (file.empty()) return LoadFromFile(filepath, srgb); // reports the failure and returns white
 
     VkFormat format = VK_FORMAT_UNDEFINED;
     uint32_t width = 0, height = 0;
@@ -544,10 +549,10 @@ std::shared_ptr<VulkanTexture> VulkanTexture::LoadCompressedFromFile(const std::
     if (!fromCache) {
         int w = 0, h = 0, channels = 0;
         stbi_uc* pixels = stbi_load(file.c_str(), &w, &h, &channels, STBI_rgb_alpha);
-        if (!pixels) return LoadFromFile(filepath);
+        if (!pixels) return LoadFromFile(filepath, srgb);
         if (w < 4 || h < 4) {
             stbi_image_free(pixels);
-            return LoadFromFile(filepath); // too small to be worth compressing
+            return LoadFromFile(filepath, srgb); // too small to be worth compressing
         }
         std::vector<unsigned char> level(pixels, pixels + static_cast<size_t>(w) * h * 4);
         stbi_image_free(pixels);
@@ -572,9 +577,16 @@ std::shared_ptr<VulkanTexture> VulkanTexture::LoadCompressedFromFile(const std::
         WriteCompressedCache(cachePath, format, width, height, mips);
     }
 
+    // The cache holds the blocks under the UNORM format; colour is sampled through the sRGB
+    // view of the same blocks (identical data, decoded to linear by the hardware)
+    if (srgb) {
+        if (format == VK_FORMAT_BC1_RGB_UNORM_BLOCK) format = VK_FORMAT_BC1_RGB_SRGB_BLOCK;
+        else if (format == VK_FORMAT_BC3_UNORM_BLOCK) format = VK_FORMAT_BC3_SRGB_BLOCK;
+        else if (format == VK_FORMAT_BC7_UNORM_BLOCK) format = VK_FORMAT_BC7_SRGB_BLOCK;
+    }
     auto texture = std::make_shared<VulkanTexture>();
     texture->m_filePath = filepath;
-    if (!texture->InitCompressed(format, width, height, mips)) return LoadFromFile(filepath);
+    if (!texture->InitCompressed(format, width, height, mips)) return LoadFromFile(filepath, srgb);
     std::cout << "[VulkanTexture] Loaded compressed texture (" << FormatName(format)
               << (fromCache ? ", cached" : "") << "): " << filepath << " (" << width << "x" << height << ")" << std::endl;
     return texture;

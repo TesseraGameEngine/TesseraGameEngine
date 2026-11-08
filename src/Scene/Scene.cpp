@@ -2102,7 +2102,8 @@ bool Scene::Deserialize(const JsonValue& json, std::function<bool(const std::str
             node->vertexCount = n["vertexCount"].AsUInt(0);
             node->triangleCount = n["triangleCount"].AsUInt(0);
 
-            if (loadMeshCallback && !node->customMeshName.empty()) {
+            // (terrain meshes are generated from the heights, not loaded)
+            if (loadMeshCallback && !node->customMeshName.empty() && node->nodeType != NodeType::Terrain) {
                 loadMeshCallback(node->customMeshName, node->customMeshName);
             }
         }

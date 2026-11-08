@@ -20,6 +20,7 @@ struct SubmeshSection {
     float emissiveIntensity{0.0f};
     float roughness{0.5f};
     float metallic{0.0f};
+    float alphaCutoff{0.0f}; // glTF alphaMode MASK: pixels with alpha below this are cut out (leaves)
 };
 
 struct Vertex {

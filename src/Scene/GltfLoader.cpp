@@ -6,6 +6,9 @@
 #include <cstring>
 #include <cmath>
 #include <algorithm>
+#include <functional>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 namespace {
 
@@ -89,6 +92,9 @@ bool ParseGltfJsonAndBuffers(const JsonValue& root,
                              LoadedMesh& outMesh,
                              bool autoCenterAndNormalize) {
     if (!root.IsObject() || !root.HasKey("asset")) return false;
+    // Files written by the model optimizer (Tools::ModelOptimizer) are already in real-world
+    // metres with their pivot at the base: they keep their size and origin (all LODs alike)
+    if (root["asset"]["extras"]["tesseraKeepScale"].AsBool(false)) autoCenterAndNormalize = false;
 
     std::vector<GltfBufferViewInfo> bufferViews;
     if (root.HasKey("bufferViews") && root["bufferViews"].IsArray()) {
@@ -144,7 +150,30 @@ bool ParseGltfJsonAndBuffers(const JsonValue& root,
         return "";
     };
 
-    // Parse first PBR material if present
+    // KHR_texture_transform on a material's base colour texture: the engine has one UV set per
+    // material, so the transform is baked into the UVs of the primitives that use it
+    struct UvTransform { glm::vec2 offset{0.0f}; glm::vec2 scale{1.0f}; float rotation{0.0f}; bool active{false}; };
+    std::vector<UvTransform> materialUvTransforms;
+    if (root.HasKey("materials") && root["materials"].IsArray()) {
+        for (const auto& mat : root["materials"].arrVal) {
+            UvTransform t;
+            const JsonValue* texInfo = nullptr;
+            if (mat.HasKey("pbrMetallicRoughness") && mat["pbrMetallicRoughness"].HasKey("baseColorTexture")) {
+                texInfo = &mat["pbrMetallicRoughness"]["baseColorTexture"];
+            } else if (mat.HasKey("normalTexture")) {
+                texInfo = &mat["normalTexture"];
+            }
+            if (texInfo && texInfo->HasKey("extensions") && (*texInfo)["extensions"].HasKey("KHR_texture_transform")) {
+                const auto& x = (*texInfo)["extensions"]["KHR_texture_transform"];
+                if (x["offset"].arrVal.size() >= 2) t.offset = glm::vec2(x["offset"][0].AsFloat(0.0f), x["offset"][1].AsFloat(0.0f));
+                if (x["scale"].arrVal.size() >= 2) t.scale = glm::vec2(x["scale"][0].AsFloat(1.0f), x["scale"][1].AsFloat(1.0f));
+                t.rotation = x["rotation"].AsFloat(0.0f);
+                t.active = true;
+            }
+            materialUvTransforms.push_back(t);
+        }
+    }
+
     // Parse all PBR materials if present
     std::vector<SubmeshSection> parsedMaterials;
     if (root.HasKey("materials") && root["materials"].IsArray()) {
@@ -157,8 +186,11 @@ bool ParseGltfJsonAndBuffers(const JsonValue& root,
                 if (pbr.HasKey("baseColorFactor") && pbr["baseColorFactor"].arrVal.size() >= 4) {
                     sm.diffuseColor = glm::vec4(pbr["baseColorFactor"][0].AsFloat(1.0f), pbr["baseColorFactor"][1].AsFloat(1.0f), pbr["baseColorFactor"][2].AsFloat(1.0f), pbr["baseColorFactor"][3].AsFloat(1.0f));
                 }
-                sm.metallic = pbr.HasKey("metallicFactor") ? pbr["metallicFactor"].AsFloat(0.0f) : 0.0f;
-                sm.roughness = pbr.HasKey("roughnessFactor") ? pbr["roughnessFactor"].AsFloat(0.5f) : 0.5f;
+                // glTF: the factors default to 1 and multiply the texture; without a texture the
+                // engine's own defaults (0.0 / 0.5) are kept for a neutral look
+                const bool smHasMR = pbr.HasKey("metallicRoughnessTexture");
+                sm.metallic = pbr.HasKey("metallicFactor") ? pbr["metallicFactor"].AsFloat(0.0f) : (smHasMR ? 1.0f : 0.0f);
+                sm.roughness = pbr.HasKey("roughnessFactor") ? pbr["roughnessFactor"].AsFloat(0.5f) : (smHasMR ? 1.0f : 0.5f);
                 if (pbr.HasKey("baseColorTexture") && pbr["baseColorTexture"].HasKey("index")) {
                     sm.diffuseTexturePath = resolveTextureUri(pbr["baseColorTexture"]["index"].AsInt(-1));
                 }
@@ -168,6 +200,7 @@ bool ParseGltfJsonAndBuffers(const JsonValue& root,
                     sm.roughnessMapPath = mrUri;
                 }
             }
+            if (mat["alphaMode"].AsString("OPAQUE") == "MASK") sm.alphaCutoff = mat["alphaCutoff"].AsFloat(0.5f);
             if (mat.HasKey("normalTexture") && mat["normalTexture"].HasKey("index")) sm.normalMapPath = resolveTextureUri(mat["normalTexture"]["index"].AsInt(-1));
             if (mat.HasKey("occlusionTexture") && mat["occlusionTexture"].HasKey("index")) sm.aoMapPath = resolveTextureUri(mat["occlusionTexture"]["index"].AsInt(-1));
             if (mat.HasKey("emissiveTexture") && mat["emissiveTexture"].HasKey("index")) sm.emissiveMapPath = resolveTextureUri(mat["emissiveTexture"]["index"].AsInt(-1));
@@ -191,8 +224,9 @@ bool ParseGltfJsonAndBuffers(const JsonValue& root,
                     pbr["baseColorFactor"][3].AsFloat(1.0f)
                 );
             }
-            outMesh.metallic = pbr.HasKey("metallicFactor") ? pbr["metallicFactor"].AsFloat(0.0f) : 0.0f;
-            outMesh.roughness = pbr.HasKey("roughnessFactor") ? pbr["roughnessFactor"].AsFloat(0.5f) : 0.5f;
+            const bool hasMR = pbr.HasKey("metallicRoughnessTexture");
+            outMesh.metallic = pbr.HasKey("metallicFactor") ? pbr["metallicFactor"].AsFloat(0.0f) : (hasMR ? 1.0f : 0.0f);
+            outMesh.roughness = pbr.HasKey("roughnessFactor") ? pbr["roughnessFactor"].AsFloat(0.5f) : (hasMR ? 1.0f : 0.5f);
             if (pbr.HasKey("baseColorTexture") && pbr["baseColorTexture"].HasKey("index")) {
                 outMesh.diffuseTexturePath = resolveTextureUri(pbr["baseColorTexture"]["index"].AsInt(-1));
             }
@@ -275,7 +309,60 @@ bool ParseGltfJsonAndBuffers(const JsonValue& root,
         return false;
     }
 
-    for (const auto& meshJson : root["meshes"].arrVal) {
+    // Which meshes to emit, placed by the glTF node hierarchy (models made of several parts rely
+    // on node transforms). Skinned models and files without nodes use the meshes as they are.
+    std::vector<std::pair<int, glm::mat4>> drawList;
+    if (!outMesh.hasSkeleton && root.HasKey("nodes") && root["nodes"].IsArray()) {
+        const auto& nodesJson = root["nodes"].arrVal;
+        auto localMatrix = [](const JsonValue& n) {
+            if (n.HasKey("matrix") && n["matrix"].arrVal.size() == 16) {
+                glm::mat4 m(1.0f);
+                for (int c = 0; c < 4; ++c)
+                    for (int r = 0; r < 4; ++r) m[c][r] = n["matrix"][c * 4 + r].AsFloat(c == r ? 1.0f : 0.0f);
+                return m;
+            }
+            glm::vec3 t(0.0f), sc(1.0f);
+            glm::quat q(1.0f, 0.0f, 0.0f, 0.0f);
+            if (n["translation"].arrVal.size() >= 3) t = glm::vec3(n["translation"][0].AsFloat(), n["translation"][1].AsFloat(), n["translation"][2].AsFloat());
+            if (n["rotation"].arrVal.size() >= 4) q = glm::quat(n["rotation"][3].AsFloat(1.0f), n["rotation"][0].AsFloat(), n["rotation"][1].AsFloat(), n["rotation"][2].AsFloat());
+            if (n["scale"].arrVal.size() >= 3) sc = glm::vec3(n["scale"][0].AsFloat(1.0f), n["scale"][1].AsFloat(1.0f), n["scale"][2].AsFloat(1.0f));
+            return glm::translate(glm::mat4(1.0f), t) * glm::mat4_cast(q) * glm::scale(glm::mat4(1.0f), sc);
+        };
+        std::function<void(int, const glm::mat4&, int)> visit = [&](int idx, const glm::mat4& parent, int depth) {
+            if (idx < 0 || idx >= static_cast<int>(nodesJson.size()) || depth > 64) return;
+            const auto& n = nodesJson[idx];
+            const glm::mat4 world = parent * localMatrix(n);
+            if (n.HasKey("mesh")) drawList.emplace_back(n["mesh"].AsInt(-1), world);
+            if (n.HasKey("children")) {
+                for (const auto& c : n["children"].arrVal) visit(c.AsInt(-1), world, depth + 1);
+            }
+        };
+        std::vector<int> roots;
+        if (root.HasKey("scenes") && root["scenes"].IsArray() && !root["scenes"].arrVal.empty()) {
+            const int sceneIdx = std::clamp(root["scene"].AsInt(0), 0, static_cast<int>(root["scenes"].arrVal.size()) - 1);
+            for (const auto& r : root["scenes"][sceneIdx]["nodes"].arrVal) roots.push_back(r.AsInt(-1));
+        } else {
+            // No scene: every node nobody lists as a child is a root
+            std::vector<bool> isChild(nodesJson.size(), false);
+            for (const auto& n : nodesJson) {
+                for (const auto& c : n["children"].arrVal) {
+                    const int ci = c.AsInt(-1);
+                    if (ci >= 0 && ci < static_cast<int>(isChild.size())) isChild[ci] = true;
+                }
+            }
+            for (size_t i = 0; i < nodesJson.size(); ++i) if (!isChild[i]) roots.push_back(static_cast<int>(i));
+        }
+        for (int r : roots) visit(r, glm::mat4(1.0f), 0);
+    }
+    if (drawList.empty()) {
+        for (size_t m = 0; m < root["meshes"].arrVal.size(); ++m) drawList.emplace_back(static_cast<int>(m), glm::mat4(1.0f));
+    }
+
+    for (const auto& [drawMeshIdx, drawMatrix] : drawList) {
+        if (drawMeshIdx < 0 || drawMeshIdx >= static_cast<int>(root["meshes"].arrVal.size())) continue;
+        const auto& meshJson = root["meshes"][drawMeshIdx];
+        const bool identityXform = drawMatrix == glm::mat4(1.0f);
+        const glm::mat3 normalXform = glm::transpose(glm::inverse(glm::mat3(drawMatrix)));
         if (!meshJson.HasKey("primitives") || !meshJson["primitives"].IsArray()) continue;
         for (const auto& prim : meshJson["primitives"].arrVal) {
             if (!prim.HasKey("attributes") || !prim["attributes"].IsObject()) continue;
@@ -311,6 +398,9 @@ bool ParseGltfJsonAndBuffers(const JsonValue& root,
 
             uint32_t firstIndex = static_cast<uint32_t>(outMesh.meshData.indices.size());
             uint32_t baseVertex = static_cast<uint32_t>(outMesh.meshData.vertices.size());
+            const int primMaterial = prim.HasKey("material") ? prim["material"].AsInt(0) : 0;
+            const UvTransform uvXform = (primMaterial >= 0 && primMaterial < static_cast<int>(materialUvTransforms.size()))
+                                            ? materialUvTransforms[primMaterial] : UvTransform{};
             for (size_t v = 0; v < posCount; ++v) {
                 Vertex vert{};
                 const float* p = reinterpret_cast<const float*>(posPtr + v * posStride);
@@ -353,6 +443,17 @@ bool ParseGltfJsonAndBuffers(const JsonValue& root,
                     vert.boneWeights = glm::vec4(w[0], w[1], w[2], w[3]);
                 }
 
+                if (uvXform.active) {
+                    // glTF: uv' = offset + rotate(scale * uv)
+                    const glm::vec2 s = vert.texCoord * uvXform.scale;
+                    const float c = std::cos(uvXform.rotation), sn = std::sin(uvXform.rotation);
+                    vert.texCoord = uvXform.offset + glm::vec2(c * s.x + sn * s.y, -sn * s.x + c * s.y);
+                }
+                if (!identityXform) {
+                    vert.pos = glm::vec3(drawMatrix * glm::vec4(vert.pos, 1.0f));
+                    const glm::vec3 n = normalXform * vert.normal;
+                    if (glm::dot(n, n) > 1e-12f) vert.normal = glm::normalize(n);
+                }
                 outMesh.meshData.vertices.push_back(vert);
             }
 
@@ -404,7 +505,7 @@ bool ParseGltfJsonAndBuffers(const JsonValue& root,
                             mt.positionDeltas.resize(dCount);
                             for (size_t k = 0; k < dCount; ++k) {
                                 const float* dp = reinterpret_cast<const float*>(dPtr + k * dStride);
-                                mt.positionDeltas[k] = glm::vec3(dp[0], dp[1], dp[2]);
+                                mt.positionDeltas[k] = glm::mat3(drawMatrix) * glm::vec3(dp[0], dp[1], dp[2]);
                             }
                         }
                     }
@@ -415,7 +516,7 @@ bool ParseGltfJsonAndBuffers(const JsonValue& root,
                             mt.normalDeltas.resize(dCount);
                             for (size_t k = 0; k < dCount; ++k) {
                                 const float* dn = reinterpret_cast<const float*>(dPtr + k * dStride);
-                                mt.normalDeltas[k] = glm::vec3(dn[0], dn[1], dn[2]);
+                                mt.normalDeltas[k] = normalXform * glm::vec3(dn[0], dn[1], dn[2]);
                             }
                         }
                     }

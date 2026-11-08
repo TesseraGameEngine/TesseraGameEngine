@@ -557,13 +557,15 @@ void main() {
 
     float metallic = pc.metallic;
     if (hasTex(TEX_METALLIC)) {
-        metallic = metallic * (triplanar ? SampleTriplanar(metallicMap, fragPosition, triWeights, triTile).r : texture(metallicMap, uv).r);
+        vec4 metalSample = triplanar ? SampleTriplanar(metallicMap, fragPosition, triWeights, triTile) : texture(metallicMap, uv);
+        metallic = metallic * (hasTex(TEX_PACKED_MR) ? metalSample.b : metalSample.r);
     }
     metallic = clamp(metallic, 0.0, 1.0);
 
     float roughness = pc.roughness;
     if (hasTex(TEX_ROUGHNESS)) {
-        roughness = roughness * (triplanar ? SampleTriplanar(roughnessMap, fragPosition, triWeights, triTile).r : texture(roughnessMap, uv).r);
+        vec4 roughSample = triplanar ? SampleTriplanar(roughnessMap, fragPosition, triWeights, triTile) : texture(roughnessMap, uv);
+        roughness = roughness * (hasTex(TEX_PACKED_MR) ? roughSample.g : roughSample.r);
     }
     if (terrainRoughness >= 0.0) roughness = terrainRoughness;
     roughness = clamp(roughness, 0.04, 1.0);

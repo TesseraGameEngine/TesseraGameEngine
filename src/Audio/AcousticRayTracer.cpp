@@ -14,19 +14,38 @@ AcousticRayTracer::AcousticRayTracer() {
 }
 
 void AcousticRayTracer::Clear() {
+    std::lock_guard<std::mutex> lock(m_mutex);
     m_obstacles.clear();
     m_portals.clear();
 }
 
 void AcousticRayTracer::AddObstacle(const glm::vec3& boxMin, const glm::vec3& boxMax, WallMaterialType material) {
+    std::lock_guard<std::mutex> lock(m_mutex);
     m_obstacles.push_back({ boxMin, boxMax, material });
 }
 
+void AcousticRayTracer::SetObstacles(std::vector<AcousticObstacle> obstacles) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_obstacles = std::move(obstacles);
+}
+
+size_t AcousticRayTracer::GetObstacleCount() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_obstacles.size();
+}
+
+std::vector<AcousticPortal> AcousticRayTracer::GetPortals() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_portals;
+}
+
 void AcousticRayTracer::AddPortal(const AcousticPortal& portal) {
+    std::lock_guard<std::mutex> lock(m_mutex);
     m_portals.push_back(portal);
 }
 
 void AcousticRayTracer::SetPortalOpenFraction(uint32_t portalId, float openFraction) {
+    std::lock_guard<std::mutex> lock(m_mutex);
     for (auto& p : m_portals) {
         if (p.portalId == portalId) {
             p.openFraction = glm::clamp(openFraction, 0.0f, 1.0f);
@@ -59,6 +78,7 @@ bool AcousticRayTracer::IntersectRayAABB(const glm::vec3& rayOrigin, const glm::
 }
 
 RayTracedAcousticResult AcousticRayTracer::TracePath(const glm::vec3& emitterPos, const glm::vec3& listenerPos) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
     RayTracedAcousticResult result;
     result.hasDirectLineOfSight = true;
     result.isPortaled = false;

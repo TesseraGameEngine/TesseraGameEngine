@@ -607,6 +607,7 @@ struct Node {
     float shoreFoamWidth{1.0f};                 // metres of foam where the water meets objects and shores
     float oceanSoundVolume{0.8f};               // surf and crashing waves (in Play); 0 = silent
     bool isReflectionProbe{false}; // captures the surroundings at this point for nearby reflections
+    bool occludesSound{false};     // solid enough to block sound (acoustic ray tracing); colliders and physics bodies always do
     float probeRadius{10.0f};      // metres the probe affects
     bool probeBoxProjection{false}; // correct reflections for a box-shaped room (parallax)
     bool isGIVolume{false};          // marks the box the baked lighting covers (centred on the node)

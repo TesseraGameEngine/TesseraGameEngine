@@ -527,23 +527,33 @@ size_t AudioEngine::GetActiveVoiceCount() const {
 }
 
 void AudioEngine::SyncAcousticObstacles(const Scene& scene) {
-    auto& art = AcousticRayTracer::Get();
-    art.Clear();
+    std::vector<AcousticObstacle> obstacles;
     for (const auto& node : scene.GetNodes()) {
-        if (!node || node->IsUINode() || node->nodeType == NodeType::Camera || node->nodeType == NodeType::Light) continue;
-        if (node->nodeType == NodeType::Mesh || node->nodeType == NodeType::Collider) {
-            glm::vec3 worldPos = node->GetWorldPosition(scene);
-            glm::vec3 worldScale = glm::abs(node->scale);
-            glm::vec3 halfExtents = worldScale * 0.5f;
-            if (halfExtents.x >= 0.15f && halfExtents.y >= 0.15f && halfExtents.z >= 0.15f) {
-                WallMaterialType mat = WallMaterialType::Concrete;
-                if (node->roughness > 0.75f) mat = WallMaterialType::Wood;
-                else if (node->metallic > 0.6f) mat = WallMaterialType::Concrete;
-                else if (node->roughness < 0.2f) mat = WallMaterialType::Glass;
-                art.AddObstacle(worldPos - halfExtents, worldPos + halfExtents, mat);
-            }
+        if (!node || node->IsUINode()) continue;
+        const bool solid = node->nodeType == NodeType::Collider || node->rigidBodyType != RigidBodyType::None || node->occludesSound;
+        if (!solid || (node->nodeType != NodeType::Mesh && node->nodeType != NodeType::Collider)) continue;
+        // World-space box around the node's bounds (colliders: their collider size)
+        glm::vec3 lo = node->boundsMin, hi = node->boundsMax;
+        if (node->nodeType == NodeType::Collider) {
+            lo = node->colliderCenter - node->colliderSize * 0.5f;
+            hi = node->colliderCenter + node->colliderSize * 0.5f;
         }
+        const glm::mat4 world = node->GetWorldTransformMatrix(scene);
+        glm::vec3 wMin(1e30f), wMax(-1e30f);
+        for (int c = 0; c < 8; ++c) {
+            const glm::vec3 corner((c & 1) ? hi.x : lo.x, (c & 2) ? hi.y : lo.y, (c & 4) ? hi.z : lo.z);
+            const glm::vec3 p(world * glm::vec4(corner, 1.0f));
+            wMin = glm::min(wMin, p);
+            wMax = glm::max(wMax, p);
+        }
+        // Too thin to stop sound
+        if (wMax.x - wMin.x < 0.3f || wMax.y - wMin.y < 0.3f || wMax.z - wMin.z < 0.3f) continue;
+        WallMaterialType mat = WallMaterialType::Concrete;  // stone, rock, masonry
+        if (node->roughness > 0.75f && node->metallic < 0.1f && !node->occludesSound) mat = WallMaterialType::Wood;
+        else if (node->roughness < 0.2f && node->metallic < 0.5f) mat = WallMaterialType::Glass;
+        obstacles.push_back({ wMin, wMax, mat });
     }
+    AcousticRayTracer::Get().SetObstacles(std::move(obstacles));
 }
 
 void AudioEngine::SetListener(const glm::vec3& position, const glm::vec3& forward, const glm::vec3& up) {
@@ -631,7 +641,14 @@ void AudioEngine::MixOutputBuffer(const Scene* scene,
 
             if (m_acousticRayTracingEnabled) {
                 RayTracedAcousticResult acoustic = AcousticRayTracer::Get().TracePath(v.position, m_listenerPos);
-                atten *= acoustic.perceivedGain;
+                // Occlusion fades over ~80 ms instead of jumping (no clicks as things pass between)
+                if (v.acousticGain < 0.0f) {
+                    v.acousticGain = acoustic.perceivedGain;
+                } else {
+                    const float k = std::min(1.0f, static_cast<float>(frameCount) / (std::max(1u, sampleRate) * 0.08f));
+                    v.acousticGain += (acoustic.perceivedGain - v.acousticGain) * k;
+                }
+                atten *= v.acousticGain;
                 if (acoustic.isPortaled) {
                     toSrc = acoustic.virtualEmitterPos - m_listenerPos;
                     dist = glm::length(toSrc);

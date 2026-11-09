@@ -2202,6 +2202,11 @@ static void RenderOceanProperties(Node& node) {
 
 // Reflection probe toggle, shown for meshes and empty nodes
 static void RenderReflectionProbeProperties(Node& node) {
+    if (node.nodeType == NodeType::Mesh) {
+        ImGui::Checkbox("Blocks Sound", &node.occludesSound);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("3D sounds behind this object are muffled and quieter (acoustic ray tracing).\n"
+                                                      "Colliders and physics bodies always block sound.");
+    }
     ImGui::Checkbox("Reflection Probe", &node.isReflectionProbe);
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Captures the surroundings from this object's position, so shiny\nsurfaces nearby reflect the room instead of the sky.\nPlace it in open space (e.g. the middle of a room), not inside an object.\nUp to 4 probes per scene. Recaptured when a probe moves,\nor with 'Recapture Probes' in the Rendering window.");
     if (node.isReflectionProbe) {
@@ -6681,13 +6686,14 @@ void EditorUI::RenderEnvironmentAndPostProcessWindow(Scene& scene) {
 
         if (ImGui::CollapsingHeader("Acoustic Ray Tracing & Door Portaling", ImGuiTreeNodeFlags_DefaultOpen)) {
             auto& audioRT = Audio::AcousticRayTracer::Get();
-            const auto& obstacles = audioRT.GetObstacles();
-            const auto& portals = audioRT.GetPortals();
-
-            ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.4f, 1.0f), "[ACTIVE: Ray-Traced Diffraction & Portaling]");
+            const size_t obstacleCount = audioRT.GetObstacleCount();
+            const auto portals = audioRT.GetPortals();
+            auto& audioEngine = Audio::AudioEngine::Get();
+            bool acousticOn = audioEngine.IsAcousticRayTracingEnabled();
+            if (ImGui::Checkbox("Occlude 3D sounds", &acousticOn)) audioEngine.SetAcousticRayTracingEnabled(acousticOn);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Sounds behind colliders, physics bodies and meshes marked\n'Blocks Sound' are muffled (low-pass) and quieter.");
             ImGui::Indent(10.0f);
-            ImGui::TextDisabled("Acoustic Geometry: %zu Obstacles (Concrete/Wood/Glass) | %zu Portals",
-                obstacles.size(), portals.size());
+            ImGui::TextDisabled("Acoustic geometry (rebuilt in Play): %zu obstacles | %zu portals", obstacleCount, portals.size());
             for (size_t i = 0; i < portals.size(); ++i) {
                 float aperture = portals[i].openFraction;
                 std::string label = "Portal [" + portals[i].name + "] Aperture";

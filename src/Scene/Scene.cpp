@@ -791,6 +791,7 @@ JsonValue Scene::Serialize() const {
         n["useVertexColors"] = node->useVertexColors;
         n["lightmapStatic"] = node->lightmapStatic;
         n["isReflectionProbe"] = node->isReflectionProbe;
+        if (node->occludesSound) n["occludesSound"] = true;
         if (node->isCloth) {
             JsonValue cloth = JsonValue::Object();
             cloth["resX"] = static_cast<int>(node->clothResX);
@@ -1600,6 +1601,7 @@ bool Scene::Deserialize(const JsonValue& json, std::function<bool(const std::str
             if (n.HasKey("lightmapStatic")) node->lightmapStatic = n["lightmapStatic"].AsBool(true);
         }
         if (n.HasKey("isReflectionProbe")) node->isReflectionProbe = n["isReflectionProbe"].AsBool(false);
+        if (n.HasKey("occludesSound")) node->occludesSound = n["occludesSound"].AsBool(false);
         if (n.HasKey("cloth")) {
             const JsonValue& cloth = n["cloth"];
             node->isCloth = true;

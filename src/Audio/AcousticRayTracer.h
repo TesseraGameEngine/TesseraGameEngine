@@ -3,6 +3,7 @@
 #include <vector>
 #include <string>
 #include <memory>
+#include <mutex>
 #include <glm/glm.hpp>
 
 namespace Audio {
@@ -55,8 +56,11 @@ public:
     // Traces acoustic rays, evaluates edge diffraction, and calculates door portaling
     RayTracedAcousticResult TracePath(const glm::vec3& emitterPos, const glm::vec3& listenerPos) const;
 
-    const std::vector<AcousticObstacle>& GetObstacles() const { return m_obstacles; }
-    const std::vector<AcousticPortal>& GetPortals() const { return m_portals; }
+    // Copies: the geometry may be rebuilt on another thread at any time
+    size_t GetObstacleCount() const;
+    std::vector<AcousticPortal> GetPortals() const;
+    // Replaces every obstacle at once (one lock, so a trace never sees a half-built set)
+    void SetObstacles(std::vector<AcousticObstacle> obstacles);
 
 private:
     AcousticRayTracer();
@@ -64,6 +68,7 @@ private:
     bool IntersectRayAABB(const glm::vec3& rayOrigin, const glm::vec3& rayDir,
                           const glm::vec3& boxMin, const glm::vec3& boxMax, float& tOut) const;
 
+    mutable std::mutex m_mutex;
     std::vector<AcousticObstacle> m_obstacles;
     std::vector<AcousticPortal> m_portals;
 };

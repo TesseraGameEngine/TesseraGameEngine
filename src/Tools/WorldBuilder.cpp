@@ -6,6 +6,7 @@
 #include <stb_image_write.h>
 #include <algorithm>
 #include <chrono>
+#include <cstring>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -374,6 +375,8 @@ struct SectorBuilder {
     }
 
     bool Place(const Kind& kind, glm::vec2 p) {
+        const bool rocky = std::strstr(kind.asset, "rock") || std::strstr(kind.asset, "boulder") || std::strstr(kind.asset, "cliff") ||
+                           std::strstr(kind.asset, "stone");
         const auto* variants = catalog.Find(kind.asset);
         if (!variants) return false;
         const ModelVariant* v = nullptr;
@@ -392,8 +395,10 @@ struct SectorBuilder {
             tilt = glm::vec2(glm::degrees(std::atan2(n.z, n.y)), -glm::degrees(std::atan2(n.x, n.y))) * 0.8f;
         }
         const float h = island.Height(p.x, p.y);
-        PlaceModel(kind.asset, *v, glm::vec3(p.x, h - kind.sink * scale, p.y), Rand(0.0f, 360.0f), scale,
-                   kind.lod1, kind.lod2, kind.maxDraw, tilt);
+        auto node = PlaceModel(kind.asset, *v, glm::vec3(p.x, h - kind.sink * scale, p.y), Rand(0.0f, 360.0f), scale,
+                               kind.lod1, kind.lod2, kind.maxDraw, tilt);
+        // Solid rock blocks sound (small stones are skipped by their size when synced)
+        node->occludesSound = rocky;
         Mark(p, footprint);
         return true;
     }
@@ -722,7 +727,7 @@ bool BuildHeadlandWorld(const WorldBuildOptions& options, std::string& error) {
                 if (h > -2.5f && h < 1.0f && island.Cliff(p.x, p.y) < 0.2f && sb.Rand(0.0f, 1.0f) < 0.35f && sb.Free(p, 25.0f)) {
                     const char* id = sb.Rand(0.0f, 1.0f) < 0.5f ? "coast_rocks_01" : "coast_rocks_02";
                     if (const auto* vs = catalog.Find(id)) {
-                        sb.PlaceModel(id, vs->front(), glm::vec3(p.x, h - 0.8f, p.y), sb.Rand(0.0f, 360.0f), sb.Rand(0.45f, 0.7f), 60.0f, 160.0f, 0.0f);
+                        sb.PlaceModel(id, vs->front(), glm::vec3(p.x, h - 0.8f, p.y), sb.Rand(0.0f, 360.0f), sb.Rand(0.45f, 0.7f), 60.0f, 160.0f, 0.0f)->occludesSound = true;
                         sb.Mark(p, 22.0f);
                     }
                 }
@@ -737,7 +742,7 @@ bool BuildHeadlandWorld(const WorldBuildOptions& options, std::string& error) {
                         const glm::vec3 n = island.Normal(p.x, p.y);
                         const float yaw = glm::degrees(std::atan2(n.x, n.z));
                         const float s = sb.Rand(1.3f, 1.9f);
-                        sb.PlaceModel(id, vs->front(), glm::vec3(p.x, h - 3.0f, p.y), yaw, s, 70.0f, 180.0f, 0.0f);
+                        sb.PlaceModel(id, vs->front(), glm::vec3(p.x, h - 3.0f, p.y), yaw, s, 70.0f, 180.0f, 0.0f)->occludesSound = true;
                         sb.Mark(p, 30.0f);
                     }
                 }

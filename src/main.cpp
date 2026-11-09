@@ -77,6 +77,7 @@ static LRESULT CALLBACK CustomWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LP
 #include "Scene/Weather.h"
 #include "Scene/FoliageMeshes.h"
 #include "Audio/AudioEngine.h"
+#include "Audio/AcousticRayTracer.h"
 #include "Renderer/VulkanFluidSim.h"
 #include "Renderer/VulkanParticleSim.h"
 #include "Renderer/VulkanGpuProfiler.h"
@@ -878,7 +879,8 @@ private:
         auto& ctx = VulkanContext::Get();
         vkDeviceWaitIdle(ctx.GetDevice());
 
-        // Clear existing custom meshes from GPU
+        // Clear existing custom meshes from GPU (cloth entries are views: released separately)
+        ReleaseAllClothBuffers();
         for (auto& pair : m_customMeshes) {
             pair.second.Cleanup(ctx.GetDevice());
         }
@@ -900,7 +902,8 @@ private:
         auto& ctx = VulkanContext::Get();
         vkDeviceWaitIdle(ctx.GetDevice());
 
-        // Clear existing custom meshes from GPU
+        // Clear existing custom meshes from GPU (cloth entries are views: released separately)
+        ReleaseAllClothBuffers();
         for (auto& pair : m_customMeshes) {
             pair.second.Cleanup(ctx.GetDevice());
         }
@@ -3244,15 +3247,11 @@ private:
             std::unordered_set<std::string> liveCloth;
             UpdateClothMeshes(activePlayScene, !playing, liveCloth);
             if (playing) UpdateClothMeshes(m_scene, false, liveCloth);
-            for (auto it = m_clothMeshKeys.begin(); it != m_clothMeshKeys.end();) {
-                if (liveCloth.count(*it)) { ++it; continue; }
-                auto mesh = m_customMeshes.find(*it);
-                if (mesh != m_customMeshes.end()) {
-                    m_pendingMeshFrees.emplace_back(m_streamFrame, mesh->second);
-                    m_customMeshes.erase(mesh);
-                }
-                it = m_clothMeshKeys.erase(it);
+            std::vector<std::string> gone;
+            for (const auto& [key, buffers] : m_clothBuffers) {
+                if (!liveCloth.count(key)) gone.push_back(key);
             }
+            for (const auto& key : gone) ReleaseClothBuffers(key, false);
         }
 
         // Hardware ray tracing: acceleration structures of the scenes shown this frame, built on
@@ -3877,6 +3876,7 @@ private:
         for (auto& pair : m_meshes) {
             pair.second.Cleanup(device);
         }
+        ReleaseAllClothBuffers();
         for (auto& pair : m_customMeshes) {
             pair.second.Cleanup(device);
         }
@@ -4072,6 +4072,10 @@ private:
         return {};
     }
 
+    // Acoustic ray tracing geometry follows the play scene (UpdateWorldStreaming)
+    const Scene* m_acousticScene{nullptr};
+    bool m_acousticDirty{true};
+
     Streaming::WorldStreamer m_editorStreamer;
     std::unique_ptr<Streaming::WorldStreamer> m_playStreamer;
     const Scene* m_playStreamerScene{nullptr};
@@ -4194,10 +4198,12 @@ private:
         h.acquireMesh = [this, worldRoot](const std::string& n, LoadedMesh* cpu) { return AcquireStreamMesh(n, cpu, worldRoot); };
         h.releaseMesh = [this](const std::string& n) { ReleaseStreamMesh(n); };
         h.onAttached = [this, playScene](Scene& sc, const std::vector<std::shared_ptr<Node>>& nodes) {
+            if (playScene) m_acousticDirty = true;
             auto& physics = m_gameLoop.GetPhysicsWorld();
             if (playScene && physics.IsInitialized()) physics.AddBodiesForNodes(sc, nodes);
         };
         h.onDetaching = [this, playScene](Scene& sc, const std::vector<std::shared_ptr<Node>>& nodes) {
+            if (playScene) m_acousticDirty = true;
             auto& physics = m_gameLoop.GetPhysicsWorld();
             for (const auto& n : nodes) {
                 if (playScene) {
@@ -4280,10 +4286,22 @@ private:
             m_playStreamerScene = nullptr;
         }
         FlushPendingMeshFrees(false);
+
+        // Acoustic geometry of the play scene: rebuilt when Play starts and when streamed sectors
+        // arrive or leave (the audio thread traces against it)
+        Scene* audioScene = playScene.get();
+        if (audioScene != m_acousticScene) {
+            m_acousticScene = audioScene;
+            m_acousticDirty = true;
+        }
+        if (m_acousticDirty) {
+            if (audioScene) Audio::AudioEngine::Get().SyncAcousticObstacles(*audioScene);
+            else Audio::AcousticRayTracer::Get().SetObstacles({});
+            m_acousticDirty = false;
+        }
     }
 
     // Simulated cloth (Node::isCloth): its surface mesh, uploaded each frame under a runtime key
-    std::unordered_set<std::string> m_clothMeshKeys;
     void UpdateClothMeshes(Scene& sc, bool step, std::unordered_set<std::string>& live) {
         for (const auto& n : sc.GetNodes()) {
             if (!n || !n->isCloth) continue;
@@ -4318,8 +4336,14 @@ private:
             }
             const std::string key = n->ClothMeshKey();
             live.insert(key);
-            auto it = m_customMeshes.find(key);
-            if (it == m_customMeshes.end()) {
+            const VkDeviceSize bytes = sizeof(Vertex) * verts.size();
+            auto it = m_clothBuffers.find(key);
+            if (it != m_clothBuffers.end() && it->second.bytes != bytes) {
+                // Resolution changed: start over (the old buffers go once the GPU is done)
+                ReleaseClothBuffers(key, false);
+                it = m_clothBuffers.end();
+            }
+            if (it == m_clothBuffers.end()) {
                 MeshData md;
                 md.vertices = verts;
                 for (uint32_t y = 0; y + 1 < ry; ++y) {
@@ -4328,12 +4352,56 @@ private:
                         md.indices.insert(md.indices.end(), { p00, p01, p10, p10, p01, p11 });
                     }
                 }
-                m_customMeshes[key] = VulkanBufferUtils::UploadMesh(md);
-                m_clothMeshKeys.insert(key);
-            } else {
-                VulkanBufferUtils::UpdateVertexBuffer(it->second, verts);
+                ClothBuffers cb;
+                cb.base = VulkanBufferUtils::UploadMesh(md);
+                cb.bytes = bytes;
+                for (uint32_t f = 0; f < MAX_FRAMES_IN_FLIGHT; ++f) {
+                    VulkanBufferUtils::CreateBuffer(bytes, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                                                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                                                    cb.frames[f].vertexBuffer, cb.frames[f].vertexBufferMemory);
+                    vkMapMemory(VulkanContext::Get().GetDevice(), cb.frames[f].vertexBufferMemory, 0, bytes, 0, &cb.mapped[f]);
+                }
+                it = m_clothBuffers.emplace(key, cb).first;
             }
+            // This frame slot's copy (the other may still be read by the frame in flight)
+            ClothBuffers& cb = it->second;
+            const uint32_t slot = m_currentFrame % MAX_FRAMES_IN_FLIGHT;
+            std::memcpy(cb.mapped[slot], verts.data(), static_cast<size_t>(bytes));
+            GPUMesh view = cb.base;                 // index buffer and count from the uploaded mesh
+            view.vertexBuffer = cb.frames[slot].vertexBuffer;
+            view.vertexBufferMemory = VK_NULL_HANDLE;
+            m_customMeshes[key] = view;             // a view: the buffers belong to m_clothBuffers
         }
+    }
+
+    // A cloth's buffers: the uploaded mesh (index buffer) and one host-visible vertex buffer per
+    // frame in flight. m_customMeshes holds non-owning views of them.
+    struct ClothBuffers {
+        GPUMesh base;
+        GPUMesh frames[MAX_FRAMES_IN_FLIGHT];
+        void* mapped[MAX_FRAMES_IN_FLIGHT]{};
+        VkDeviceSize bytes{0};
+    };
+    std::unordered_map<std::string, ClothBuffers> m_clothBuffers;
+
+    // Drops a cloth's view from m_customMeshes and frees its buffers (now, when the device is
+    // idle, or after the frames in flight)
+    void ReleaseClothBuffers(const std::string& key, bool deviceIdle) {
+        auto it = m_clothBuffers.find(key);
+        if (it == m_clothBuffers.end()) return;
+        m_customMeshes.erase(key);
+        VkDevice device = VulkanContext::Get().GetDevice();
+        std::vector<GPUMesh> owned = { it->second.base };
+        for (auto& f : it->second.frames) owned.push_back(f);
+        for (auto& mesh : owned) {
+            if (deviceIdle) mesh.Cleanup(device);
+            else m_pendingMeshFrees.emplace_back(m_streamFrame, mesh);
+        }
+        m_clothBuffers.erase(it);
+    }
+    // Before anything frees every mesh in m_customMeshes (the device is idle then)
+    void ReleaseAllClothBuffers() {
+        while (!m_clothBuffers.empty()) ReleaseClothBuffers(m_clothBuffers.begin()->first, true);
     }
 
     // CPU copies for ray tracing BLAS builds: built-in primitives and generated terrain meshes

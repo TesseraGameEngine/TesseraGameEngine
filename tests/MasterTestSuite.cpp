@@ -5166,6 +5166,24 @@ TEST_CASE(RoadmapAcoustics, RayTracedSoundDiffractionAndDoorPortaling) {
     for (float s : occludedBuffer) maxOccluded = std::max(maxOccluded, std::abs(s));
     // Occluded sound through concrete must be significantly attenuated
     ASSERT_TRUE(maxOccluded < maxDirect * 0.1f);
+
+    // 6. Scene sync: only solid things block (opted-in meshes, colliders), sized by their real bounds
+    Scene acousticScene;
+    acousticScene.Clear();
+    auto wall = acousticScene.AddNode(ShapeType::Cube, "StoneWall");
+    wall->occludesSound = true;
+    wall->position = glm::vec3(0.0f, 1.0f, 2.5f);
+    wall->scale = glm::vec3(10.0f, 3.0f, 1.0f);   // cube bounds -1..1 -> 20 x 6 x 2 m
+    auto bush = acousticScene.AddNode(ShapeType::Cube, "Bush");    // not marked: lets sound through
+    bush->position = glm::vec3(0.0f, 1.0f, 4.0f);
+    engine.SyncAcousticObstacles(acousticScene);
+    ASSERT_EQ(audioRT.GetObstacleCount(), static_cast<size_t>(1));
+    ASSERT_FALSE(audioRT.TracePath(emitter, listener).hasDirectLineOfSight);
+    wall->occludesSound = false;
+    engine.SyncAcousticObstacles(acousticScene);
+    ASSERT_EQ(audioRT.GetObstacleCount(), static_cast<size_t>(0));
+    ASSERT_TRUE(audioRT.TracePath(emitter, listener).hasDirectLineOfSight);
+    audioRT.Clear();
 }
 
 // ============================================================================

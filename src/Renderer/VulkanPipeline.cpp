@@ -2514,9 +2514,9 @@ void VulkanPipeline::RenderScene(VkCommandBuffer cmd, const Scene& scene,
             } else {
                 pc.model = node->GetWorldTransformMatrix(scene);
                 pc.color = overrideColor.has_value() ? *overrideColor : node->color;
-                if (scene.GetWorldOffset() != glm::dvec3(0.0)) {
-                    pc.model = Core::LWC::CameraRelativeCoordinator::Get().ComputeCameraRelativeModelMatrix(pc.model, scene.GetWorldOffset());
-                }
+                // (Scene::GetWorldOffset is stored and saved but not applied yet: camera-relative
+                // rendering has to change the view, prepass, shadow, ray tracing and effect passes
+                // together, or offset scenes draw in the wrong place)
             }
 
             // Shader graph material: its own pipeline (same lighting), drawn on its own

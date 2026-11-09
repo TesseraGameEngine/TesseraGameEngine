@@ -41,6 +41,7 @@ struct ActiveVoice {
     bool playing{true};
     float lowPassStateL{0.0f};
     float lowPassStateR{0.0f};
+    float acousticGain{-1.0f}; // smoothed occlusion gain (-1 = not traced yet)
 };
 
 class AudioEngine {
@@ -134,6 +135,9 @@ public:
     // 5. Hardware & Ray-Traced Acoustics (AcousticRayTracer integration)
     void SetAcousticRayTracingEnabled(bool enabled) { m_acousticRayTracingEnabled = enabled; }
     bool IsAcousticRayTracingEnabled() const { return m_acousticRayTracingEnabled; }
+    // Rebuilds the acoustic geometry from a scene: colliders, physics bodies and nodes marked
+    // occludesSound, as world-space boxes of their meshes' bounds. Call on scene changes (Play
+    // start, streamed sectors arriving / leaving), not every frame.
     void SyncAcousticObstacles(const Scene& scene);
 
 private:

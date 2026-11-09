@@ -272,6 +272,8 @@ public:
 
     SceneEnvironment& GetEnvironment() { return m_environment; }
     const SceneEnvironment& GetEnvironment() const { return m_environment; }
+    const glm::dvec3& GetWorldOffset() const { return m_worldOffset; }
+    void SetWorldOffset(const glm::dvec3& offset) { m_worldOffset = offset; }
 
     // Cutscene & Cinematic Sequencer
     std::vector<Animation::CutsceneSequence>& GetCutscenes() { return m_cutscenes; }
@@ -307,5 +309,6 @@ private:
     uint32_t m_nextId{1};
     uint32_t m_activeCameraId{0};
     SceneEnvironment m_environment{};
+    glm::dvec3 m_worldOffset{0.0, 0.0, 0.0};
     std::vector<Animation::CutsceneSequence> m_cutscenes;
 };

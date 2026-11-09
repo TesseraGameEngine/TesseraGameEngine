@@ -7,6 +7,8 @@
 #include "Scene/Nodes/3D/TerrainNode.h"
 #include "Scene/FoliageMeshes.h"
 #include "ShaderGraph.h"
+#include "Meshlet/MeshletManager.h"
+#include "Core/LargeWorldCoordinates.h"
 #include <cstdlib>
 #include <cstring>
 #include <chrono>
@@ -2512,6 +2514,9 @@ void VulkanPipeline::RenderScene(VkCommandBuffer cmd, const Scene& scene,
             } else {
                 pc.model = node->GetWorldTransformMatrix(scene);
                 pc.color = overrideColor.has_value() ? *overrideColor : node->color;
+                if (scene.GetWorldOffset() != glm::dvec3(0.0)) {
+                    pc.model = Core::LWC::CameraRelativeCoordinator::Get().ComputeCameraRelativeModelMatrix(pc.model, scene.GetWorldOffset());
+                }
             }
 
             // Shader graph material: its own pipeline (same lighting), drawn on its own
@@ -2584,7 +2589,8 @@ void VulkanPipeline::RenderScene(VkCommandBuffer cmd, const Scene& scene,
                 continue;
             }
             const bool batchable = pipeline != m_graphicsPipelineTransparent && !node->isMirror &&
-                                   node->nodeType != NodeType::Collider && node->nodeType != NodeType::Decal;
+                                   node->nodeType != NodeType::Collider && node->nodeType != NodeType::Decal &&
+                                   !Graphics::Meshlet::MeshletManager::Get().GetSettings().enableMeshletPipeline;
             if (batchable) {
                 AddToBatch(meshPtr, descSet, pc);
                 continue;
@@ -2597,6 +2603,24 @@ void VulkanPipeline::RenderScene(VkCommandBuffer cmd, const Scene& scene,
             VkDeviceSize offsets[] = { 0 };
             vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
             vkCmdBindIndexBuffer(cmd, mesh.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+            auto& meshletMgr = Graphics::Meshlet::MeshletManager::Get();
+            if (meshletMgr.GetSettings().enableMeshletPipeline) {
+                std::string key = (node->type == ShapeType::Custom) ? node->customMeshName : ("shape_" + std::to_string(static_cast<int>(node->type)));
+                const auto* mModel = meshletMgr.GetMeshletModel(key);
+                if (mModel && !mModel->meshlets.empty()) {
+                    auto cullRes = Graphics::Meshlet::MeshletBuilder::CullMeshlets(*mModel, pc.model, cameraPos, viewProj, meshletMgr.GetSettings());
+                    for (uint32_t clusterIdx : cullRes.visibleMeshletIndices) {
+                        const auto& cluster = mModel->meshlets[clusterIdx];
+                        uint32_t triCount = cluster.triangleCount;
+                        uint32_t triOffset = cluster.triangleOffset;
+                        if ((triOffset + triCount) * 3 <= mesh.indexCount) {
+                            vkCmdDrawIndexed(cmd, triCount * 3, 1, triOffset * 3, 0, 0);
+                        }
+                    }
+                    continue;
+                }
+            }
 
             vkCmdDrawIndexed(cmd, mesh.indexCount, 1, 0, 0, 0);
         }

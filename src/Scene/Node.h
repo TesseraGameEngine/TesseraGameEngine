@@ -20,6 +20,7 @@ namespace Resource {
     class MeshResource;
     class MaterialResource;
 }
+namespace Physics { class XPBDClothSimulator; }
 
 enum class NodeType {
     Mesh,
@@ -505,6 +506,18 @@ struct Node {
     std::string videoAudioPath{""};   // Optional synced .wav audio track
     float videoAudioVolume{0.8f};     // Volume of synced audio
     bool videoSpatialAudio{true};     // True = 3D positional audio from the TV/phone/cinema position
+
+    // XPBD Cloth Simulation (Physically simulated fabric/curtain/flag)
+    bool isCloth{false};
+    uint32_t clothResX{10};
+    uint32_t clothResY{10};
+    float clothWidth{1.5f};
+    float clothHeight{1.5f};
+    glm::vec3 clothWind{2.0f, 0.0f, 1.0f};
+    float clothMass{1.0f};
+    float clothCompliance{0.00001f};
+    bool clothPinTop{true};
+    std::shared_ptr<Physics::XPBDClothSimulator> clothSim{nullptr};
 
     // Advanced material (see shaders/material_ext.glsl)
     int materialModel{0};                       // 0 standard, 1 skin, 2 hair, 3 eye

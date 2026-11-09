@@ -583,6 +583,11 @@ JsonValue Scene::Serialize() const {
     sceneObj["name"] = m_name;
     sceneObj["nextId"] = m_nextId;
     sceneObj["activeCameraId"] = m_activeCameraId;
+    JsonValue worldOffsetArr = JsonValue::Array();
+    worldOffsetArr.Push(m_worldOffset.x);
+    worldOffsetArr.Push(m_worldOffset.y);
+    worldOffsetArr.Push(m_worldOffset.z);
+    sceneObj["worldOffset"] = worldOffsetArr;
 
     JsonValue envObj = JsonValue::Object();
     envObj["hdrExposure"] = m_environment.hdrExposure;
@@ -786,6 +791,20 @@ JsonValue Scene::Serialize() const {
         n["useVertexColors"] = node->useVertexColors;
         n["lightmapStatic"] = node->lightmapStatic;
         n["isReflectionProbe"] = node->isReflectionProbe;
+        if (node->isCloth) {
+            JsonValue cloth = JsonValue::Object();
+            cloth["resX"] = static_cast<int>(node->clothResX);
+            cloth["resY"] = static_cast<int>(node->clothResY);
+            cloth["width"] = node->clothWidth;
+            cloth["height"] = node->clothHeight;
+            cloth["mass"] = node->clothMass;
+            cloth["compliance"] = node->clothCompliance;
+            cloth["pinTop"] = node->clothPinTop;
+            JsonValue wind = JsonValue::Array();
+            wind.Push(node->clothWind.x); wind.Push(node->clothWind.y); wind.Push(node->clothWind.z);
+            cloth["wind"] = wind;
+            n["cloth"] = cloth;
+        }
         if (node->isLiquid) {
             JsonValue liquid = JsonValue::Object();
             liquid["fill"] = node->liquidFill;
@@ -1332,6 +1351,11 @@ bool Scene::Deserialize(const JsonValue& json, std::function<bool(const std::str
     m_name = json.HasKey("name") ? json["name"].AsString("Scene") : "Scene";
     m_nextId = json.HasKey("nextId") ? json["nextId"].AsUInt(1) : 1;
     m_activeCameraId = json.HasKey("activeCameraId") ? json["activeCameraId"].AsUInt(0) : 0;
+    if (json.HasKey("worldOffset") && json["worldOffset"].arrVal.size() >= 3) {
+        m_worldOffset = glm::dvec3(json["worldOffset"][0].AsDouble(), json["worldOffset"][1].AsDouble(), json["worldOffset"][2].AsDouble());
+    } else {
+        m_worldOffset = glm::dvec3(0.0);
+    }
 
     if (json.HasKey("environment") && json["environment"].IsObject()) {
         const auto& env = json["environment"];
@@ -1576,6 +1600,20 @@ bool Scene::Deserialize(const JsonValue& json, std::function<bool(const std::str
             if (n.HasKey("lightmapStatic")) node->lightmapStatic = n["lightmapStatic"].AsBool(true);
         }
         if (n.HasKey("isReflectionProbe")) node->isReflectionProbe = n["isReflectionProbe"].AsBool(false);
+        if (n.HasKey("cloth")) {
+            const JsonValue& cloth = n["cloth"];
+            node->isCloth = true;
+            if (cloth.HasKey("resX")) node->clothResX = static_cast<uint32_t>(cloth["resX"].AsInt(10));
+            if (cloth.HasKey("resY")) node->clothResY = static_cast<uint32_t>(cloth["resY"].AsInt(10));
+            if (cloth.HasKey("width")) node->clothWidth = cloth["width"].AsFloat(1.5f);
+            if (cloth.HasKey("height")) node->clothHeight = cloth["height"].AsFloat(1.5f);
+            if (cloth.HasKey("mass")) node->clothMass = cloth["mass"].AsFloat(1.0f);
+            if (cloth.HasKey("compliance")) node->clothCompliance = cloth["compliance"].AsFloat(0.00001f);
+            if (cloth.HasKey("pinTop")) node->clothPinTop = cloth["pinTop"].AsBool(true);
+            if (cloth.HasKey("wind") && cloth["wind"].arrVal.size() >= 3) {
+                node->clothWind = glm::vec3(cloth["wind"][0].AsFloat(0.0f), cloth["wind"][1].AsFloat(0.0f), cloth["wind"][2].AsFloat(0.0f));
+            }
+        }
         if (n.HasKey("liquid")) {
             const JsonValue& liquid = n["liquid"];
             node->isLiquid = true;

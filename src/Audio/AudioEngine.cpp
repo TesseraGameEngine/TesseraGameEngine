@@ -1,5 +1,6 @@
 #include "AudioEngine.h"
 #include "Scene/Nodes/3D/AudioNode.h"
+#include "AcousticRayTracer.h"
 #include <fstream>
 #include <cstring>
 #include <cmath>
@@ -525,6 +526,26 @@ size_t AudioEngine::GetActiveVoiceCount() const {
     return count;
 }
 
+void AudioEngine::SyncAcousticObstacles(const Scene& scene) {
+    auto& art = AcousticRayTracer::Get();
+    art.Clear();
+    for (const auto& node : scene.GetNodes()) {
+        if (!node || node->IsUINode() || node->nodeType == NodeType::Camera || node->nodeType == NodeType::Light) continue;
+        if (node->nodeType == NodeType::Mesh || node->nodeType == NodeType::Collider) {
+            glm::vec3 worldPos = node->GetWorldPosition(scene);
+            glm::vec3 worldScale = glm::abs(node->scale);
+            glm::vec3 halfExtents = worldScale * 0.5f;
+            if (halfExtents.x >= 0.15f && halfExtents.y >= 0.15f && halfExtents.z >= 0.15f) {
+                WallMaterialType mat = WallMaterialType::Concrete;
+                if (node->roughness > 0.75f) mat = WallMaterialType::Wood;
+                else if (node->metallic > 0.6f) mat = WallMaterialType::Concrete;
+                else if (node->roughness < 0.2f) mat = WallMaterialType::Glass;
+                art.AddObstacle(worldPos - halfExtents, worldPos + halfExtents, mat);
+            }
+        }
+    }
+}
+
 void AudioEngine::SetListener(const glm::vec3& position, const glm::vec3& forward, const glm::vec3& up) {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
     m_listenerPos = position;
@@ -597,6 +618,7 @@ void AudioEngine::MixOutputBuffer(const Scene* scene,
         float leftGain = v.volume * busVol * masterVol;
         float rightGain = v.volume * busVol * masterVol;
 
+        float lpAlpha = 1.0f;
         if (v.is3D) {
             glm::vec3 toSrc = v.position - m_listenerPos;
             float dist = glm::length(toSrc);
@@ -606,6 +628,21 @@ void AudioEngine::MixOutputBuffer(const Scene* scene,
             } else if (dist > v.minDistance) {
                 atten = v.minDistance / (v.minDistance + (dist - v.minDistance));
             }
+
+            if (m_acousticRayTracingEnabled) {
+                RayTracedAcousticResult acoustic = AcousticRayTracer::Get().TracePath(v.position, m_listenerPos);
+                atten *= acoustic.perceivedGain;
+                if (acoustic.isPortaled) {
+                    toSrc = acoustic.virtualEmitterPos - m_listenerPos;
+                    dist = glm::length(toSrc);
+                }
+                if (acoustic.lowPassCutoffHz < 18000.0f) {
+                    float dt = 1.0f / static_cast<float>(std::max(1u, sampleRate));
+                    float rc = 1.0f / (2.0f * 3.14159265359f * std::max(20.0f, acoustic.lowPassCutoffHz));
+                    lpAlpha = std::clamp(dt / (rc + dt), 0.001f, 1.0f);
+                }
+            }
+
             float pan = (dist > 1e-4f) ? glm::clamp(glm::dot(toSrc / dist, m_listenerRight), -1.0f, 1.0f) : 0.0f;
             float angle = (pan + 1.0f) * 0.25f * 3.14159265359f;
             leftGain *= atten * std::cos(angle);
@@ -629,6 +666,13 @@ void AudioEngine::MixOutputBuffer(const Scene* scene,
 
             float sampleL = clip->samples[idx * clip->channels];
             float sampleR = (clip->channels > 1) ? clip->samples[idx * clip->channels + 1] : sampleL;
+
+            if (v.is3D && lpAlpha < 0.999f) {
+                v.lowPassStateL += lpAlpha * (sampleL - v.lowPassStateL);
+                v.lowPassStateR += lpAlpha * (sampleR - v.lowPassStateR);
+                sampleL = v.lowPassStateL;
+                sampleR = v.lowPassStateR;
+            }
 
             outStereoInterleaved[f * 2 + 0] += sampleL * leftGain;
             outStereoInterleaved[f * 2 + 1] += sampleR * rightGain;

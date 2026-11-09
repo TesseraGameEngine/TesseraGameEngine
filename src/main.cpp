@@ -47,6 +47,7 @@ static std::ofstream g_log("engine.log");
 #include "Streaming/WorldStreamer.h"
 #include "Tools/ModelOptimizer.h"
 #include "Tools/WorldBuilder.h"
+#include "Physics/XPBDClothSim.h"
 #include <mutex>
 #include <unordered_set> 
 #include "Core/EngineIconData.h"
@@ -3215,6 +3216,66 @@ private:
                     }
                     // The painted splat map: uploaded when it changes (at most 20 times a second
                     // while painting, as each upload waits for the GPU)
+                if (n->isCloth) {
+                    if (!n->clothSim) {
+                        n->clothSim = std::make_shared<Physics::XPBDClothSimulator>();
+                        n->clothSim->InitializeGridCloth(n->clothWidth, n->clothHeight, n->clothResX, n->clothResY, n->clothMass);
+                        if (n->clothPinTop) {
+                            for (uint32_t px = 0; px < n->clothResX; ++px) {
+                                n->clothSim->PinParticle(px);
+                            }
+                        }
+                    }
+                    if (!m_gameLoop.IsPlaying()) {
+                        Physics::XPBDClothSettings cSettings;
+                        cSettings.windVelocity = n->clothWind;
+                        cSettings.stretchCompliance = n->clothCompliance;
+                        n->clothSim->Step(0.016f, cSettings);
+                    }
+                    std::string clothKey = "cloth_node_" + std::to_string(n->id);
+                    n->customMeshName = clothKey;
+                    n->type = ShapeType::Custom;
+
+                    const auto& parts = n->clothSim->GetParticles();
+                    if (!parts.empty()) {
+                        uint32_t rx = std::max(2u, n->clothResX);
+                        uint32_t ry = std::max(2u, n->clothResY);
+                        std::vector<Vertex> clothVerts(parts.size());
+                        for (uint32_t y = 0; y < ry; ++y) {
+                            for (uint32_t x = 0; x < rx; ++x) {
+                                uint32_t idx = y * rx + x;
+                                if (idx >= clothVerts.size()) break;
+                                clothVerts[idx].pos = parts[idx].position;
+                                clothVerts[idx].texCoord = glm::vec2(static_cast<float>(x) / (rx - 1), static_cast<float>(y) / (ry - 1));
+                                glm::vec3 px1 = (x + 1 < rx) ? parts[y * rx + (x + 1)].position : parts[idx].position;
+                                glm::vec3 px0 = (x > 0) ? parts[y * rx + (x - 1)].position : parts[idx].position;
+                                glm::vec3 py1 = (y + 1 < ry) ? parts[(y + 1) * rx + x].position : parts[idx].position;
+                                glm::vec3 py0 = (y > 0) ? parts[(y - 1) * rx + x].position : parts[idx].position;
+                                glm::vec3 norm = glm::cross(px1 - px0, py1 - py0);
+                                clothVerts[idx].normal = (glm::length(norm) > 1e-4f) ? glm::normalize(norm) : glm::vec3(0.0f, 0.0f, 1.0f);
+                                clothVerts[idx].color = glm::vec4(1.0f);
+                            }
+                        }
+                        auto it = m_customMeshes.find(clothKey);
+                        if (it == m_customMeshes.end()) {
+                            MeshData md;
+                            md.vertices = clothVerts;
+                            for (uint32_t y = 0; y < ry - 1; ++y) {
+                                for (uint32_t x = 0; x < rx - 1; ++x) {
+                                    uint32_t p00 = y * rx + x;
+                                    uint32_t p10 = y * rx + (x + 1);
+                                    uint32_t p01 = (y + 1) * rx + x;
+                                    uint32_t p11 = (y + 1) * rx + (x + 1);
+                                    md.indices.push_back(p00); md.indices.push_back(p01); md.indices.push_back(p10);
+                                    md.indices.push_back(p10); md.indices.push_back(p01); md.indices.push_back(p11);
+                                }
+                            }
+                            m_customMeshes[clothKey] = VulkanBufferUtils::UploadMesh(md);
+                        } else {
+                            VulkanBufferUtils::UpdateVertexBuffer(it->second, clothVerts);
+                        }
+                    }
+                }
                     if (tNode) {
                         const std::string splatKey = tNode->GetSplatTextureKey();
                         auto uploaded = m_uploadedSplats.find(splatKey);

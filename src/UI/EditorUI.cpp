@@ -2715,6 +2715,20 @@ void EditorUI::RenderInspector(Scene& scene, Camera& camera) {
             }
             ImGui::SameLine();
             ImGui::TextDisabled("%s", TR("presets"));
+            ImGui::Checkbox(TR("Cloth Simulation (XPBD)"), &selectedNode->isCloth);
+            if (selectedNode->isCloth) {
+                ImGui::SliderFloat("Width (m)", &selectedNode->clothWidth, 0.2f, 10.0f, "%.2f");
+                ImGui::SliderFloat("Height (m)", &selectedNode->clothHeight, 0.2f, 10.0f, "%.2f");
+                int resX = static_cast<int>(selectedNode->clothResX);
+                int resY = static_cast<int>(selectedNode->clothResY);
+                if (ImGui::SliderInt("Grid Res X", &resX, 4, 32)) selectedNode->clothResX = resX;
+                if (ImGui::SliderInt("Grid Res Y", &resY, 4, 32)) selectedNode->clothResY = resY;
+                ImGui::Checkbox("Pin Top Edge", &selectedNode->clothPinTop);
+                ImGui::DragFloat3("Wind Vector", glm::value_ptr(selectedNode->clothWind), 0.1f);
+                if (ImGui::Button("Reset Cloth Geometry")) {
+                    selectedNode->clothSim = nullptr;
+                }
+            }
             ImGui::Checkbox(TR("Liquid Fill"), &selectedNode->isLiquid);
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("This mesh is liquid inside a container: it is cut off at the fill level,\n"
                                                           "shows a flat top surface, and sloshes when the container moves.\n"

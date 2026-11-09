@@ -4575,6 +4575,28 @@ TEST_CASE(RoadmapCoordinates, LargeWorldCoordinatesAndCameraRelativeRendering) {
     double errorFar = CameraRelativeCoordinator::EstimateFloatingPointStepAtDistance(100000.0);
     ASSERT_TRUE(errorFar > errorNear);
     ASSERT_TRUE(errorFar > 0.005); // > 5mm precision error at 100km in standard 32-bit floats
+
+    // 6. Test Model Matrix offset camera-relative computation
+    glm::mat4 localModel = glm::translate(glm::mat4(1.0f), glm::vec3(5.0f, 3.0f, -8.0f));
+    glm::dvec3 worldOffset(1000000.0, 500000.0, -1000000.0);
+    coord.SetCameraWorldPosition(worldOffset);
+    glm::mat4 relComputedModel = coord.ComputeCameraRelativeModelMatrix(localModel, worldOffset);
+    glm::vec3 relComputedPos(relComputedModel[3]);
+    ASSERT_FLOAT_NEAR(relComputedPos.x, 5.0f, 1e-4f);
+    ASSERT_FLOAT_NEAR(relComputedPos.y, 3.0f, 1e-4f);
+    ASSERT_FLOAT_NEAR(relComputedPos.z, -8.0f, 1e-4f);
+
+    // 7. Test Scene World Offset Serialization
+    Scene offsetScene;
+    offsetScene.SetWorldOffset(glm::dvec3(123456.78, -98765.43, 55555.55));
+    std::string offsetPath = "temp_offset_test.scene";
+    ASSERT_TRUE(offsetScene.SaveToFile(offsetPath));
+    Scene loadedOffsetScene;
+    ASSERT_TRUE(loadedOffsetScene.LoadFromFile(offsetPath));
+    std::filesystem::remove(offsetPath);
+    ASSERT_FLOAT_NEAR(loadedOffsetScene.GetWorldOffset().x, 123456.78, 1e-2);
+    ASSERT_FLOAT_NEAR(loadedOffsetScene.GetWorldOffset().y, -98765.43, 1e-2);
+    ASSERT_FLOAT_NEAR(loadedOffsetScene.GetWorldOffset().z, 55555.55, 1e-2);
 }
 
 // ============================================================================
@@ -4638,6 +4660,20 @@ TEST_CASE(RoadmapWorldStreaming, AsynchronousWorldPartitionAndDirectStorage) {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     ASSERT_EQ(completedTasks.load(), 2);
     ASSERT_TRUE(dsQueue.GetTotalBytesRead() >= 3072);
+
+    // Test unbuffered direct disk read
+    ASSERT_TRUE(dsQueue.IsDirectStorageUnbufferedActive());
+    std::string testPath = "direct_storage_test.bin";
+    std::vector<uint8_t> testBytes(8192, 0x5A);
+    {
+        std::ofstream out(testPath, std::ios::binary);
+        out.write(reinterpret_cast<const char*>(testBytes.data()), testBytes.size());
+    }
+    auto readBytes = dsQueue.ReadFileSync(testPath, 0, testBytes.size());
+    std::filesystem::remove(testPath);
+    ASSERT_EQ(readBytes.size(), testBytes.size());
+    ASSERT_EQ(readBytes[0], 0x5A);
+    ASSERT_EQ(readBytes[8191], 0x5A);
 
     // 3. Test Scene Node Registration and Spatial Partitioning
     Scene testScene;
@@ -4915,6 +4951,16 @@ TEST_CASE(RoadmapLocomotion, MotionMatchingAndFullBodyIK) {
     ASSERT_TRUE(solved);
     // Pelvis must drop to accommodate lowest foot reach
     ASSERT_TRUE(skel.bones[0].currentPosition.y < initialPelvisY);
+
+    // 3. Test CharacterNode Motion Matching Runtime Integration
+    Scene charScene;
+    CharacterNode testChar("PlayerNPC");
+    testChar.useMotionMatching = true;
+    testChar.desiredVelocity = glm::vec3(0.0f, 0.0f, 4.0f); // Run forward
+    testChar.Update(0.016f, charScene);
+
+    ASSERT_TRUE(testChar.useMotionMatching);
+    ASSERT_TRUE(testChar.currentMatchedFrameIndex >= 0);
 }
 
 // ============================================================================
@@ -4975,6 +5021,36 @@ TEST_CASE(RoadmapCharacterPhysics, XPBDClothSimulationAndDynamicHair) {
     ASSERT_FLOAT_NEAR(hairSim.GetHairParticles()[0].position.y, 1.8f, 1e-3f);
     // Tip particle hangs downward
     ASSERT_TRUE(hairSim.GetHairParticles()[4].position.y < 1.8f);
+
+    // 4. Test Scene Node Cloth Integration & Serialization
+    Scene clothScene;
+    auto clothNode = clothScene.AddNode(ShapeType::Cube, "BannerCloth");
+    clothNode->isCloth = true;
+    clothNode->clothWidth = 2.0f;
+    clothNode->clothHeight = 3.0f;
+    clothNode->clothResX = 8;
+    clothNode->clothResY = 8;
+    clothNode->clothPinTop = true;
+    clothNode->clothWind = glm::vec3(5.0f, 0.0f, 2.0f);
+
+    ASSERT_TRUE(clothNode->isCloth);
+
+    // Serialization roundtrip
+    const std::string clothPath = "temp_cloth_test.scene";
+    ASSERT_TRUE(clothScene.SaveToFile(clothPath));
+    Scene loadedClothScene;
+    ASSERT_TRUE(loadedClothScene.LoadFromFile(clothPath));
+    std::filesystem::remove(clothPath);
+
+    auto loadedNode = loadedClothScene.GetNodeById(clothNode->id);
+    ASSERT_TRUE(loadedNode != nullptr);
+    ASSERT_TRUE(loadedNode->isCloth);
+    ASSERT_EQ(loadedNode->clothResX, 8);
+    ASSERT_EQ(loadedNode->clothResY, 8);
+    ASSERT_FLOAT_NEAR(loadedNode->clothWidth, 2.0f, 1e-3f);
+    ASSERT_FLOAT_NEAR(loadedNode->clothHeight, 3.0f, 1e-3f);
+    ASSERT_TRUE(loadedNode->clothPinTop);
+    ASSERT_FLOAT_NEAR(loadedNode->clothWind.x, 5.0f, 1e-3f);
 }
 
 // ============================================================================
@@ -5031,6 +5107,39 @@ TEST_CASE(RoadmapAcoustics, RayTracedSoundDiffractionAndDoorPortaling) {
     ASSERT_TRUE(resultAjar.isPortaled);
     ASSERT_TRUE(resultAjar.lowPassCutoffHz < resultPortaled.lowPassCutoffHz);
     ASSERT_TRUE(resultAjar.perceivedGain < resultPortaled.perceivedGain);
+
+    // 5. Verification of AudioEngine end-to-end integration:
+    auto& engine = AudioEngine::Get();
+    engine.SetAcousticRayTracingEnabled(true);
+    ASSERT_TRUE(engine.IsAcousticRayTracingEnabled());
+
+    auto sineWav = AudioEngine::GenerateSineWaveWav(440.0f, 0.5f, 44100);
+    engine.LoadWavFromMemory("test_sine_acoustic", sineWav.data(), sineWav.size());
+
+    engine.SetListener(listener, glm::vec3(0.0f, 0.0f, -1.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+
+    // Clear obstacles for direct test
+    audioRT.Clear();
+    uint32_t voiceDirect = engine.Play3D("test_sine_acoustic", emitter, "SFX", 1.0f, 1.0f, 50.0f, false);
+    std::vector<float> directBuffer;
+    engine.MixOutputBuffer(nullptr, directBuffer, 1024, 44100);
+    engine.StopVoice(voiceDirect);
+
+    float maxDirect = 0.0f;
+    for (float s : directBuffer) maxDirect = std::max(maxDirect, std::abs(s));
+    ASSERT_TRUE(maxDirect > 0.05f);
+
+    // Now insert a solid concrete wall obstacle
+    audioRT.AddObstacle(glm::vec3(-5.0f, 0.0f, 2.0f), glm::vec3(5.0f, 3.0f, 3.0f), WallMaterialType::Concrete);
+    uint32_t voiceOccluded = engine.Play3D("test_sine_acoustic", emitter, "SFX", 1.0f, 1.0f, 50.0f, false);
+    std::vector<float> occludedBuffer;
+    engine.MixOutputBuffer(nullptr, occludedBuffer, 1024, 44100);
+    engine.StopVoice(voiceOccluded);
+
+    float maxOccluded = 0.0f;
+    for (float s : occludedBuffer) maxOccluded = std::max(maxOccluded, std::abs(s));
+    // Occluded sound through concrete must be significantly attenuated
+    ASSERT_TRUE(maxOccluded < maxDirect * 0.1f);
 }
 
 // ============================================================================

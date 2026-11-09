@@ -33,6 +33,10 @@ public:
     uint64_t GetTotalBytesRead() const;
     bool IsRunning() const { return m_running; }
 
+    // DirectStorage Unbuffered Direct I/O
+    bool IsDirectStorageUnbufferedActive() const { return m_unbufferedEnabled; }
+    void SetDirectStorageUnbufferedEnabled(bool enabled) { m_unbufferedEnabled = enabled; }
+
     // Synchronous immediate read fallback (e.g., for Critical stall avoidance)
     std::vector<uint8_t> ReadFileSync(const std::string& filePath, uint64_t offset = 0, uint64_t size = 0);
 
@@ -57,6 +61,7 @@ private:
     };
 
     std::atomic<bool> m_running{false};
+    std::atomic<bool> m_unbufferedEnabled{true};
     std::atomic<uint64_t> m_nextRequestId{1};
     std::vector<std::thread> m_workers;
 

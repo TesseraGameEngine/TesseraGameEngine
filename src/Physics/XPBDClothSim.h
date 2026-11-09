@@ -69,8 +69,9 @@ public:
     size_t GetParticleCount() const { return m_particles.size(); }
     size_t GetConstraintCount() const { return m_constraints.size(); }
 
-private:
     XPBDClothSimulator();
+
+private:
     void SolveConstraints(float dtSub);
     void ResolveCollisions();
 

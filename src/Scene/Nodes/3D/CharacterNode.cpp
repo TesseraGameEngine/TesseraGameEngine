@@ -1,4 +1,5 @@
 #include "CharacterNode.h"
+#include "Animation/MotionMatching.h"
 #include "Scene/Scene.h"
 #include "Physics/Collision.h"
 #include "UI/NodeInspector.h"
@@ -59,6 +60,38 @@ void CharacterNode::Update(float dt, const Scene& scene) {
         }
     } else {
         currentAnimState = idleAnimClip;
+    }
+
+    // Motion Matching evaluation if enabled
+    if (useMotionMatching) {
+        auto& matcher = Animation::MotionMatcher::Get();
+        if (!matcher.GetDatabase() || matcher.GetDatabase()->GetFrameCount() == 0) {
+            auto db = std::make_shared<Animation::MotionDatabase>();
+            db->BuildDefaultLocomotionDatabase();
+            matcher.SetDatabase(db);
+            matcher.Initialize();
+        }
+
+        Animation::MotionFeaturePose currentPose;
+        currentPose.rootVelocity = (position - m_lastPos) / std::max(dt, 0.001f);
+        m_lastPos = position;
+
+        Animation::TrajectoryPoint trajectory[3];
+        glm::vec2 flatVel(desiredVelocity.x, desiredVelocity.z);
+        float speed = glm::length(flatVel);
+        glm::vec2 dir = (speed > 1e-4f) ? (flatVel / speed) : glm::vec2(0.0f, 1.0f);
+
+        trajectory[0] = { 0.2f, flatVel * 0.2f, dir };
+        trajectory[1] = { 0.4f, flatVel * 0.4f, dir };
+        trajectory[2] = { 0.6f, flatVel * 0.6f, dir };
+
+        int bestFrame = matcher.QueryBestFrame(currentPose, trajectory);
+        if (bestFrame >= 0 && bestFrame != currentMatchedFrameIndex) {
+            currentMatchedFrameIndex = bestFrame;
+            const auto& frame = matcher.GetDatabase()->GetFrame(bestFrame);
+            matcher.TransitionTo(frame, position, glm::quat(glm::radians(rotation)), 0.15f);
+        }
+        matcher.Update(dt);
     }
 
     if (applyGroundClamping) {

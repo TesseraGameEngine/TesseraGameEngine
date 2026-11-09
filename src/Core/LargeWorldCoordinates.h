@@ -36,6 +36,9 @@ public:
     // Computes 32-bit camera-relative model matrix from 64-bit world transform
     glm::mat4 ComputeCameraRelativeModelMatrix(const LargeWorldTransform& transform) const;
 
+    // Computes 32-bit camera-relative model matrix from 32-bit matrix + 64-bit world offset
+    glm::mat4 ComputeCameraRelativeModelMatrix(const glm::mat4& modelMatrix, const glm::dvec3& worldOffset = glm::dvec3(0.0)) const;
+
     // Isolates the rotation-only view matrix (strips 32-bit world translation from view matrix)
     static glm::mat4 ExtractRotationOnlyViewMatrix(const glm::mat4& viewMatrix);
 

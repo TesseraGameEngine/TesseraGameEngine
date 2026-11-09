@@ -42,5 +42,11 @@ public:
     bool clampToWorldFloor{true}; // Stops on world grid (Y=0) if no floor plane is placed
     float verticalVelocity{0.0f};
     bool isGrounded{false};
+
+    // Motion Matching & Full-Body IK Locomotion
+    bool useMotionMatching{false};
+    glm::vec3 desiredVelocity{0.0f};
+    int currentMatchedFrameIndex{0};
+    glm::vec3 m_lastPos{0.0f};
 };
 

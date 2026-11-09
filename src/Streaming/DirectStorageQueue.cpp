@@ -149,10 +149,92 @@ void DirectStorageQueue::RecordReadBytes(size_t bytes) {
     }
 }
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+
+static bool ReadWin32Unbuffered(const std::string& filePath, uint64_t offset, uint64_t size, std::vector<uint8_t>& outData) {
+    if (filePath.empty()) return false;
+    std::wstring wPath(filePath.begin(), filePath.end());
+
+    // Open with FILE_FLAG_NO_BUFFERING | FILE_FLAG_OVERLAPPED | FILE_FLAG_SEQUENTIAL_SCAN for direct disk DMA
+    HANDLE hFile = CreateFileW(wPath.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                               OPEN_EXISTING, FILE_FLAG_NO_BUFFERING | FILE_FLAG_OVERLAPPED | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        // Fallback to standard overlapped if direct sector access is not permitted
+        hFile = CreateFileW(wPath.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                            OPEN_EXISTING, FILE_FLAG_OVERLAPPED | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
+        if (hFile == INVALID_HANDLE_VALUE) return false;
+    }
+
+    LARGE_INTEGER liSize;
+    if (!GetFileSizeEx(hFile, &liSize)) {
+        CloseHandle(hFile);
+        return false;
+    }
+    uint64_t fileSize = static_cast<uint64_t>(liSize.QuadPart);
+    if (offset >= fileSize) {
+        CloseHandle(hFile);
+        return false;
+    }
+
+    uint64_t targetReadSize = (size > 0 && offset + size <= fileSize) ? size : (fileSize - offset);
+
+    // DirectStorage unbuffered alignment: 4096 sector alignment
+    const uint64_t kSectorSize = 4096;
+    uint64_t alignedOffset = (offset / kSectorSize) * kSectorSize;
+    uint64_t offsetDiff = offset - alignedOffset;
+    uint64_t alignedSize = ((offsetDiff + targetReadSize + kSectorSize - 1) / kSectorSize) * kSectorSize;
+
+    void* rawBuffer = _aligned_malloc(static_cast<size_t>(alignedSize), static_cast<size_t>(kSectorSize));
+    if (!rawBuffer) {
+        CloseHandle(hFile);
+        return false;
+    }
+
+    OVERLAPPED ov{};
+    ov.Offset = static_cast<DWORD>(alignedOffset & 0xFFFFFFFF);
+    ov.OffsetHigh = static_cast<DWORD>((alignedOffset >> 32) & 0xFFFFFFFF);
+    ov.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+
+    DWORD bytesRead = 0;
+    BOOL ok = ReadFile(hFile, rawBuffer, static_cast<DWORD>(alignedSize), &bytesRead, &ov);
+    if (!ok && GetLastError() == ERROR_IO_PENDING) {
+        GetOverlappedResult(hFile, &ov, &bytesRead, TRUE);
+    }
+
+    CloseHandle(ov.hEvent);
+    CloseHandle(hFile);
+
+    if (bytesRead > offsetDiff) {
+        size_t actualBytes = std::min<size_t>(static_cast<size_t>(targetReadSize), static_cast<size_t>(bytesRead - offsetDiff));
+        outData.resize(actualBytes);
+        memcpy(outData.data(), static_cast<const uint8_t*>(rawBuffer) + offsetDiff, actualBytes);
+        _aligned_free(rawBuffer);
+        return true;
+    }
+
+    _aligned_free(rawBuffer);
+    return false;
+}
+#endif
+
 std::vector<uint8_t> DirectStorageQueue::ReadFileSync(const std::string& filePath, uint64_t offset, uint64_t size) {
     if (filePath.empty()) {
         return {};
     }
+
+#ifdef _WIN32
+    if (m_unbufferedEnabled.load()) {
+        std::vector<uint8_t> directData;
+        if (ReadWin32Unbuffered(filePath, offset, size, directData)) {
+            RecordReadBytes(directData.size());
+            return directData;
+        }
+    }
+#endif
 
     std::ifstream file(filePath, std::ios::binary | std::ios::ate);
     if (!file.is_open()) {

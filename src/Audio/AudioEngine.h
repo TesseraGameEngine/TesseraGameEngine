@@ -39,6 +39,8 @@ struct ActiveVoice {
     float maxDistance{30.0f};
     double sampleCursor{0.0};
     bool playing{true};
+    float lowPassStateL{0.0f};
+    float lowPassStateR{0.0f};
 };
 
 class AudioEngine {
@@ -129,6 +131,11 @@ public:
                         float roomSize = 0.65f,
                         float damping = 0.4f);
 
+    // 5. Hardware & Ray-Traced Acoustics (AcousticRayTracer integration)
+    void SetAcousticRayTracingEnabled(bool enabled) { m_acousticRayTracingEnabled = enabled; }
+    bool IsAcousticRayTracingEnabled() const { return m_acousticRayTracingEnabled; }
+    void SyncAcousticObstacles(const Scene& scene);
+
 private:
     std::map<std::string, AudioClip> m_clips;
     std::map<std::string, AudioBus> m_buses;
@@ -145,6 +152,7 @@ private:
     std::vector<float> m_combDelayR1;
     size_t m_combIndex{0};
     std::vector<uint8_t> m_activeHardwareWavBuffer;
+    bool m_acousticRayTracingEnabled{true};
 
     // Clips, voices, buses and the listener are shared with the output thread
     mutable std::recursive_mutex m_mutex;

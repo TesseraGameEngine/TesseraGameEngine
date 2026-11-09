@@ -31,6 +31,18 @@ glm::mat4 CameraRelativeCoordinator::ComputeCameraRelativeModelMatrix(const Larg
     return m;
 }
 
+glm::mat4 CameraRelativeCoordinator::ComputeCameraRelativeModelMatrix(const glm::mat4& modelMatrix, const glm::dvec3& worldOffset) const {
+    if (!m_enabled) {
+        if (worldOffset == glm::dvec3(0.0)) return modelMatrix;
+        return glm::translate(glm::mat4(1.0f), glm::vec3(worldOffset)) * modelMatrix;
+    }
+    glm::dvec3 objWorldPos = worldOffset + glm::dvec3(modelMatrix[3]);
+    glm::dvec3 relPos = objWorldPos - m_cameraPosition;
+    glm::mat4 relModel = modelMatrix;
+    relModel[3] = glm::vec4(glm::vec3(relPos), 1.0f);
+    return relModel;
+}
+
 glm::mat4 CameraRelativeCoordinator::ExtractRotationOnlyViewMatrix(const glm::mat4& viewMatrix) {
     // Upper-left 3x3 orientation components only; zero translation in column 3
     glm::mat4 rotOnly = glm::mat4(glm::mat3(viewMatrix));
@@ -63,4 +75,3 @@ bool CameraRelativeCoordinator::VerifyPrecisionIntegrity(const WorldVector& camP
 
 } // namespace LWC
 } // namespace Core
-

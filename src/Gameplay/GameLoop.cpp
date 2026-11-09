@@ -1,4 +1,5 @@
 #include "GameLoop.h"
+#include "Physics/XPBDClothSim.h"
 #include "Scene/Nodes/3D/ParticleNode.h"
 #include "Scene/Nodes/3D/AudioNode.h"
 #include "Audio/AudioEngine.h"
@@ -214,6 +215,25 @@ void GameLoop::Update(Scene& scene, float rawDeltaTime, bool isGameWindowFocused
             if (nodeB && !nodeB->scriptPath.empty()) Scripting::LuaScriptSystem::Get().CollisionNodeScript(*nodeB, *m_playScene, a);
         }
         Monitoring::GameProfiler::Get().EndStage("Physics & Collisions (Jolt)");
+
+        // Step XPBD Cloth Simulation
+        for (const auto& node : m_playScene->GetNodes()) {
+            if (!node || !node->isCloth) continue;
+            if (!node->clothSim) {
+                node->clothSim = std::make_shared<Physics::XPBDClothSimulator>();
+                node->clothSim->InitializeGridCloth(node->clothWidth, node->clothHeight, node->clothResX, node->clothResY, node->clothMass);
+                if (node->clothPinTop) {
+                    for (uint32_t px = 0; px < node->clothResX; ++px) {
+                        node->clothSim->PinParticle(px);
+                    }
+                }
+            }
+            Physics::XPBDClothSettings cSettings;
+            cSettings.windVelocity = node->clothWind;
+            cSettings.stretchCompliance = node->clothCompliance;
+            node->clothSim->Step(Time::deltaTime, cSettings);
+        }
+        Physics::DynamicHairSimulator::Get().Step(Time::deltaTime);
 
         // Step Particle Systems in Play Mode
         Monitoring::GameProfiler::Get().BeginStage("VFX & Particle Simulation");

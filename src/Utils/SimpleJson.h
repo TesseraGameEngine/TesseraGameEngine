@@ -7,6 +7,7 @@
 #include <iomanip>
 #include <cctype>
 #include <stdexcept>
+#include <limits>
 
 class JsonValue {
 public:
@@ -116,7 +117,7 @@ public:
                 if (numVal == static_cast<int64_t>(numVal)) {
                     ss << static_cast<int64_t>(numVal);
                 } else {
-                    ss << std::setprecision(6) << numVal;
+                    ss << std::setprecision(std::numeric_limits<double>::max_digits10) << numVal;
                 }
                 return ss.str();
             }

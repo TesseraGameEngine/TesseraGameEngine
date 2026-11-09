@@ -1,11 +1,12 @@
 #include "resource.h"
 #include <windows.h>
+#include "Core/Version.h"  // generated from the VERSION file
 
 IDI_ENGINE_ICON ICON "../assets/icons/engine_icon.ico"
 
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION     1,0,0,0
-PRODUCTVERSION  1,0,0,0
+FILEVERSION     TESSERA_VERSION_MAJOR,TESSERA_VERSION_MINOR,TESSERA_VERSION_PATCH,0
+PRODUCTVERSION  TESSERA_VERSION_MAJOR,TESSERA_VERSION_MINOR,TESSERA_VERSION_PATCH,0
 FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
 FILEFLAGS       0
 FILEOS          VOS_NT_WINDOWS32
@@ -18,12 +19,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName",      "Tessera Studios"
             VALUE "FileDescription",  "Tessera Vulkan 3D Game Engine"
-            VALUE "FileVersion",      "1.0.0.0"
+            VALUE "FileVersion",      TESSERA_VERSION_STRING
             VALUE "InternalName",     "TesseraEngine"
             VALUE "LegalCopyright",   "Copyright (C) 2026 Tessera Studios"
             VALUE "OriginalFilename", "TesseraGameEngine.exe"
             VALUE "ProductName",      "Tessera Game Engine"
-            VALUE "ProductVersion",   "1.0.0.0"
+            VALUE "ProductVersion",   TESSERA_VERSION_STRING
         END
     END
     BLOCK "VarFileInfo"

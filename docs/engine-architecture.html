@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Engine Internal Architecture & Developer Guide - Tessera Engine Documentation</title>
   <link rel="stylesheet" href="style.css">
+  <script src="version.js"></script>
   <script src="nav.js" defer></script>
 </head>
 <body>
@@ -452,6 +453,25 @@ cmake --build build --config Release --target EngineTestSuite
 
 # Expected output:
 # RESULTS: 87 PASSED, 0 FAILED (~710 ms)</code></pre>
+
+    <h3>Guide E: Versioning &amp; Releases</h3>
+    <p>This documentation describes Tessera <strong>v<span class="tessera-version">1.0.0</span></strong>. The engine follows <a href="https://semver.org/">Semantic Versioning</a> (<code>MAJOR.MINOR.PATCH</code>):</p>
+    <ul>
+      <li><strong>MAJOR</strong>: incompatible changes, such as a Lua API removed or renamed, or a <code>.scene</code> / <code>.tess</code> format that older versions can't read.</li>
+      <li><strong>MINOR</strong>: new features that keep existing projects and scripts working.</li>
+      <li><strong>PATCH</strong>: bug fixes only.</li>
+      <li>Pre-releases add a suffix: <code>1.1.0-beta.1</code>.</li>
+    </ul>
+    <p>The version is set in one place: the <code>VERSION</code> file at the repository root. CMake reads it at configure time and generates everything else from it:</p>
+    <ul>
+      <li><code>build/generated/Core/Version.h</code>: <code>Tessera::Version::String</code>, <code>Major</code>, <code>Minor</code>, <code>Patch</code> and the <code>TESSERA_VERSION_*</code> macros. Used by the splash screen, <strong>Help &gt; About</strong>, saved projects (<code>engineVersion</code>) and the Vulkan application info.</li>
+      <li>The Windows executable's file properties (<code>src/resources.rc</code>).</li>
+      <li><code>docs/version.js</code>: the version badge on every page of these docs.</li>
+    </ul>
+    <pre><code># To release a new version: edit VERSION, then re-run the build (CMake reconfigures itself)
+echo 1.1.0 &gt; VERSION
+cmake --build build --config Release</code></pre>
+    <p>A malformed VERSION (anything that isn't <code>MAJOR.MINOR.PATCH[-prerelease]</code>) stops the CMake configure with an error. Commit the regenerated <code>docs/version.js</code> along with the VERSION change.</p>
 
     <div class="pagination">
       <div></div>

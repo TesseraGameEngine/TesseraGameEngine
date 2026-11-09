@@ -10,6 +10,8 @@ A high-performance, modern, photorealistic 3D Game Engine and Editor built from 
 ![Platform](https://img.shields.io/badge/Platform-Windows_|_Linux_|_Web_HTML5-success.svg)
 ![Tests](https://img.shields.io/badge/Tests-92_Passed_|_0_Failed-brightgreen.svg)
 
+**Version:** set in the [`VERSION`](VERSION) file at the repo root ([Semantic Versioning](https://semver.org/)). The build generates the version shown on the splash screen, in **Help > About**, in the exe properties and in the docs from it. See *Guide E: Versioning & Releases* in [docs/engine-architecture.html](docs/engine-architecture.html).
+
 ---
 
 ## Table of Contents

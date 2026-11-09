@@ -1,4 +1,5 @@
 #include "VulkanContext.h"
+#include "Core/Version.h"
 #include <iostream>
 #include <set>
 #include <cstring>
@@ -43,7 +44,7 @@ void VulkanContext::CreateInstance() {
     appInfo.pApplicationName = "Tessera";
     appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
     appInfo.pEngineName = "Tessera";
-    appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
+    appInfo.engineVersion = VK_MAKE_VERSION(TESSERA_VERSION_MAJOR, TESSERA_VERSION_MINOR, TESSERA_VERSION_PATCH);
     appInfo.apiVersion = VK_API_VERSION_1_2;
 
     VkInstanceCreateInfo createInfo{};

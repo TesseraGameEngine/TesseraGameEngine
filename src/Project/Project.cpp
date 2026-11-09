@@ -1,6 +1,7 @@
 #include "Core/InputManager.h"
 #include "Project.h"
 #include "Utils/SimpleJson.h"
+#include "Core/Version.h"
 #include "UI/EditorUI.h"
 #include <fstream>
 #include <iostream>
@@ -103,7 +104,7 @@ std::shared_ptr<Project> Project::CreateNew(const std::string& parentDirectory, 
     JsonValue root = JsonValue::Object();
     root["formatVersion"] = 2;
     root["projectName"] = projectName;
-    root["engineVersion"] = "1.0.0";
+    root["engineVersion"] = Tessera::Version::String;
     root["activeScene"] = "main.scene";
     JsonValue scenesArr = JsonValue::Array();
     scenesArr.Push("main.scene");
@@ -236,7 +237,7 @@ bool Project::Save(const Scene& scene, const Camera& camera, const EditorUI& edi
     JsonValue root = JsonValue::Object();
     root["formatVersion"] = 2;
     root["projectName"] = m_projectName;
-    root["engineVersion"] = "1.0.0";
+    root["engineVersion"] = Tessera::Version::String;
     root["activeScene"] = m_activeSceneFile;
 
     // List of available scenes in project

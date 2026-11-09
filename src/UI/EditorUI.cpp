@@ -2,6 +2,7 @@
 #include <GLFW/glfw3.h>
 #include "Core/InputManager.h"
 #include "Core/UndoRedoManager.h"
+#include "Core/Version.h"
 #include "EditorUI.h"
 #include "Scene/Nodes/3D/CharacterNode.h"
 #include "Scene/Nodes/AllNodes.h"
@@ -7516,7 +7517,8 @@ void EditorUI::RenderAboutModal() {
         ImGui::SetCursorPosX((winW - tSize.x) * 0.5f);
         ImGui::TextColored(ImVec4(0.35f, 0.85f, 1.0f, 1.0f), "TESSERA GAME ENGINE");
 
-        const char* verStr = "Version 1.0.0 (Vulkan 1.3 / C++20 / Sol2 Lua 5.4)";
+        char verStr[128];
+        snprintf(verStr, sizeof(verStr), "Version %s (Vulkan 1.2 / C++20 / Sol2 Lua 5.4)", Tessera::Version::String);
         ImVec2 vSize = ImGui::CalcTextSize(verStr);
         ImGui::SetCursorPosX((winW - vSize.x) * 0.5f);
         ImGui::TextDisabled("%s", verStr);
@@ -8095,7 +8097,16 @@ void EditorUI::RenderSplashScreen(float dt) {
                       IM_COL32(75, 180, 255, 230), titleSub);
     curY += 22.0f;
 
-    const char* verStr = "Version 2.0 (x64 Windows) \xe2\x80\xa2 Sol2 Lua 5.4 \xe2\x80\xa2 JoltPhysics \xe2\x80\xa2 PBR";
+#if defined(_WIN32)
+    const char* platformName = "x64 Windows";
+#elif defined(__APPLE__)
+    const char* platformName = "macOS";
+#else
+    const char* platformName = "x64 Linux";
+#endif
+    char verStr[160];
+    snprintf(verStr, sizeof(verStr), "Version %s (%s) \xe2\x80\xa2 Sol2 Lua 5.4 \xe2\x80\xa2 JoltPhysics \xe2\x80\xa2 PBR",
+             Tessera::Version::String, platformName);
     ImVec2 verSize = ImGui::CalcTextSize(verStr);
     drawList->AddText(ImVec2(center.x - verSize.x * 0.5f, curY),
                       IM_COL32(130, 155, 180, 200), verStr);

@@ -15,7 +15,27 @@ else()
     endif()
 endif()
 
-project(Tessera CXX)
+# Engine version: the VERSION file at the repo root is the only place to set it (Semantic
+# Versioning: MAJOR.MINOR.PATCH with an optional -prerelease, e.g. 1.1.0 or 2.0.0-beta.1).
+# It reaches the code (src/Core/Version.h, generated), the Windows exe properties and the docs.
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" TESSERA_VERSION LIMIT_COUNT 1)
+string(STRIP "${TESSERA_VERSION}" TESSERA_VERSION)
+if(NOT TESSERA_VERSION MATCHES "^([0-9]+)\\.([0-9]+)\\.([0-9]+)(-([0-9A-Za-z.-]+))?$")
+    message(FATAL_ERROR "VERSION must be MAJOR.MINOR.PATCH[-prerelease] (Semantic Versioning), got '${TESSERA_VERSION}'")
+endif()
+set(TESSERA_VERSION_MAJOR ${CMAKE_MATCH_1})
+set(TESSERA_VERSION_MINOR ${CMAKE_MATCH_2})
+set(TESSERA_VERSION_PATCH ${CMAKE_MATCH_3})
+set(TESSERA_VERSION_PRERELEASE "${CMAKE_MATCH_5}")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION")
+
+project(Tessera VERSION ${TESSERA_VERSION_MAJOR}.${TESSERA_VERSION_MINOR}.${TESSERA_VERSION_PATCH} LANGUAGES CXX)
+message(STATUS "Tessera version ${TESSERA_VERSION}")
+
+set(TESSERA_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
+configure_file(src/Core/Version.h.in "${TESSERA_GENERATED_DIR}/Core/Version.h" @ONLY)
+# The docs are static pages, so their copy lives in the source tree (only rewritten when it changes)
+configure_file(docs/version.js.in "${CMAKE_CURRENT_SOURCE_DIR}/docs/version.js" @ONLY)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -375,6 +395,7 @@ endif()
 
 target_include_directories(Tessera PRIVATE
     src
+    ${TESSERA_GENERATED_DIR}
     ${Vulkan_INCLUDE_DIRS}
     ${LUA_INCLUDE_DIR}
     ${Stb_INCLUDE_DIR}
@@ -555,6 +576,7 @@ endif()
 
 target_include_directories(EngineTestSuite PRIVATE
     src
+    ${TESSERA_GENERATED_DIR}
     tests
     ${glm_INCLUDE_DIRS}
     ${LUA_INCLUDE_DIR}

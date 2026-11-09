@@ -3,6 +3,7 @@
 #include "Networking/NetworkManager.h"
 #include "TestFramework.h"
 #include "Utils/SimpleJson.h"
+#include "Core/Version.h"
 #include "Core/Camera.h"
 #include "Core/InputManager.h"
 #include "Core/UndoRedoManager.h"
@@ -5083,6 +5084,16 @@ TEST_CASE(RoadmapCharacterPhysics, XPBDClothSimulationAndDynamicHair) {
 // TEST 87: Acoustics — Ray-Traced Sound Diffraction & Door Portaling
 // ============================================================================
 #include "Audio/AcousticRayTracer.h"
+
+// The version string (from the VERSION file) is well-formed semver and matches its parts
+TEST_CASE(EngineVersion, SemanticVersionMatchesParts) {
+    const std::string full = Tessera::Version::String;
+    const std::string core = std::to_string(Tessera::Version::Major) + "." + std::to_string(Tessera::Version::Minor) +
+                             "." + std::to_string(Tessera::Version::Patch);
+    const std::string pre = Tessera::Version::PreRelease;
+    ASSERT_EQ(full, pre.empty() ? core : core + "-" + pre);
+    ASSERT_TRUE(Tessera::Version::Major >= 1);
+}
 
 TEST_CASE(RoadmapAcoustics, RayTracedSoundDiffractionAndDoorPortaling) {
     using namespace Audio;

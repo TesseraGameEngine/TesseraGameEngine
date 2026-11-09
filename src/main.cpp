@@ -120,6 +120,8 @@ struct GameConfig {
     bool bakeLighting{false};
     // --gpu-profile: log the GPU time of every pass (averaged) on exit
     bool gpuProfileLog{false};
+    // --cpu-profile: log the average CPU time of each part of the frame on exit
+    bool cpuProfileLog{false};
     // --start-at=<node name>: (standalone) the active camera starts where that node is
     std::string startAt;
     // --project=<file.tess>: open a specific project directly at startup
@@ -148,6 +150,8 @@ struct GameConfig {
                 cfg.bakeLighting = true;
             } else if (arg == "--gpu-profile") {
                 cfg.gpuProfileLog = true;
+            } else if (arg == "--cpu-profile") {
+                cfg.cpuProfileLog = true;
             } else if (arg.rfind("--start-at=", 0) == 0) {
                 // Standalone: the camera starts at this node's position and rotation
                 cfg.startAt = arg.substr(11);
@@ -402,6 +406,7 @@ private:
         m_fluidSim.Init();
         m_particleSim.Init();
         m_gpuProfiler.Init();
+        m_cpuProf.enabled = m_gameConfig.cpuProfileLog;
         // Built-in foliage meshes (grass, flowers, bush, trees, rock) for terrain foliage
         for (int kind = 0; kind < FoliageMeshes::Count; ++kind) {
             m_customMeshes[FoliageMeshes::MeshName(kind)] = VulkanBufferUtils::UploadMesh(FoliageMeshes::Build(kind));
@@ -490,7 +495,8 @@ private:
     void SyncViewSizes() {
         bool resized = false;
         if (!m_gameConfig.isStandaloneGame && m_editorUI.GetStartupState() == EditorUI::StartupState::Editor) {
-            if (SyncTargetSize(m_editorViewSizer, m_editorUI.GetViewportPixelSize(), m_offscreen, m_editorMirrorOffscreen)) {
+            const glm::vec2 editorPixels = m_editorUI.GetViewportPixelSize() * m_editorUI.GetViewportPerformance().resolutionScale;
+            if (SyncTargetSize(m_editorViewSizer, editorPixels, m_offscreen, m_editorMirrorOffscreen)) {
                 m_prevViewProjValid[0] = false;
                 resized = true;
                 LOG("Editor viewport render size: " << m_offscreen.GetWidth() << "x" << m_offscreen.GetHeight());
@@ -1444,6 +1450,7 @@ private:
         int screenshotFrameCounter = 0;
         while (!glfwWindowShouldClose(m_window)) {
             ++m_uiFrameCounter; // material previews asked for during this frame's UI
+            m_cpuProf.BeginFrame();
             double currentTime = glfwGetTime();
             float deltaTime = static_cast<float>(currentTime - lastTime);
             lastTime = currentTime;
@@ -1451,12 +1458,22 @@ private:
             // Clamp delta time to 0.1s to prevent huge jumps
             if (deltaTime > 0.1f) deltaTime = 0.1f;
 
-            glfwPollEvents();
+            // Unfocused editor: wait for events up to ~10 fps instead of spinning (Unreal's "Use
+            // less CPU when in background"); never for games or automated screenshots
+            const auto& viewportPerf = m_editorUI.GetViewportPerformance();
+            if (!m_gameConfig.isStandaloneGame && m_gameConfig.screenshotPath.empty() && viewportPerf.lessCpuInBackground &&
+                !m_gameLoop.IsPlaying() && glfwGetWindowAttrib(m_window, GLFW_FOCUSED) == GLFW_FALSE) {
+                glfwWaitEventsTimeout(glfwGetWindowAttrib(m_window, GLFW_ICONIFIED) ? 0.5 : 0.1);
+            } else {
+                glfwPollEvents();
+            }
+            const double frameWorkStart = glfwGetTime();
 
             // Begin ImGui frame immediately so input events from glfwPollEvents are available to game loop
             ImGui_ImplVulkan_NewFrame();
             ImGui_ImplGlfw_NewFrame();
             ImGui::NewFrame();
+            m_cpuProf.Mark("Events & ImGui NewFrame");
 
             // In standalone game, Escape unlocks pointer or closes game if already unlocked
             if (m_gameConfig.isStandaloneGame && ImGui::IsKeyPressed(ImGuiKey_Escape)) {
@@ -1467,7 +1484,11 @@ private:
                 }
             }
 
-            OceanWaves::SetTime(static_cast<float>(glfwGetTime()));
+            // Water, wind and weather time: runs in games and Play, and while editing unless the
+            // viewport's Realtime option is off
+            m_animating = m_gameConfig.isStandaloneGame || m_gameLoop.IsPlaying() || viewportPerf.realtime;
+            if (m_animating) m_animTime += deltaTime;
+            OceanWaves::SetTime(static_cast<float>(m_animTime));
 
             // Run decoupled game loop (fixed updates, player input, collisions, animation)
             if (m_gameConfig.isStandaloneGame) {
@@ -1483,20 +1504,22 @@ private:
                 }
             }
 
+            m_cpuProf.Mark("Game loop (play/scripts/physics)");
             // Update Game Profiler with isolated game simulation stats
             Monitoring::GameProfiler::Get().Update(m_gameLoop.GetPlayScene().get(), &m_gameLoop, &m_editorUI.GetNetworkManager(), deltaTime);
 
             bool isPlayingMode = (m_gameLoop.GetMode() == Gameplay::EngineMode::Play);
             UpdateSkeletalAnimations(deltaTime, isPlayingMode);
+            m_cpuProf.Mark("Profiler stats & skeletal animation");
 
             // Time of day: the clock runs in Play, and while editing when the scene asks for it.
             // The weather always runs for the scene being shown, so presets can be previewed.
             {
                 Scene& clockScene = m_gameLoop.GetActivePlayScene(m_scene);
                 const bool playingScene = isPlayingMode && &clockScene != &m_scene;
-                if (playingScene || clockScene.GetEnvironment().clockRunsInEditor) SkyClock::Advance(clockScene.GetEnvironment(), deltaTime);
+                if (playingScene || (clockScene.GetEnvironment().clockRunsInEditor && m_animating)) SkyClock::Advance(clockScene.GetEnvironment(), deltaTime);
                 SceneEnvironment& weatherEnv = clockScene.GetEnvironment();
-                Weather::Update(weatherEnv, deltaTime);
+                Weather::Update(weatherEnv, m_animating ? deltaTime : 0.0f);
                 // Thunder plays in Play only (not while editing), louder the nearer the strike
                 if (weatherEnv.thunderDue) {
                     weatherEnv.thunderDue = false;
@@ -1524,8 +1547,14 @@ private:
             }
             if (m_lightmapBaking) StepLightmapBake();
             if (m_giBake.active) StepGIBake();
+            m_cpuProf.Mark("Sky, weather & bakes");
 
             DrawFrame();
+            if (!m_gameConfig.isStandaloneGame) {
+                const float cpuMs = static_cast<float>((glfwGetTime() - frameWorkStart - m_fenceWaitSeconds) * 1000.0);
+                m_editorUI.SetFrameStats(cpuMs, static_cast<float>(m_gpuProfiler.Supported() ? m_gpuProfiler.AverageFrameMs() : 0.0),
+                                         m_offscreen.GetWidth(), m_offscreen.GetHeight());
+            }
 
             // In the editor, frames count once the editor itself (not the project hub) is showing
             const bool screenshotReady = (m_gameConfig.isStandaloneGame || m_editorUI.GetStartupState() == EditorUI::StartupState::Editor) &&
@@ -1537,6 +1566,17 @@ private:
             }
         }
         vkDeviceWaitIdle(VulkanContext::Get().GetDevice());
+        if (m_cpuProf.enabled && m_cpuProf.frames > 0) {
+            double sum = 0.0;
+            for (const auto& t : m_cpuProf.totals) sum += t.second;
+            LOG("[CPU Profile] " << m_cpuProf.frames << " frames after warm-up, " << (sum * 1000.0 / m_cpuProf.frames)
+                << " ms per frame, slowest " << (m_cpuProf.worstFrame * 1000.0) << " ms");
+            for (const auto& t : m_cpuProf.totals) {
+                char line[160];
+                std::snprintf(line, sizeof(line), "[CPU Profile]   %-40s %8.3f ms", t.first, t.second * 1000.0 / m_cpuProf.frames);
+                LOG(line);
+            }
+        }
         if (m_gameConfig.gpuProfileLog) {
             if (!m_gpuProfiler.Supported()) {
                 LOG("[GPU Profile] Timestamps aren't supported on this GPU");
@@ -1728,7 +1768,7 @@ private:
         } else {
             ubo.envParams = glm::vec4(0.0f, 1.0f, 0.0f, 0.0f);
         }
-        ubo.timeParams.x = static_cast<float>(glfwGetTime());
+        ubo.timeParams.x = static_cast<float>(m_animTime);
         ubo.unjitteredViewProj = ubo.prevViewProj = ubo.proj * ubo.view;
         ubo.postProcessParams.y = 0.0f; // no SSAO
         ubo.postProcessParams.w = 0.0f; // no volumetric fog
@@ -1965,6 +2005,67 @@ private:
     VulkanFluidSim m_fluidSim;     // fluid volumes, simulated on the GPU
     VulkanParticleSim m_particleSim; // particle emitters in GPU mode
     VulkanGpuProfiler m_gpuProfiler;   // per-pass GPU timings (timestamp queries)
+
+    // CPU frame breakdown (--cpu-profile): each Mark() charges the time since the previous mark
+    // to that name; averages are logged on exit
+    struct CpuFrameProfiler {
+        bool enabled{false};
+        double last{0.0};
+        uint64_t frames{0};
+        std::vector<std::pair<const char*, double>> totals; // in first-seen order
+        double frameStart{0.0}, worstFrame{0.0};
+        uint64_t warmup{0};
+        // The first frames (project load, shader and pipeline creation) are left out of the averages
+        void BeginFrame() {
+            if (!enabled) return;
+            last = glfwGetTime();
+            if (frames > 0) worstFrame = std::max(worstFrame, last - frameStart);
+            frameStart = last;
+            if (++warmup == 120) { totals.clear(); frames = 0; worstFrame = 0.0; }
+            ++frames;
+        }
+        void Mark(const char* name) {
+            if (!enabled) return;
+            const double now = glfwGetTime();
+            auto it = std::find_if(totals.begin(), totals.end(), [&](const auto& t) { return std::strcmp(t.first, name) == 0; });
+            if (it == totals.end()) totals.emplace_back(name, now - last);
+            else it->second += now - last;
+            last = now;
+        }
+    } m_cpuProf;
+
+    // Animation clock for water, wind and weather: stands still while editing with the viewport's
+    // Realtime option off (Play always runs it)
+    double m_animTime{0.0};
+    bool m_animating{true};
+    double m_fenceWaitSeconds{0.0};   // this frame's wait for the GPU (not CPU work)
+    // Editor viewport quality: the scene settings it overrides while the editor view records
+    struct ViewportEnvOverride {
+        float ssaoIntensity, ssrIntensity, volumetricFogDensity, volumetricScattering, motionBlur, filmGrain, lensFlare, chromaticAberration, shadowDistance;
+        bool volumetricClouds, depthOfField;
+        int antiAliasing;
+    };
+    static ViewportEnvOverride SaveViewportEnv(const SceneEnvironment& env) {
+        return { env.ssaoIntensity, env.ssrIntensity, env.volumetricFogDensity, env.volumetricScattering, env.motionBlur,
+                 env.filmGrain, env.lensFlare, env.chromaticAberration, env.shadowDistance, env.volumetricClouds, env.depthOfField, env.antiAliasing };
+    }
+    static void RestoreViewportEnv(SceneEnvironment& env, const ViewportEnvOverride& o) {
+        env.ssaoIntensity = o.ssaoIntensity; env.ssrIntensity = o.ssrIntensity;
+        env.volumetricFogDensity = o.volumetricFogDensity; env.volumetricScattering = o.volumetricScattering;
+        env.motionBlur = o.motionBlur; env.filmGrain = o.filmGrain; env.lensFlare = o.lensFlare;
+        env.chromaticAberration = o.chromaticAberration; env.volumetricClouds = o.volumetricClouds;
+        env.depthOfField = o.depthOfField; env.antiAliasing = o.antiAliasing; env.shadowDistance = o.shadowDistance;
+    }
+    static void ApplyViewportQuality(SceneEnvironment& env, const EditorUI::ViewportPerformance& p) {
+        if (!p.ambientOcclusion) env.ssaoIntensity = 0.0f;
+        if (!p.screenReflections) env.ssrIntensity = 0.0f;
+        if (!p.volumetrics) { env.volumetricClouds = false; env.volumetricFogDensity = 0.0f; env.volumetricScattering = 0.0f; }
+        if (!p.cinematicEffects) {
+            env.depthOfField = false; env.motionBlur = 0.0f; env.filmGrain = 0.0f; env.lensFlare = 0.0f; env.chromaticAberration = 0.0f;
+        }
+        if (!p.temporalAA && env.antiAliasing == 2) env.antiAliasing = 1; // FXAA
+        if (p.shortShadows) env.shadowDistance = std::min(env.shadowDistance, 60.0f);
+    }
     VulkanFluidTargets m_fluidTargets[2]; // screen-space fluid images for the editor and game views
     bool m_cameraUnderwater[2]{false, false};
     bool m_cameraHalfUnderwater[2]{false, false};
@@ -2687,7 +2788,10 @@ private:
         auto& ctx = VulkanContext::Get();
         VkDevice device = ctx.GetDevice();
 
+        const double fenceStart = glfwGetTime();
         vkWaitForFences(device, 1, &m_inFlightFences[m_currentFrame], VK_TRUE, UINT64_MAX);
+        m_fenceWaitSeconds = glfwGetTime() - fenceStart;
+        m_cpuProf.Mark("Wait for GPU (frame fence)");
 
         uint32_t imageIndex;
         VkResult result = vkAcquireNextImageKHR(device, m_swapchain, UINT64_MAX,
@@ -2707,6 +2811,7 @@ private:
         }
 
         vkResetFences(device, 1, &m_inFlightFences[m_currentFrame]);
+        m_cpuProf.Mark("Acquire swapchain image");
 
         // Render targets follow the size their views are shown at (before the UI uses their images)
         SyncViewSizes();
@@ -2742,10 +2847,13 @@ private:
             ImGui::PopStyleVar(2);
         } else {
             ImGuizmo::BeginFrame();
+            m_cpuProf.Mark("View sizes & misc");
             m_editorUI.Render(m_scene, m_camera, m_offscreen, m_cameraPreviewOffscreen, m_gameLoop);
+            m_cpuProf.Mark("Editor UI (panels)");
         }
 
         ImGui::Render();
+        m_cpuProf.Mark("ImGui::Render");
 
         // HDRI environment: loading waits for the GPU, so it happens before recording. Both
         // viewports share one environment image; the game scene is a copy of the edited one.
@@ -2757,6 +2865,7 @@ private:
             UpdateBakedGI(env.bakedGIPath);
             UpdateLightmaps(env.lightmapPath);
         }
+        m_cpuProf.Mark("HDRI, LUT, baked GI & lightmaps");
         const double frameTime = glfwGetTime();
         const float frameDelta = m_lastFrameTime > 0.0 ? static_cast<float>(std::min(frameTime - m_lastFrameTime, 0.25)) : 0.016f;
         m_lastFrameTime = frameTime;
@@ -2766,10 +2875,21 @@ private:
         {
             Scene& shownScene = m_gameLoop.GetActivePlayScene(m_scene);
             const bool playing = m_gameLoop.GetMode() == Gameplay::EngineMode::Play && &shownScene != &m_scene;
-            m_oceanSpray.Update(shownScene, frameDelta);
+            const float animDelta = m_animating ? frameDelta : 0.0f;
+            if (m_animating) {
+                // Spray is only thrown near the camera looking at it (the game camera in Play)
+                glm::vec3 sprayFocus = m_camera.GetPosition();
+                if (playing || m_gameConfig.isStandaloneGame) {
+                    if (auto cam = shownScene.GetActiveCamera()) sprayFocus = cam->GetWorldPosition(shownScene);
+                }
+                m_oceanSpray.Update(shownScene, frameDelta, sprayFocus, 200.0f);
+            }
+            m_cpuProf.Mark("Ocean spray");
             UpdateOceanAudio(shownScene, playing, frameDelta);
-            m_liquids.Update(shownScene, frameDelta, true, playing);
-            if (&shownScene != &m_scene) m_liquids.Update(m_scene, frameDelta, false, false);
+            m_cpuProf.Mark("Ocean audio");
+            m_liquids.Update(shownScene, animDelta, true, playing);
+            if (&shownScene != &m_scene) m_liquids.Update(m_scene, animDelta, false, false);
+            m_cpuProf.Mark("Liquids");
             std::vector<VulkanPipeline::SpraySprite> sprites;
             sprites.reserve(m_oceanSpray.Sprites().size() + m_liquids.Droplets().size());
             for (const auto& s : m_oceanSpray.Sprites()) sprites.push_back({ s.position, s.size, s.color, glm::vec3(0.0f), s.frame, s.seed });
@@ -2786,6 +2906,7 @@ private:
             if (&shownScene != &m_scene) Video::VideoSystem::Get().UploadTextures(m_scene, frameTime, uploadCb, &m_pipeline);
         }
 
+        m_cpuProf.Mark("Spray upload & video textures");
         // Record command buffer
         m_pipeline.BeginFrame(m_currentFrame);
         VkCommandBuffer cmd = m_commandBuffers[m_currentFrame];
@@ -3161,7 +3282,7 @@ private:
             return settings;
         };
 
-        auto postSettingsFor = [&](const Scene& sc) {
+        auto postSettingsFor = [&](const Scene& sc, bool viewRayTraced = true) {
             const auto& env = sc.GetEnvironment();
             PostProcessSettings settings;
             settings.exposure = env.hdrExposure;
@@ -3191,7 +3312,7 @@ private:
             auto& rtSettings = rt.GetSettings();
             // Ray-traced reflections are already in the shaded image: screen-space reflections
             // would add a second, screen-limited copy on top
-            const bool rtrActive = rtSettings.enableHardwareRT && rtSettings.enableRTR && rt.IsHardwareRayTracingSupported() &&
+            const bool rtrActive = viewRayTraced && rtSettings.enableHardwareRT && rtSettings.enableRTR && rt.IsHardwareRayTracingSupported() &&
                                    m_pipeline.HasRayTracingPipelines();
             settings.ssrStrength = rtrActive ? 0.0f : env.ssrIntensity;
             settings.ssrMaxDistance = env.ssrMaxDistance;
@@ -3201,6 +3322,7 @@ private:
             settings.chromaticAberration = env.chromaticAberration;
             return settings;
         };
+        m_cpuProf.Mark("Skinning, fluids & occlusion setup");
         const std::vector<LightData> playLightData = gatherLights(activePlayScene);
         const int numPlayLights = static_cast<int>(playLightData.size());
 
@@ -3239,8 +3361,10 @@ private:
             }
         };
         UpdateWorldStreaming();
+        m_cpuProf.Mark("World streaming & acoustics");
         UpdateTerrainMeshes(activePlayScene);
         UpdateTerrainMeshes(m_scene);
+        m_cpuProf.Mark("Terrain meshes");
         // Cloth: the play scene's is stepped by the game loop; the edited scene's previews here
         {
             const bool playing = &activePlayScene != &m_scene;
@@ -3253,6 +3377,7 @@ private:
             }
             for (const auto& key : gone) ReleaseClothBuffers(key, false);
         }
+        m_cpuProf.Mark("Cloth");
 
         // Hardware ray tracing: acceleration structures of the scenes shown this frame, built on
         // the GPU before any view renders. The game view (and its mirror / probe views) trace the
@@ -3272,30 +3397,37 @@ private:
                 auto materialResolver = [this](const Node& node, int submesh, Graphics::RayTracing::RayTracingInstance& inst) {
                     ResolveRayTracingMaterial(node, submesh, inst);
                 };
-                if (rtOn) {
+                // Which views trace this frame: the game view when it is shown, the editor view
+                // unless its viewport quality turned ray tracing off. Nothing is built for the rest.
+                const bool gameTraced = rtOn && (m_gameConfig.isStandaloneGame || m_gameLoop.IsPlaying() || m_gameLoop.IsPaused() ||
+                                                 m_editorUI.IsGameOrPreviewVisible());
+                const bool editorTraced = rtOn && editorShown && m_editorUI.GetViewportPerformance().rayTracing;
+                const bool buildPlay = gameTraced || (editorTraced && sameScene);
+                if (buildPlay) {
                     glm::vec3 gameFocus = m_camera.GetPosition();
                     if (m_gameConfig.isStandaloneGame || m_gameLoop.IsPlaying() || m_gameLoop.IsPaused()) {
                         auto gameCam = activePlayScene.GetActiveCamera();
                         if (gameCam) gameFocus = gameCam->GetWorldPosition(activePlayScene);
                     }
                     rtMgr.SyncScene(activePlayScene, 1, meshResolver, materialResolver, gameFocus, kRTRange);
-                    if (editorShown && !sameScene) {
-                        rtMgr.SyncScene(m_scene, 0, meshResolver, materialResolver, m_camera.GetPosition(), kRTRange);
-                    } else {
-                        rtMgr.ClearContext(0);
-                    }
                 } else {
-                    rtMgr.ClearContext(0);
                     rtMgr.ClearContext(1);
                 }
+                if (editorTraced && !sameScene) {
+                    rtMgr.SyncScene(m_scene, 0, meshResolver, materialResolver, m_camera.GetPosition(), kRTRange);
+                } else {
+                    rtMgr.ClearContext(0);
+                }
                 vkRT->RecordFrame(cmd, m_currentFrame);
-                if (rtOn) {
+                const bool rts = rtMgr.GetSettings().enableRTS;
+                if (gameTraced) {
                     const VkDescriptorSet gameSet = vkRT->GetDescriptorSet(1);
-                    const VkDescriptorSet editorSet = sameScene ? gameSet : vkRT->GetDescriptorSet(0);
-                    const bool rts = rtMgr.GetSettings().enableRTS;
                     m_pipeline.SetViewRayTracing(VulkanPipeline::kViewPreview, gameSet, rts);
                     m_pipeline.SetViewRayTracing(VulkanPipeline::kViewPreviewMirror, gameSet, rts);
                     m_pipeline.SetViewRayTracing(VulkanPipeline::kViewPreviewProbe, gameSet, rts);
+                }
+                if (editorTraced) {
+                    const VkDescriptorSet editorSet = vkRT->GetDescriptorSet(sameScene ? 1 : 0);
                     m_pipeline.SetViewRayTracing(VulkanPipeline::kViewEditor, editorSet, rts);
                     m_pipeline.SetViewRayTracing(VulkanPipeline::kViewEditorMirror, editorSet, rts);
                     m_pipeline.SetViewRayTracing(VulkanPipeline::kViewEditorProbe, editorSet, rts);
@@ -3303,6 +3435,7 @@ private:
             }
         }
 
+        m_cpuProf.Mark("Ray tracing sync (BLAS/TLAS)");
         auto activeCam = activePlayScene.GetActiveCamera();
         const bool gameViewNeeded = m_gameConfig.isStandaloneGame ||
                                     m_gameLoop.IsPlaying() ||
@@ -3322,7 +3455,7 @@ private:
             m_pipeline.SetOcclusionCulling(VulkanPipeline::kViewPreview, activePlayScene.GetEnvironment().occlusionCulling);
             m_editorUI.PopulateEnvironmentUBO(activePlayScene, camUbo, playLightData);
             fillViewUBO(activePlayScene, 1, gameUnjitteredViewProj, camUbo);
-            camUbo.timeParams.x = static_cast<float>(glfwGetTime());
+            camUbo.timeParams.x = static_cast<float>(m_animTime);
 
             gpuBegin("Game View");
             gpuBegin("Shadows");
@@ -3406,10 +3539,15 @@ private:
             m_prevViewProjValid[1] = false;
         }
 
+        m_cpuProf.Mark("Game view recording");
         if (!m_gameConfig.isStandaloneGame) {
         // 3. Render 3D Scene into Viewport Offscreen Framebuffer (Editor Camera)
         // Viewport strictly displays the pristine editor scene; game simulation runs isolated in the Game window
         Scene& activeViewportScene = m_scene;
+        // Viewport quality: lighter settings for this view only, put back once it is recorded
+        const auto& viewportPerf = m_editorUI.GetViewportPerformance();
+        const ViewportEnvOverride viewportEnvSaved = SaveViewportEnv(activeViewportScene.GetEnvironment());
+        ApplyViewportQuality(activeViewportScene.GetEnvironment(), viewportPerf);
         const std::vector<LightData> viewportLightData = gatherLights(activeViewportScene);
         const int numViewportLights = static_cast<int>(viewportLightData.size());
 
@@ -3425,7 +3563,7 @@ private:
         m_pipeline.SetOcclusionCulling(VulkanPipeline::kViewEditor, activeViewportScene.GetEnvironment().occlusionCulling);
         m_editorUI.PopulateEnvironmentUBO(activeViewportScene, editorUbo, viewportLightData);
         fillViewUBO(activeViewportScene, 0, editorUnjitteredViewProj, editorUbo);
-        editorUbo.timeParams.x = static_cast<float>(glfwGetTime());
+        editorUbo.timeParams.x = static_cast<float>(m_animTime);
 
 
         // Synchronize and cull Meshlet GPU Virtualization clusters
@@ -3439,11 +3577,13 @@ private:
         Core::LWC::CameraRelativeCoordinator::Get().SetCameraWorldPosition(glm::dvec3(m_camera.GetPosition()));
         Streaming::WorldPartitionManager::GetInstance().Update(m_camera.GetPosition(), editorUbo.proj * editorUbo.view, activeViewportScene, 0.016f);
 
+        m_cpuProf.Mark("Editor view setup (UBO, partition update)");
         gpuBegin("Editor View");
         gpuBegin("Shadows");
         m_pipeline.RenderShadowPass(cmd, activeViewportScene, m_meshes, m_customMeshes, false,
                                     activeViewportScene.GetEnvironment().shadowDistance, editorUbo);
         gpuEnd();
+        m_cpuProf.Mark("Editor view: shadows");
         gpuBegin("Reflection Probes");
         captureProbes(m_editorProbeOffscreen, activeViewportScene, VulkanPipeline::kViewEditor, editorUbo);
         gpuEnd();
@@ -3459,6 +3599,7 @@ private:
         renderFluid(0);
         gpuEnd();
 
+        m_cpuProf.Mark("Editor view: probes, mirrors, prepass");
         gpuBegin("Opaque");
         m_offscreen.BeginRenderPass(cmd);
         m_pipeline.RenderScene(cmd, activeViewportScene, m_meshes, m_customMeshes, m_editorUI.GetPolygonMode(), true,
@@ -3475,7 +3616,7 @@ private:
         m_offscreen.EndRenderPass(cmd);
         gpuEnd();
         gpuBegin("Post-Processing");
-        m_offscreen.ApplyPostProcess(cmd, taaSettingsFor(postSettingsFor(activeViewportScene), 0,
+        m_offscreen.ApplyPostProcess(cmd, taaSettingsFor(postSettingsFor(activeViewportScene, viewportPerf.rayTracing), 0,
                                                           editorUnjitteredViewProj, editorJitter,
                                                           editorUnjitteredProj, editorVelocity));
         gpuEnd();
@@ -3488,6 +3629,8 @@ private:
             gpuEnd();
         }
         gpuEnd(); // Editor View
+        RestoreViewportEnv(activeViewportScene.GetEnvironment(), viewportEnvSaved);
+        m_cpuProf.Mark("Editor view: opaque, transparent, post");
 
         // Material previews the editor asked for this frame (a few a frame, the longest waiting first)
         {
@@ -3520,7 +3663,7 @@ private:
                 ubo.shadowParams = glm::vec4(0.0f, -1.0f, 0.0f, 0.0f);
                 ubo.postProcessParams.y = 0.0f; // no SSAO (no prepass)
                 ubo.postProcessParams.z = 0.0f;
-                ubo.timeParams.x = static_cast<float>(glfwGetTime());
+                ubo.timeParams.x = static_cast<float>(m_animTime);
                 ubo.envParams = glm::vec4(0.0f, 1.0f, 0.0f, 0.0f);
                 m_pipeline.UpdateUniformBufferSlot(VulkanPipeline::kViewMaterialPreview, ubo);
 
@@ -3570,6 +3713,7 @@ private:
         }
         } // end if (!m_gameConfig.isStandaloneGame)
 
+        m_cpuProf.Mark("Material previews");
         // 2. Render ImGui Interface to Swapchain
         VkRenderPassBeginInfo mainRenderPassInfo{};
         mainRenderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -3623,6 +3767,7 @@ private:
         submitInfo.signalSemaphoreCount = 1;
         submitInfo.pSignalSemaphores = signalSemaphores;
 
+        m_cpuProf.Mark("UI draw recording");
         if (vkQueueSubmit(ctx.GetGraphicsQueue(), 1, &submitInfo, m_inFlightFences[m_currentFrame]) != VK_SUCCESS) {
             throw std::runtime_error("Failed to submit draw command buffer!");
         }
@@ -3647,6 +3792,7 @@ private:
             throw std::runtime_error("Failed to present swapchain image!");
         }
 
+        m_cpuProf.Mark("Submit & present");
         m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
     }
 

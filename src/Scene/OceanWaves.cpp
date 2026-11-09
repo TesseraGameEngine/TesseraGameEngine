@@ -105,31 +105,61 @@ void Spray::Clear() {
     m_watches.clear();
 }
 
-void Spray::Update(const Scene& scene, float dt) {
+void Spray::Update(const Scene& scene, float dt, const glm::vec3& focus, float range) {
     dt = std::clamp(dt, 0.0f, 0.1f);
     const float time = Time();
     constexpr size_t kMaxParticles = 4000;
 
     m_bursts.clear();
-    // Watch the waterline of fixed objects that stand in the water
+    // The oceans, found once (FindOceanAt walks every node: too slow per object in big scenes)
+    struct OceanArea { std::shared_ptr<Node> node; glm::vec2 center; glm::vec2 half; };
+    std::vector<OceanArea> oceans;
     for (const auto& node : scene.GetNodes()) {
-        if (!node || node->nodeType != NodeType::Mesh || node->isOcean || node->IsUINode()) continue;
-        if (node->rigidBodyType == RigidBodyType::Dynamic || node->color.a < 0.99f) continue;
-        const glm::mat4 world = node->GetWorldTransformMatrix(scene);
-        const glm::vec3 localMin = node->type == ShapeType::Custom ? node->boundsMin : glm::vec3(-0.5f);
-        const glm::vec3 localMax = node->type == ShapeType::Custom ? node->boundsMax : glm::vec3(0.5f);
-        glm::vec3 lo(1e30f), hi(-1e30f);
-        for (int c = 0; c < 8; ++c) {
-            const glm::vec3 corner((c & 1) ? localMax.x : localMin.x, (c & 2) ? localMax.y : localMin.y, (c & 4) ? localMax.z : localMin.z);
-            const glm::vec3 p = glm::vec3(world * glm::vec4(corner, 1.0f));
-            lo = glm::min(lo, p);
-            hi = glm::max(hi, p);
+        if (!node || !node->isOcean || node->nodeType != NodeType::Mesh) continue;
+        const glm::vec3 c = node->GetWorldPosition(scene);
+        oceans.push_back({ node, glm::vec2(c.x, c.z), glm::max(node->oceanSize, glm::vec2(1.0f)) * 0.5f });
+    }
+    auto oceanAt = [&](float x, float z) -> std::shared_ptr<Node> {
+        for (const auto& o : oceans) {
+            if (std::abs(x - o.center.x) <= o.half.x && std::abs(z - o.center.y) <= o.half.y) return o.node;
         }
+        return nullptr;
+    };
+    if (oceans.empty() && m_particles.empty()) { m_sprites.clear(); return; }
+    // Objects that could throw spray (fixed, opaque, rock / post / pier sized)
+    m_candidateAge += dt;
+    if (m_candidateScene != &scene || m_candidateNodeCount != scene.GetNodes().size() || m_candidateAge > 1.0f) {
+        m_candidates.clear();
+        for (const auto& node : scene.GetNodes()) {
+            if (!node || node->nodeType != NodeType::Mesh || node->isOcean || node->IsUINode()) continue;
+            if (node->rigidBodyType == RigidBodyType::Dynamic || node->color.a < 0.99f) continue;
+            const glm::mat4 world = node->GetWorldTransformMatrix(scene);
+            const glm::vec3 localMin = node->type == ShapeType::Custom ? node->boundsMin : glm::vec3(-0.5f);
+            const glm::vec3 localMax = node->type == ShapeType::Custom ? node->boundsMax : glm::vec3(0.5f);
+            glm::vec3 lo(1e30f), hi(-1e30f);
+            for (int c = 0; c < 8; ++c) {
+                const glm::vec3 corner((c & 1) ? localMax.x : localMin.x, (c & 2) ? localMax.y : localMin.y, (c & 4) ? localMax.z : localMin.z);
+                const glm::vec3 p = glm::vec3(world * glm::vec4(corner, 1.0f));
+                lo = glm::min(lo, p);
+                hi = glm::max(hi, p);
+            }
+            const glm::vec2 halfSize = glm::vec2(hi.x - lo.x, hi.z - lo.z) * 0.5f;
+            // Rocks, posts and piers; not whole beaches or seabeds
+            if (halfSize.x > 10.0f || halfSize.y > 10.0f || halfSize.x < 0.05f || halfSize.y < 0.05f) continue;
+            m_candidates.push_back({ node->id, lo, hi });
+        }
+        m_candidateScene = &scene;
+        m_candidateNodeCount = scene.GetNodes().size();
+        m_candidateAge = 0.0f;
+    }
+    // Watch the waterline of the ones standing in the water near the camera
+    for (const Candidate& candidate : m_candidates) {
+        if (oceans.empty()) break;
+        const glm::vec3 lo = candidate.lo, hi = candidate.hi;
         const glm::vec3 center = (lo + hi) * 0.5f;
         const glm::vec2 halfSize = glm::vec2(hi.x - lo.x, hi.z - lo.z) * 0.5f;
-        // Rocks, posts and piers; not whole beaches or seabeds
-        if (halfSize.x > 10.0f || halfSize.y > 10.0f || halfSize.x < 0.05f || halfSize.y < 0.05f) continue;
-        auto ocean = FindOceanAt(scene, center.x, center.z);
+        if (glm::length(glm::vec2(center.x - focus.x, center.z - focus.z)) > range + glm::length(halfSize)) continue;
+        auto ocean = oceanAt(center.x, center.z);
         if (!ocean || ocean->waveHeight < 0.05f) continue;
         const float level = ocean->GetWorldPosition(scene).y;
         const float amplitude = ocean->waveHeight * 0.5f;
@@ -143,7 +173,7 @@ void Spray::Update(const Scene& scene, float dt) {
             const glm::vec2 xz = glm::vec2(center.x, center.z) + outward * halfSize * 0.85f;
             const SurfaceSample surface = SampleSurface(*ocean, scene, xz.x, xz.y, time);
             const float h = surface.height - level;
-            Watch& watch = m_watches[(static_cast<uint64_t>(node->id) << 8) | static_cast<uint64_t>(i)];
+            Watch& watch = m_watches[(static_cast<uint64_t>(candidate.id) << 8) | static_cast<uint64_t>(i)];
             watch.cooldown -= dt;
             if (watch.valid) {
                 // A crest has just passed this point: throw spray, more for bigger crests
@@ -215,7 +245,7 @@ void Spray::Update(const Scene& scene, float dt) {
                 if (into < 0.0f) p.velocity = (p.velocity - into * hit.normal) * 0.6f - into * hit.normal * 0.2f;
             }
             if (p.velocity.y < 0.0f && p.age > 0.15f) {
-                if (auto ocean = FindOceanAt(scene, p.position.x, p.position.z)) {
+                if (auto ocean = oceanAt(p.position.x, p.position.z)) {
                     if (p.position.y < SampleSurface(*ocean, scene, p.position.x, p.position.z, time).height) continue;
                 }
             }

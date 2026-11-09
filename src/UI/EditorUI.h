@@ -490,11 +490,44 @@ public:
         if (frame - m_previewImageFrame <= 2) return m_previewImageSize * pixels;
         return glm::vec2(0.0f);
     }
+    // Editor viewport performance options (the editor's 3D view only: never the Game view, an
+    // exported game or the saved scene). Saved in editor_settings.json.
+    struct ViewportPerformance {
+        enum Preset { Full = 0, Balanced = 1, Fast = 2, Custom = 3 };
+        int preset{Full};
+        float resolutionScale{1.0f};  // of the viewport panel's pixels
+        bool rayTracing{true};        // hardware RT shadows / reflections in the viewport
+        bool ambientOcclusion{true};  // SSAO
+        bool screenReflections{true}; // SSR
+        bool volumetrics{true};       // volumetric clouds, fog and light shafts
+        bool cinematicEffects{true};  // depth of field, motion blur, film grain, lens flare, chromatic aberration
+        bool temporalAA{true};        // off: FXAA instead of TAA
+        bool shortShadows{false};     // shadow maps reach 60 m (fewer casters drawn)
+        bool realtime{true};          // animate water, wind, weather and the sky clock while editing
+        bool showFrameStats{false};   // FPS / CPU / GPU overlay in the viewport corner
+        bool lessCpuInBackground{true}; // ~10 fps while the editor window isn't focused
+    };
+    const ViewportPerformance& GetViewportPerformance() const { return m_viewportPerf; }
+    // Frame timings for the viewport overlay (from the main loop)
+    void SetFrameStats(float cpuMs, float gpuMs, uint32_t renderWidth, uint32_t renderHeight) {
+        m_statCpuMs = m_statCpuMs <= 0.0f ? cpuMs : m_statCpuMs + (cpuMs - m_statCpuMs) * 0.05f;
+        m_statGpuMs = gpuMs;
+        m_statRenderSize = glm::uvec2(renderWidth, renderHeight);
+    }
     bool IsGameOrPreviewVisible() const {
         const int frame = ImGui::GetFrameCount();
         return (frame - m_gameImageFrame <= 2) || (frame - m_previewImageFrame <= 2);
     }
 private:
+    ViewportPerformance m_viewportPerf;
+    float m_statCpuMs{0.0f};
+    float m_statGpuMs{0.0f};
+    glm::uvec2 m_statRenderSize{0u};
+    void ApplyViewportPreset(int preset);
+    void RenderViewportPerformanceMenu();
+    void RenderViewportFrameStats(const ImVec2& imageMin, const ImVec2& imageSize);
+    void LoadViewportPerformance();
+    void SaveViewportPerformance() const;
     glm::vec2 m_gameImageSize{0.0f};
     int m_gameImageFrame{-100};
     glm::vec2 m_previewImageSize{0.0f};
@@ -511,12 +544,23 @@ private:
     UINodeRendererState m_uiRendererState;
     NodeInspectorState m_inspectorState;
 
-    // Universal Automatic Undo/Redo Scene State Tracker
+    // Universal Automatic Undo/Redo Scene State Tracker. Checks for edits only when an interaction
+    // ends (mouse/key release, widget or gizmo release), comparing cheap fingerprints of the scene;
+    // the full scene is serialized only when something really changed.
+    struct UndoFingerprint {
+        uint64_t structure{0};   // every saved node's id, parent, name, type, children and transform
+        uint64_t environment{0};
+        std::unordered_map<uint32_t, uint64_t> nodes; // full settings of nodes that have been selected
+        bool operator==(const UndoFingerprint& o) const { return structure == o.structure && environment == o.environment && nodes == o.nodes; }
+    };
+    void UpdateUndoTracker(Scene& scene, Gameplay::GameLoop& gameLoop);
+    UndoFingerprint ComputeUndoFingerprint(const Scene& scene, const UndoFingerprint& watched) const;
     bool m_undoBaselineInitialized{false};
     JsonValue m_lastCommittedSceneState;
-    std::string m_lastCommittedSceneJson;
+    UndoFingerprint m_lastCommittedFingerprint;
     int32_t m_lastCommittedSelectedId{-1};
     uint64_t m_lastSeenUndoVersion{0};
+    bool m_undoCheckPending{false};
 
     // Ruler & Measurement Tool State
     RulerToolState m_rulerToolState;

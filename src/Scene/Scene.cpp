@@ -526,8 +526,26 @@ bool Scene::DeleteSelected() {
 }
 
 std::shared_ptr<Node> Scene::GetNodeById(uint32_t id) const {
+    // Indexed: world transforms look up every parent, so a scan here made big scenes quadratic
+    if (m_nodeIndexStale || m_nodeIndexCount != m_nodes.size()) {
+        m_nodeIndex.clear();
+        m_nodeIndex.reserve(m_nodes.size());
+        for (size_t i = 0; i < m_nodes.size(); ++i) {
+            if (m_nodes[i]) m_nodeIndex.emplace(m_nodes[i]->id, i);
+        }
+        m_nodeIndexCount = m_nodes.size();
+        m_nodeIndexStale = false;
+    }
+    auto it = m_nodeIndex.find(id);
+    if (it != m_nodeIndex.end() && it->second < m_nodes.size() && m_nodes[it->second] && m_nodes[it->second]->id == id) {
+        return m_nodes[it->second];
+    }
+    // Nodes reordered or ids changed since the index was built: find it the slow way, reindex later
     for (const auto& n : m_nodes) {
-        if (n->id == id) return n;
+        if (n && n->id == id) {
+            m_nodeIndexStale = true;
+            return n;
+        }
     }
     return nullptr;
 }
@@ -589,6 +607,26 @@ JsonValue Scene::Serialize() const {
     worldOffsetArr.Push(m_worldOffset.z);
     sceneObj["worldOffset"] = worldOffsetArr;
 
+    sceneObj["environment"] = SerializeEnvironment();
+
+    JsonValue nodesArr = JsonValue::Array();
+    for (const auto& node : m_nodes) {
+        // Nodes streamed in from world sectors belong to their sector files, not this scene
+        if (!node->streamSector.empty()) continue;
+        nodesArr.Push(SerializeNode(node));
+    }
+    sceneObj["nodes"] = nodesArr;
+    if (!m_cutscenes.empty()) {
+        JsonValue cutscenesArr = JsonValue::Array();
+        for (const auto& cs : m_cutscenes) {
+            cutscenesArr.Push(cs.Serialize());
+        }
+        sceneObj["cutscenes"] = cutscenesArr;
+    }
+    return sceneObj;
+}
+
+JsonValue Scene::SerializeEnvironment() const {
     JsonValue envObj = JsonValue::Object();
     envObj["hdrExposure"] = m_environment.hdrExposure;
     envObj["enableACES"] = m_environment.enableACES;
@@ -688,661 +726,650 @@ JsonValue Scene::Serialize() const {
     envObj["vxgiIntensity"] = m_environment.vxgiIntensity;
     envObj["vxgiRange"] = m_environment.vxgiRange;
     envObj["vxgiBounce"] = m_environment.vxgiBounce;
-    sceneObj["environment"] = envObj;
+    return envObj;
+}
 
-    JsonValue nodesArr = JsonValue::Array();
-    for (const auto& node : m_nodes) {
-        // Nodes streamed in from world sectors belong to their sector files, not this scene
-        if (!node->streamSector.empty()) continue;
-        JsonValue n = JsonValue::Object();
-        n["id"] = node->id;
-        n["parentId"] = node->parentId;
-        n["name"] = node->name;
-        n["nodeType"] = NodeTypeToString(node->nodeType);
-        n["shapeType"] = ShapeTypeToString(node->type);
-        n["customMeshName"] = node->customMeshName;
+// One node as saved (its id, parent, transform, components and settings)
+JsonValue Scene::SerializeNode(const std::shared_ptr<Node>& node) const {
+    JsonValue n = JsonValue::Object();
+    n["id"] = node->id;
+    n["parentId"] = node->parentId;
+    n["name"] = node->name;
+    n["nodeType"] = NodeTypeToString(node->nodeType);
+    n["shapeType"] = ShapeTypeToString(node->type);
+    n["customMeshName"] = node->customMeshName;
 
-        // Children IDs
-        JsonValue childrenArr = JsonValue::Array();
-        for (uint32_t cid : node->childrenIds) {
-            childrenArr.Push(cid);
-        }
-        n["children"] = childrenArr;
+    // Children IDs
+    JsonValue childrenArr = JsonValue::Array();
+    for (uint32_t cid : node->childrenIds) {
+        childrenArr.Push(cid);
+    }
+    n["children"] = childrenArr;
 
-        // Transform
-        JsonValue tf = JsonValue::Object();
-        JsonValue pos = JsonValue::Array();
-        pos.Push(node->position.x); pos.Push(node->position.y); pos.Push(node->position.z);
-        tf["position"] = pos;
+    // Transform
+    JsonValue tf = JsonValue::Object();
+    JsonValue pos = JsonValue::Array();
+    pos.Push(node->position.x); pos.Push(node->position.y); pos.Push(node->position.z);
+    tf["position"] = pos;
 
-        JsonValue rot = JsonValue::Array();
-        rot.Push(node->rotation.x); rot.Push(node->rotation.y); rot.Push(node->rotation.z);
-        tf["rotation"] = rot;
+    JsonValue rot = JsonValue::Array();
+    rot.Push(node->rotation.x); rot.Push(node->rotation.y); rot.Push(node->rotation.z);
+    tf["rotation"] = rot;
 
-        JsonValue sc = JsonValue::Array();
-        sc.Push(node->scale.x); sc.Push(node->scale.y); sc.Push(node->scale.z);
-        tf["scale"] = sc;
-        n["transform"] = tf;
+    JsonValue sc = JsonValue::Array();
+    sc.Push(node->scale.x); sc.Push(node->scale.y); sc.Push(node->scale.z);
+    tf["scale"] = sc;
+    n["transform"] = tf;
 
-        // Color & Material
-        JsonValue col = JsonValue::Array();
-        col.Push(node->color.r); col.Push(node->color.g); col.Push(node->color.b); col.Push(node->color.a);
-        n["color"] = col;
-        n["texturePath"] = node->texturePath;
-        n["normalMapPath"] = node->normalMapPath;
-        n["metallicMapPath"] = node->metallicMapPath;
-        n["roughnessMapPath"] = node->roughnessMapPath;
-        n["aoMapPath"] = node->aoMapPath;
-        n["emissiveMapPath"] = node->emissiveMapPath;
-        n["heightMapPath"] = node->heightMapPath;
-        n["shaderGraphPath"] = node->shaderGraphPath;
-        n["materialName"] = node->materialName;
-        n["roughness"] = node->roughness;
-        n["metallic"] = node->metallic;
-        n["aoStrength"] = node->aoStrength;
-        JsonValue emCol = JsonValue::Array();
-        emCol.Push(node->emissiveColor.r); emCol.Push(node->emissiveColor.g); emCol.Push(node->emissiveColor.b);
-        n["emissiveColor"] = emCol;
-        n["emissiveIntensity"] = node->emissiveIntensity;
-        n["alphaCutoff"] = node->alphaCutoff;
-        n["doubleSided"] = node->doubleSided;
-        n["castShadows"] = node->castShadows;
-        n["refractionIOR"] = node->refractionIOR;
-        n["isMirror"] = node->isMirror;
-        if (node->isVideoScreen || node->nodeType == NodeType::UI_Video) {
-            JsonValue vs = JsonValue::Object();
-            vs["enabled"] = node->isVideoScreen;
-            vs["channelPreset"] = node->videoChannelPreset;
-            vs["sourcePath"] = node->videoSourcePath;
-            vs["playing"] = node->videoPlaying;
-            vs["loop"] = node->videoLoop;
-            vs["speed"] = node->videoSpeed;
-            vs["currentTime"] = node->videoCurrentTime;
-            vs["duration"] = node->videoDuration;
-            vs["fps"] = node->videoFps;
-            vs["atlasCols"] = node->videoAtlasCols;
-            vs["atlasRows"] = node->videoAtlasRows;
-            vs["brightness"] = node->videoScreenBrightness;
-            vs["scanlines"] = node->videoScanlineStrength;
-            vs["audioPath"] = node->videoAudioPath;
-            vs["audioVolume"] = node->videoAudioVolume;
-            vs["spatialAudio"] = node->videoSpatialAudio;
-            n["videoScreen"] = vs;
-        }
-        n["materialModel"] = node->materialModel;
-        auto vec3Json = [](const glm::vec3& v) { JsonValue a = JsonValue::Array(); a.Push(v.x); a.Push(v.y); a.Push(v.z); return a; };
-        n["subsurfaceColor"] = vec3Json(node->subsurfaceColor);
-        n["subsurfaceStrength"] = node->subsurfaceStrength;
-        n["subsurfaceTranslucency"] = node->subsurfaceTranslucency;
-        n["hairHighlightTint"] = vec3Json(node->hairHighlightTint);
-        n["hairHighlightShift"] = node->hairHighlightShift;
-        n["irisRadius"] = node->irisRadius;
-        n["irisDepth"] = node->irisDepth;
-        n["corneaIOR"] = node->corneaIOR;
-        n["clearCoat"] = node->clearCoat;
-        n["clearCoatRoughness"] = node->clearCoatRoughness;
-        n["triplanarMapping"] = node->triplanarMapping;
-        n["triplanarTileSize"] = node->triplanarTileSize;
-        n["triplanarSharpness"] = node->triplanarSharpness;
-        n["detailAlbedoPath"] = node->detailAlbedoPath;
-        n["detailNormalPath"] = node->detailNormalPath;
-        n["detailTiling"] = node->detailTiling;
-        n["detailStrength"] = node->detailStrength;
-        n["useVertexColors"] = node->useVertexColors;
-        n["lightmapStatic"] = node->lightmapStatic;
-        n["isReflectionProbe"] = node->isReflectionProbe;
-        if (node->occludesSound) n["occludesSound"] = true;
-        if (node->isCloth) {
-            JsonValue cloth = JsonValue::Object();
-            cloth["resX"] = static_cast<int>(node->clothResX);
-            cloth["resY"] = static_cast<int>(node->clothResY);
-            cloth["width"] = node->clothWidth;
-            cloth["height"] = node->clothHeight;
-            cloth["mass"] = node->clothMass;
-            cloth["compliance"] = node->clothCompliance;
-            cloth["pinTop"] = node->clothPinTop;
-            JsonValue wind = JsonValue::Array();
-            wind.Push(node->clothWind.x); wind.Push(node->clothWind.y); wind.Push(node->clothWind.z);
-            cloth["wind"] = wind;
-            n["cloth"] = cloth;
-        }
-        if (node->isLiquid) {
-            JsonValue liquid = JsonValue::Object();
-            liquid["fill"] = node->liquidFill;
-            JsonValue top = JsonValue::Array();
-            top.Push(node->liquidTopColor.r); top.Push(node->liquidTopColor.g); top.Push(node->liquidTopColor.b); top.Push(node->liquidTopColor.a);
-            liquid["topColor"] = top;
-            liquid["slosh"] = node->liquidSlosh;
-            liquid["colorDepth"] = node->liquidColorDepth;
-            n["liquid"] = liquid;
-        }
-        if (node->isFluidVolume) {
-            JsonValue fluid = JsonValue::Object();
-            JsonValue size = JsonValue::Array();
-            size.Push(node->fluidSize.x); size.Push(node->fluidSize.y); size.Push(node->fluidSize.z);
-            fluid["size"] = size;
-            fluid["fill"] = node->fluidFill;
-            fluid["start"] = node->fluidStart;
-            fluid["spacing"] = node->fluidSpacing;
-            fluid["viscosity"] = node->fluidViscosity;
-            JsonValue color = JsonValue::Array();
-            color.Push(node->fluidColor.r); color.Push(node->fluidColor.g); color.Push(node->fluidColor.b); color.Push(node->fluidColor.a);
-            fluid["color"] = color;
-            fluid["colorDepth"] = node->fluidColorDepth;
-            n["fluidVolume"] = fluid;
-        }
-        if (node->isPourSpout) {
-            JsonValue pour = JsonValue::Object();
-            pour["flow"] = node->pourFlow;
-            pour["startAngle"] = node->pourStartAngle;
-            pour["streamRadius"] = node->pourStreamRadius;
-            pour["speed"] = node->pourSpeed;
-            JsonValue color = JsonValue::Array();
-            color.Push(node->pourColor.r); color.Push(node->pourColor.g); color.Push(node->pourColor.b); color.Push(node->pourColor.a);
-            pour["color"] = color;
-            pour["sourceId"] = static_cast<double>(node->pourSourceId);
-            n["pourSpout"] = pour;
-        }
-        if (node->isOcean) {
-            JsonValue ocean = JsonValue::Object();
-            JsonValue size = JsonValue::Array();
-            size.Push(node->oceanSize.x); size.Push(node->oceanSize.y);
-            ocean["size"] = size;
-            ocean["waveHeight"] = node->waveHeight;
-            ocean["waveLength"] = node->waveLength;
-            ocean["waveDirection"] = node->waveDirection;
-            ocean["choppiness"] = node->waveChoppiness;
-            ocean["waveSpeed"] = node->waveSpeed;
-            JsonValue shallow = JsonValue::Array();
-            shallow.Push(node->waterShallowColor.r); shallow.Push(node->waterShallowColor.g); shallow.Push(node->waterShallowColor.b);
-            ocean["shallowColor"] = shallow;
-            JsonValue deep = JsonValue::Array();
-            deep.Push(node->waterDeepColor.r); deep.Push(node->waterDeepColor.g); deep.Push(node->waterDeepColor.b);
-            ocean["deepColor"] = deep;
-            ocean["clarity"] = node->waterClarity;
-            ocean["roughness"] = node->waterRoughness;
-            ocean["whitecaps"] = node->whitecaps;
-            ocean["shoreFoamWidth"] = node->shoreFoamWidth;
-            ocean["soundVolume"] = node->oceanSoundVolume;
-            n["ocean"] = ocean;
-        }
-        n["probeRadius"] = node->probeRadius;
-        n["probeBoxProjection"] = node->probeBoxProjection;
-        n["isGIVolume"] = node->isGIVolume;
-        {
-            JsonValue giSize = JsonValue::Array();
-            giSize.Push(node->giVolumeSize.x); giSize.Push(node->giVolumeSize.y); giSize.Push(node->giVolumeSize.z);
-            n["giVolumeSize"] = giSize;
-        }
-        JsonValue probeBox = JsonValue::Array();
-        probeBox.Push(node->probeBoxSize.x); probeBox.Push(node->probeBoxSize.y); probeBox.Push(node->probeBoxSize.z);
-        n["probeBoxSize"] = probeBox;
-        n["heightScale"] = node->heightScale;
-        n["scriptPath"] = node->scriptPath;
-        n["hasSkeleton"] = node->hasSkeleton;
-        n["skeletonName"] = node->skeletonName;
-        n["currentAnimState"] = node->currentAnimState;
-        n["playAnimation"] = node->playAnimation;
-        n["animationSpeed"] = node->animationSpeed;
-        n["animationStartOffset"] = node->animationStartOffset;
-        n["boneCount"] = (int)node->boneNames.size();
-        JsonValue bList = JsonValue::Array();
-        for (const auto& b : node->boneNames) bList.Push(b);
-        n["boneNames"] = bList;
-        JsonValue cList = JsonValue::Array();
-        for (const auto& c : node->animClipNames) cList.Push(c);
-        n["animClipNames"] = cList;
+    // Color & Material
+    JsonValue col = JsonValue::Array();
+    col.Push(node->color.r); col.Push(node->color.g); col.Push(node->color.b); col.Push(node->color.a);
+    n["color"] = col;
+    n["texturePath"] = node->texturePath;
+    n["normalMapPath"] = node->normalMapPath;
+    n["metallicMapPath"] = node->metallicMapPath;
+    n["roughnessMapPath"] = node->roughnessMapPath;
+    n["aoMapPath"] = node->aoMapPath;
+    n["emissiveMapPath"] = node->emissiveMapPath;
+    n["heightMapPath"] = node->heightMapPath;
+    n["shaderGraphPath"] = node->shaderGraphPath;
+    n["materialName"] = node->materialName;
+    n["roughness"] = node->roughness;
+    n["metallic"] = node->metallic;
+    n["aoStrength"] = node->aoStrength;
+    JsonValue emCol = JsonValue::Array();
+    emCol.Push(node->emissiveColor.r); emCol.Push(node->emissiveColor.g); emCol.Push(node->emissiveColor.b);
+    n["emissiveColor"] = emCol;
+    n["emissiveIntensity"] = node->emissiveIntensity;
+    n["alphaCutoff"] = node->alphaCutoff;
+    n["doubleSided"] = node->doubleSided;
+    n["castShadows"] = node->castShadows;
+    n["refractionIOR"] = node->refractionIOR;
+    n["isMirror"] = node->isMirror;
+    if (node->isVideoScreen || node->nodeType == NodeType::UI_Video) {
+        JsonValue vs = JsonValue::Object();
+        vs["enabled"] = node->isVideoScreen;
+        vs["channelPreset"] = node->videoChannelPreset;
+        vs["sourcePath"] = node->videoSourcePath;
+        vs["playing"] = node->videoPlaying;
+        vs["loop"] = node->videoLoop;
+        vs["speed"] = node->videoSpeed;
+        vs["currentTime"] = node->videoCurrentTime;
+        vs["duration"] = node->videoDuration;
+        vs["fps"] = node->videoFps;
+        vs["atlasCols"] = node->videoAtlasCols;
+        vs["atlasRows"] = node->videoAtlasRows;
+        vs["brightness"] = node->videoScreenBrightness;
+        vs["scanlines"] = node->videoScanlineStrength;
+        vs["audioPath"] = node->videoAudioPath;
+        vs["audioVolume"] = node->videoAudioVolume;
+        vs["spatialAudio"] = node->videoSpatialAudio;
+        n["videoScreen"] = vs;
+    }
+    n["materialModel"] = node->materialModel;
+    auto vec3Json = [](const glm::vec3& v) { JsonValue a = JsonValue::Array(); a.Push(v.x); a.Push(v.y); a.Push(v.z); return a; };
+    n["subsurfaceColor"] = vec3Json(node->subsurfaceColor);
+    n["subsurfaceStrength"] = node->subsurfaceStrength;
+    n["subsurfaceTranslucency"] = node->subsurfaceTranslucency;
+    n["hairHighlightTint"] = vec3Json(node->hairHighlightTint);
+    n["hairHighlightShift"] = node->hairHighlightShift;
+    n["irisRadius"] = node->irisRadius;
+    n["irisDepth"] = node->irisDepth;
+    n["corneaIOR"] = node->corneaIOR;
+    n["clearCoat"] = node->clearCoat;
+    n["clearCoatRoughness"] = node->clearCoatRoughness;
+    n["triplanarMapping"] = node->triplanarMapping;
+    n["triplanarTileSize"] = node->triplanarTileSize;
+    n["triplanarSharpness"] = node->triplanarSharpness;
+    n["detailAlbedoPath"] = node->detailAlbedoPath;
+    n["detailNormalPath"] = node->detailNormalPath;
+    n["detailTiling"] = node->detailTiling;
+    n["detailStrength"] = node->detailStrength;
+    n["useVertexColors"] = node->useVertexColors;
+    n["lightmapStatic"] = node->lightmapStatic;
+    n["isReflectionProbe"] = node->isReflectionProbe;
+    if (node->occludesSound) n["occludesSound"] = true;
+    if (node->isCloth) {
+        JsonValue cloth = JsonValue::Object();
+        cloth["resX"] = static_cast<int>(node->clothResX);
+        cloth["resY"] = static_cast<int>(node->clothResY);
+        cloth["width"] = node->clothWidth;
+        cloth["height"] = node->clothHeight;
+        cloth["mass"] = node->clothMass;
+        cloth["compliance"] = node->clothCompliance;
+        cloth["pinTop"] = node->clothPinTop;
+        JsonValue wind = JsonValue::Array();
+        wind.Push(node->clothWind.x); wind.Push(node->clothWind.y); wind.Push(node->clothWind.z);
+        cloth["wind"] = wind;
+        n["cloth"] = cloth;
+    }
+    if (node->isLiquid) {
+        JsonValue liquid = JsonValue::Object();
+        liquid["fill"] = node->liquidFill;
+        JsonValue top = JsonValue::Array();
+        top.Push(node->liquidTopColor.r); top.Push(node->liquidTopColor.g); top.Push(node->liquidTopColor.b); top.Push(node->liquidTopColor.a);
+        liquid["topColor"] = top;
+        liquid["slosh"] = node->liquidSlosh;
+        liquid["colorDepth"] = node->liquidColorDepth;
+        n["liquid"] = liquid;
+    }
+    if (node->isFluidVolume) {
+        JsonValue fluid = JsonValue::Object();
+        JsonValue size = JsonValue::Array();
+        size.Push(node->fluidSize.x); size.Push(node->fluidSize.y); size.Push(node->fluidSize.z);
+        fluid["size"] = size;
+        fluid["fill"] = node->fluidFill;
+        fluid["start"] = node->fluidStart;
+        fluid["spacing"] = node->fluidSpacing;
+        fluid["viscosity"] = node->fluidViscosity;
+        JsonValue color = JsonValue::Array();
+        color.Push(node->fluidColor.r); color.Push(node->fluidColor.g); color.Push(node->fluidColor.b); color.Push(node->fluidColor.a);
+        fluid["color"] = color;
+        fluid["colorDepth"] = node->fluidColorDepth;
+        n["fluidVolume"] = fluid;
+    }
+    if (node->isPourSpout) {
+        JsonValue pour = JsonValue::Object();
+        pour["flow"] = node->pourFlow;
+        pour["startAngle"] = node->pourStartAngle;
+        pour["streamRadius"] = node->pourStreamRadius;
+        pour["speed"] = node->pourSpeed;
+        JsonValue color = JsonValue::Array();
+        color.Push(node->pourColor.r); color.Push(node->pourColor.g); color.Push(node->pourColor.b); color.Push(node->pourColor.a);
+        pour["color"] = color;
+        pour["sourceId"] = static_cast<double>(node->pourSourceId);
+        n["pourSpout"] = pour;
+    }
+    if (node->isOcean) {
+        JsonValue ocean = JsonValue::Object();
+        JsonValue size = JsonValue::Array();
+        size.Push(node->oceanSize.x); size.Push(node->oceanSize.y);
+        ocean["size"] = size;
+        ocean["waveHeight"] = node->waveHeight;
+        ocean["waveLength"] = node->waveLength;
+        ocean["waveDirection"] = node->waveDirection;
+        ocean["choppiness"] = node->waveChoppiness;
+        ocean["waveSpeed"] = node->waveSpeed;
+        JsonValue shallow = JsonValue::Array();
+        shallow.Push(node->waterShallowColor.r); shallow.Push(node->waterShallowColor.g); shallow.Push(node->waterShallowColor.b);
+        ocean["shallowColor"] = shallow;
+        JsonValue deep = JsonValue::Array();
+        deep.Push(node->waterDeepColor.r); deep.Push(node->waterDeepColor.g); deep.Push(node->waterDeepColor.b);
+        ocean["deepColor"] = deep;
+        ocean["clarity"] = node->waterClarity;
+        ocean["roughness"] = node->waterRoughness;
+        ocean["whitecaps"] = node->whitecaps;
+        ocean["shoreFoamWidth"] = node->shoreFoamWidth;
+        ocean["soundVolume"] = node->oceanSoundVolume;
+        n["ocean"] = ocean;
+    }
+    n["probeRadius"] = node->probeRadius;
+    n["probeBoxProjection"] = node->probeBoxProjection;
+    n["isGIVolume"] = node->isGIVolume;
+    {
+        JsonValue giSize = JsonValue::Array();
+        giSize.Push(node->giVolumeSize.x); giSize.Push(node->giVolumeSize.y); giSize.Push(node->giVolumeSize.z);
+        n["giVolumeSize"] = giSize;
+    }
+    JsonValue probeBox = JsonValue::Array();
+    probeBox.Push(node->probeBoxSize.x); probeBox.Push(node->probeBoxSize.y); probeBox.Push(node->probeBoxSize.z);
+    n["probeBoxSize"] = probeBox;
+    n["heightScale"] = node->heightScale;
+    n["scriptPath"] = node->scriptPath;
+    n["hasSkeleton"] = node->hasSkeleton;
+    n["skeletonName"] = node->skeletonName;
+    n["currentAnimState"] = node->currentAnimState;
+    n["playAnimation"] = node->playAnimation;
+    n["animationSpeed"] = node->animationSpeed;
+    n["animationStartOffset"] = node->animationStartOffset;
+    n["boneCount"] = (int)node->boneNames.size();
+    JsonValue bList = JsonValue::Array();
+    for (const auto& b : node->boneNames) bList.Push(b);
+    n["boneNames"] = bList;
+    JsonValue cList = JsonValue::Array();
+    for (const auto& c : node->animClipNames) cList.Push(c);
+    n["animClipNames"] = cList;
 
-        // IK & Morph Targets
-        n["enableIK"] = node->enableIK;
-        n["ikTargetBone"] = node->ikTargetBone;
-        JsonValue ikTargetPos = JsonValue::Array();
-        ikTargetPos.Push(node->ikTargetPosition.x); ikTargetPos.Push(node->ikTargetPosition.y); ikTargetPos.Push(node->ikTargetPosition.z);
-        n["ikTargetPosition"] = ikTargetPos;
-        JsonValue ikPole = JsonValue::Array();
-        ikPole.Push(node->ikPoleVector.x); ikPole.Push(node->ikPoleVector.y); ikPole.Push(node->ikPoleVector.z);
-        n["ikPoleVector"] = ikPole;
-        n["ikWeight"] = node->ikWeight;
-        if (!node->morphWeights.empty()) {
-            JsonValue morphObj = JsonValue::Object();
-            for (const auto& kv : node->morphWeights) {
-                morphObj[kv.first] = kv.second;
+    // IK & Morph Targets
+    n["enableIK"] = node->enableIK;
+    n["ikTargetBone"] = node->ikTargetBone;
+    JsonValue ikTargetPos = JsonValue::Array();
+    ikTargetPos.Push(node->ikTargetPosition.x); ikTargetPos.Push(node->ikTargetPosition.y); ikTargetPos.Push(node->ikTargetPosition.z);
+    n["ikTargetPosition"] = ikTargetPos;
+    JsonValue ikPole = JsonValue::Array();
+    ikPole.Push(node->ikPoleVector.x); ikPole.Push(node->ikPoleVector.y); ikPole.Push(node->ikPoleVector.z);
+    n["ikPoleVector"] = ikPole;
+    n["ikWeight"] = node->ikWeight;
+    if (!node->morphWeights.empty()) {
+        JsonValue morphObj = JsonValue::Object();
+        for (const auto& kv : node->morphWeights) {
+            morphObj[kv.first] = kv.second;
+        }
+        n["morphWeights"] = morphObj;
+    }
+
+    // RigidBody Physics
+    if (true) {
+        JsonValue rb = JsonValue::Object();
+        rb["type"] = RigidBodyTypeToString(node->rigidBodyType);
+        rb["mass"] = node->mass;
+        rb["useGravity"] = node->useGravity;
+        rb["floatsOnWater"] = node->floatsOnWater;
+        rb["buoyancy"] = node->buoyancy;
+        rb["linearDamping"] = node->linearDamping;
+        rb["angularDamping"] = node->angularDamping;
+        rb["friction"] = node->friction;
+        rb["bounciness"] = node->bounciness;
+        rb["constraintType"] = node->constraintType;
+        rb["constraintTargetNodeId"] = node->constraintTargetNodeId;
+        rb["enableRagdoll"] = node->enableRagdoll;
+        rb["collisionLayer"] = static_cast<double>(node->collisionLayer);
+        rb["collisionMask"] = static_cast<double>(node->collisionMask);
+        JsonValue lv = JsonValue::Array();
+        lv.Push(node->linearVelocity.x); lv.Push(node->linearVelocity.y); lv.Push(node->linearVelocity.z);
+        rb["linearVelocity"] = lv;
+        JsonValue av = JsonValue::Array();
+        av.Push(node->angularVelocity.x); av.Push(node->angularVelocity.y); av.Push(node->angularVelocity.z);
+        rb["angularVelocity"] = av;
+        n["rigidBody"] = rb;
+    }
+
+    // Nested Scene Instancing
+    n["instanceScenePath"] = node->instanceScenePath;
+    n["isSceneInstanceRoot"] = node->isSceneInstanceRoot;
+
+    // Collision filtering bitfields
+    n["collisionLayer"] = static_cast<double>(node->collisionLayer);
+    n["collisionMask"] = static_cast<double>(node->collisionMask);
+
+    // Networking
+    n["networkId"] = node->networkId;
+    n["multiplayerAuthority"] = node->multiplayerAuthority;
+    n["replicateTransform"] = node->replicateTransform;
+
+    // Declarative Multiplayer Property Sync
+    if (node->replicationConfig.enabled || !node->replicationConfig.rules.empty()) {
+        JsonValue repObj = JsonValue::Object();
+        repObj["enabled"] = node->replicationConfig.enabled;
+        JsonValue rulesArr = JsonValue::Array();
+        for (const auto& r : node->replicationConfig.rules) {
+            JsonValue rObj = JsonValue::Object();
+            rObj["property"] = r.propertyName;
+            rObj["mode"] = ReplicationModeToString(r.mode);
+            rObj["hz"] = r.syncRateHz;
+            rulesArr.Push(rObj);
+        }
+        repObj["rules"] = rulesArr;
+        n["replicationConfig"] = repObj;
+    }
+
+    // LOD Configuration
+    n["enableLOD"] = node->enableLOD;
+    n["maxDrawDistance"] = node->maxDrawDistance;
+    n["forcedLOD"] = node->forcedLOD;
+    JsonValue lodArr = JsonValue::Array();
+    for (const auto& lod : node->lodLevels) {
+        JsonValue lObj = JsonValue::Object();
+        lObj["meshKey"] = lod.meshKey;
+        lObj["distance"] = lod.distance;
+        lObj["reductionRatio"] = lod.reductionRatio;
+        lObj["triangleCount"] = static_cast<double>(lod.triangleCount);
+        lodArr.Push(lObj);
+    }
+    n["lodLevels"] = lodArr;
+
+    // Components
+    if (node->nodeType == NodeType::Light) {
+        JsonValue l = JsonValue::Object();
+        l["type"] = LightTypeToString(node->lightType);
+        JsonValue lc = JsonValue::Array();
+        lc.Push(node->lightColor.r); lc.Push(node->lightColor.g); lc.Push(node->lightColor.b);
+        l["color"] = lc;
+        l["intensity"] = node->lightIntensity;
+        l["range"] = node->lightRange;
+        l["innerCone"] = node->spotInnerConeAngle;
+        l["outerCone"] = node->spotOuterConeAngle;
+        l["castShadows"] = node->castShadows;
+        l["shadowBias"] = node->shadowBias;
+        JsonValue areaSz = JsonValue::Array();
+        areaSz.Push(node->areaLightSize.x); areaSz.Push(node->areaLightSize.y);
+        l["areaSize"] = areaSz;
+        l["twoSided"] = node->areaLightTwoSided;
+        n["light"] = l;
+    } else if (node->nodeType == NodeType::Camera) {
+        JsonValue c = JsonValue::Object();
+        c["fov"] = node->cameraFov;
+        c["near"] = node->cameraNear;
+        c["far"] = node->cameraFar;
+        n["camera"] = c;
+    } else if (node->nodeType == NodeType::Collider) {
+        JsonValue colObj = JsonValue::Object();
+        colObj["type"] = ColliderTypeToString(node->colliderType);
+        JsonValue sz = JsonValue::Array();
+        sz.Push(node->colliderSize.x); sz.Push(node->colliderSize.y); sz.Push(node->colliderSize.z);
+        colObj["size"] = sz;
+        colObj["radius"] = node->colliderRadius;
+        colObj["height"] = node->colliderHeight;
+        JsonValue cnt = JsonValue::Array();
+        cnt.Push(node->colliderCenter.x); cnt.Push(node->colliderCenter.y); cnt.Push(node->colliderCenter.z);
+        colObj["center"] = cnt;
+        colObj["isTrigger"] = node->isTrigger;
+        colObj["bounciness"] = node->bounciness;
+        colObj["friction"] = node->friction;
+        n["collider"] = colObj;
+    } else if (node->nodeType == NodeType::Character) {
+        auto charNode = std::dynamic_pointer_cast<CharacterNode>(node);
+        if (charNode) {
+            JsonValue charObj = JsonValue::Object();
+            charObj["name"] = charNode->characterName;
+            charObj["dialogue"] = charNode->dialogueText;
+            charObj["radius"] = charNode->interactionRadius;
+            charObj["moveSpeed"] = charNode->moveSpeed;
+            charObj["turnSpeed"] = charNode->turnSpeed;
+            charObj["tolerance"] = charNode->waypointTolerance;
+            charObj["isPatrolling"] = charNode->isPatrolling;
+            charObj["loopWaypoints"] = charNode->loopWaypoints;
+            charObj["idleAnim"] = charNode->idleAnimClip;
+            charObj["walkAnim"] = charNode->walkAnimClip;
+            charObj["groundClamping"] = charNode->applyGroundClamping;
+            charObj["groundOffset"] = charNode->groundOffset;
+            charObj["clampToWorldFloor"] = charNode->clampToWorldFloor;
+
+            JsonValue wpArr = JsonValue::Array();
+            for (const auto& wp : charNode->waypoints) {
+                JsonValue p = JsonValue::Array();
+                p.Push(wp.x); p.Push(wp.y); p.Push(wp.z);
+                wpArr.Push(p);
             }
-            n["morphWeights"] = morphObj;
+            charObj["waypoints"] = wpArr;
+            n["character"] = charObj;
         }
-
-        // RigidBody Physics
-        if (true) {
-            JsonValue rb = JsonValue::Object();
-            rb["type"] = RigidBodyTypeToString(node->rigidBodyType);
-            rb["mass"] = node->mass;
-            rb["useGravity"] = node->useGravity;
-            rb["floatsOnWater"] = node->floatsOnWater;
-            rb["buoyancy"] = node->buoyancy;
-            rb["linearDamping"] = node->linearDamping;
-            rb["angularDamping"] = node->angularDamping;
-            rb["friction"] = node->friction;
-            rb["bounciness"] = node->bounciness;
-            rb["constraintType"] = node->constraintType;
-            rb["constraintTargetNodeId"] = node->constraintTargetNodeId;
-            rb["enableRagdoll"] = node->enableRagdoll;
-            rb["collisionLayer"] = static_cast<double>(node->collisionLayer);
-            rb["collisionMask"] = static_cast<double>(node->collisionMask);
-            JsonValue lv = JsonValue::Array();
-            lv.Push(node->linearVelocity.x); lv.Push(node->linearVelocity.y); lv.Push(node->linearVelocity.z);
-            rb["linearVelocity"] = lv;
-            JsonValue av = JsonValue::Array();
-            av.Push(node->angularVelocity.x); av.Push(node->angularVelocity.y); av.Push(node->angularVelocity.z);
-            rb["angularVelocity"] = av;
-            n["rigidBody"] = rb;
-        }
-
-        // Nested Scene Instancing
-        n["instanceScenePath"] = node->instanceScenePath;
-        n["isSceneInstanceRoot"] = node->isSceneInstanceRoot;
-
-        // Collision filtering bitfields
-        n["collisionLayer"] = static_cast<double>(node->collisionLayer);
-        n["collisionMask"] = static_cast<double>(node->collisionMask);
-
-        // Networking
-        n["networkId"] = node->networkId;
-        n["multiplayerAuthority"] = node->multiplayerAuthority;
-        n["replicateTransform"] = node->replicateTransform;
-
-        // Declarative Multiplayer Property Sync
-        if (node->replicationConfig.enabled || !node->replicationConfig.rules.empty()) {
-            JsonValue repObj = JsonValue::Object();
-            repObj["enabled"] = node->replicationConfig.enabled;
-            JsonValue rulesArr = JsonValue::Array();
-            for (const auto& r : node->replicationConfig.rules) {
-                JsonValue rObj = JsonValue::Object();
-                rObj["property"] = r.propertyName;
-                rObj["mode"] = ReplicationModeToString(r.mode);
-                rObj["hz"] = r.syncRateHz;
-                rulesArr.Push(rObj);
+    } else if (node->nodeType == NodeType::Spline) {
+        auto splineNode = std::dynamic_pointer_cast<SplineNode>(node);
+        if (splineNode) {
+            JsonValue spObj = JsonValue::Object();
+            spObj["mode"] = SplineModeToString(splineNode->splineMode);
+            spObj["closedLoop"] = splineNode->closedLoop;
+            spObj["tension"] = splineNode->tension;
+            spObj["subdivisions"] = splineNode->subdivisions;
+            JsonValue ptsArr = JsonValue::Array();
+            for (const auto& pt : splineNode->controlPoints) {
+                JsonValue p = JsonValue::Array();
+                p.Push(pt.x); p.Push(pt.y); p.Push(pt.z);
+                ptsArr.Push(p);
             }
-            repObj["rules"] = rulesArr;
-            n["replicationConfig"] = repObj;
+            spObj["controlPoints"] = ptsArr;
+            n["spline"] = spObj;
         }
-
-        // LOD Configuration
-        n["enableLOD"] = node->enableLOD;
-        n["maxDrawDistance"] = node->maxDrawDistance;
-        n["forcedLOD"] = node->forcedLOD;
-        JsonValue lodArr = JsonValue::Array();
-        for (const auto& lod : node->lodLevels) {
-            JsonValue lObj = JsonValue::Object();
-            lObj["meshKey"] = lod.meshKey;
-            lObj["distance"] = lod.distance;
-            lObj["reductionRatio"] = lod.reductionRatio;
-            lObj["triangleCount"] = static_cast<double>(lod.triangleCount);
-            lodArr.Push(lObj);
-        }
-        n["lodLevels"] = lodArr;
-
-        // Components
-        if (node->nodeType == NodeType::Light) {
-            JsonValue l = JsonValue::Object();
-            l["type"] = LightTypeToString(node->lightType);
-            JsonValue lc = JsonValue::Array();
-            lc.Push(node->lightColor.r); lc.Push(node->lightColor.g); lc.Push(node->lightColor.b);
-            l["color"] = lc;
-            l["intensity"] = node->lightIntensity;
-            l["range"] = node->lightRange;
-            l["innerCone"] = node->spotInnerConeAngle;
-            l["outerCone"] = node->spotOuterConeAngle;
-            l["castShadows"] = node->castShadows;
-            l["shadowBias"] = node->shadowBias;
-            JsonValue areaSz = JsonValue::Array();
-            areaSz.Push(node->areaLightSize.x); areaSz.Push(node->areaLightSize.y);
-            l["areaSize"] = areaSz;
-            l["twoSided"] = node->areaLightTwoSided;
-            n["light"] = l;
-        } else if (node->nodeType == NodeType::Camera) {
-            JsonValue c = JsonValue::Object();
-            c["fov"] = node->cameraFov;
-            c["near"] = node->cameraNear;
-            c["far"] = node->cameraFar;
-            n["camera"] = c;
-        } else if (node->nodeType == NodeType::Collider) {
-            JsonValue colObj = JsonValue::Object();
-            colObj["type"] = ColliderTypeToString(node->colliderType);
+    } else if (node->nodeType == NodeType::Decal) {
+        auto decalNode = std::dynamic_pointer_cast<DecalNode>(node);
+        if (decalNode) {
+            JsonValue decObj = JsonValue::Object();
             JsonValue sz = JsonValue::Array();
-            sz.Push(node->colliderSize.x); sz.Push(node->colliderSize.y); sz.Push(node->colliderSize.z);
-            colObj["size"] = sz;
-            colObj["radius"] = node->colliderRadius;
-            colObj["height"] = node->colliderHeight;
-            JsonValue cnt = JsonValue::Array();
-            cnt.Push(node->colliderCenter.x); cnt.Push(node->colliderCenter.y); cnt.Push(node->colliderCenter.z);
-            colObj["center"] = cnt;
-            colObj["isTrigger"] = node->isTrigger;
-            colObj["bounciness"] = node->bounciness;
-            colObj["friction"] = node->friction;
-            n["collider"] = colObj;
-        } else if (node->nodeType == NodeType::Character) {
-            auto charNode = std::dynamic_pointer_cast<CharacterNode>(node);
-            if (charNode) {
-                JsonValue charObj = JsonValue::Object();
-                charObj["name"] = charNode->characterName;
-                charObj["dialogue"] = charNode->dialogueText;
-                charObj["radius"] = charNode->interactionRadius;
-                charObj["moveSpeed"] = charNode->moveSpeed;
-                charObj["turnSpeed"] = charNode->turnSpeed;
-                charObj["tolerance"] = charNode->waypointTolerance;
-                charObj["isPatrolling"] = charNode->isPatrolling;
-                charObj["loopWaypoints"] = charNode->loopWaypoints;
-                charObj["idleAnim"] = charNode->idleAnimClip;
-                charObj["walkAnim"] = charNode->walkAnimClip;
-                charObj["groundClamping"] = charNode->applyGroundClamping;
-                charObj["groundOffset"] = charNode->groundOffset;
-                charObj["clampToWorldFloor"] = charNode->clampToWorldFloor;
+            sz.Push(decalNode->decalSize.x); sz.Push(decalNode->decalSize.y); sz.Push(decalNode->decalSize.z);
+            decObj["size"] = sz;
+            decObj["opacity"] = decalNode->opacity;
+            decObj["fadeDistance"] = decalNode->fadeDistance;
+            decObj["normalAngleThreshold"] = decalNode->normalAngleThreshold;
+            decObj["blendMode"] = static_cast<int>(decalNode->blendMode);
+            decObj["sortOrder"] = decalNode->sortOrder;
+            n["decal"] = decObj;
+        }
+    } else if (node->nodeType == NodeType::ParticleEmitter) {
+        auto partNode = std::dynamic_pointer_cast<ParticleNode>(node);
+        if (partNode) {
+            JsonValue pObj = JsonValue::Object();
+            pObj["simulationMode"] = static_cast<int>(partNode->simulationMode);
+            pObj["emitterShape"] = static_cast<int>(partNode->emitterShape);
+            pObj["maxParticles"] = partNode->maxParticles;
+            pObj["spawnRate"] = partNode->spawnRate;
+            pObj["lifetimeMin"] = partNode->lifetimeMin;
+            pObj["lifetimeMax"] = partNode->lifetimeMax;
+            pObj["startSpeed"] = partNode->startSpeed;
+            pObj["startSize"] = partNode->startSize;
+            pObj["endSize"] = partNode->endSize;
+            JsonValue scArr = JsonValue::Array();
+            scArr.Push(partNode->startColor.r); scArr.Push(partNode->startColor.g); scArr.Push(partNode->startColor.b); scArr.Push(partNode->startColor.a);
+            pObj["startColor"] = scArr;
+            JsonValue ecArr = JsonValue::Array();
+            ecArr.Push(partNode->endColor.r); ecArr.Push(partNode->endColor.g); ecArr.Push(partNode->endColor.b); ecArr.Push(partNode->endColor.a);
+            pObj["endColor"] = ecArr;
+            pObj["gravityMultiplier"] = partNode->gravityMultiplier;
+            pObj["emitterRadius"] = partNode->emitterRadius;
+            pObj["coneAngle"] = partNode->coneAngle;
+            pObj["isEmitting"] = partNode->isEmitting;
+            pObj["looping"] = partNode->looping;
+            pObj["worldSpace"] = partNode->worldSpace;
+            pObj["enableVortex"] = partNode->enableVortexModule;
+            pObj["vortexStrength"] = partNode->vortexStrength;
+            pObj["enableAttractor"] = partNode->enableAttractorModule;
+            pObj["attractorStrength"] = partNode->attractorStrength;
+            pObj["enableCurlNoise"] = partNode->enableCurlNoiseModule;
+            pObj["curlNoiseStrength"] = partNode->curlNoiseStrength;
+            pObj["curlNoiseFrequency"] = partNode->curlNoiseFrequency;
+            pObj["renderMode"] = static_cast<int>(partNode->renderMode);
+            JsonValue boxExtArr = JsonValue::Array();
+            boxExtArr.Push(partNode->emitterBoxExtents.x); boxExtArr.Push(partNode->emitterBoxExtents.y); boxExtArr.Push(partNode->emitterBoxExtents.z);
+            pObj["emitterBoxExtents"] = boxExtArr;
+            JsonValue vortexArr = JsonValue::Array();
+            vortexArr.Push(partNode->vortexAxis.x); vortexArr.Push(partNode->vortexAxis.y); vortexArr.Push(partNode->vortexAxis.z);
+            pObj["vortexAxis"] = vortexArr;
+            JsonValue attractArr = JsonValue::Array();
+            attractArr.Push(partNode->attractorOffset.x); attractArr.Push(partNode->attractorOffset.y); attractArr.Push(partNode->attractorOffset.z);
+            pObj["attractorOffset"] = attractArr;
+            pObj["drag"] = partNode->drag;
+            pObj["startRotationMin"] = partNode->startRotationMin;
+            pObj["startRotationMax"] = partNode->startRotationMax;
+            pObj["angularVelocityMin"] = partNode->angularVelocityMin;
+            pObj["angularVelocityMax"] = partNode->angularVelocityMax;
+            pObj["builtinSheet"] = static_cast<int>(partNode->builtinSheet);
+            pObj["flipbookColumns"] = partNode->flipbookColumns;
+            pObj["flipbookRows"] = partNode->flipbookRows;
+            pObj["flipbookFrames"] = partNode->flipbookFrames;
+            pObj["flipbookMode"] = static_cast<int>(partNode->flipbookMode);
+            pObj["flipbookFps"] = partNode->flipbookFps;
+            pObj["flipbookCycles"] = partNode->flipbookCycles;
+            pObj["flipbookRandomStart"] = partNode->flipbookRandomStart;
+            pObj["flipbookBlend"] = partNode->flipbookBlend;
+            pObj["softness"] = partNode->softness;
+            pObj["cameraFade"] = partNode->cameraFade;
+            pObj["lit"] = partNode->lit;
+            pObj["glowIntensity"] = partNode->glowIntensity;
+            pObj["selfGlow"] = partNode->selfGlow;
+            pObj["velocityStretch"] = partNode->velocityStretch;
+            pObj["distortionStrength"] = partNode->distortionStrength;
+            pObj["trailMode"] = static_cast<int>(partNode->trailMode);
+            pObj["trailLength"] = partNode->trailLength;
+            pObj["trailInterval"] = partNode->trailInterval;
+            pObj["trailWidth"] = partNode->trailWidth;
+            pObj["trailTaper"] = partNode->trailTaper;
+            pObj["trailDrawParticles"] = partNode->trailDrawParticles;
+            pObj["trailTextureTiling"] = partNode->trailTextureTiling;
+            pObj["collisionMode"] = static_cast<int>(partNode->collisionMode);
+            pObj["collisionPlaneHeight"] = partNode->collisionPlaneHeight;
+            pObj["collideWithWater"] = partNode->collideWithWater;
+            pObj["collisionRadiusScale"] = partNode->collisionRadiusScale;
+            pObj["bounce"] = partNode->bounce;
+            pObj["friction"] = partNode->friction;
+            pObj["killOnCollision"] = partNode->killOnCollision;
+            pObj["lifetimeLossOnHit"] = partNode->lifetimeLossOnHit;
+            pObj["hitSpawnCount"] = partNode->hitSpawnCount;
+            pObj["hitSpawnSpeed"] = partNode->hitSpawnSpeed;
+            pObj["hitSpawnSize"] = partNode->hitSpawnSize;
+            n["particle"] = pObj;
+        }
+    } else if (node->nodeType == NodeType::AudioSource) {
+        auto audioNode = std::dynamic_pointer_cast<AudioNode>(node);
+        if (audioNode) {
+            JsonValue aObj = JsonValue::Object();
+            aObj["clipPath"] = audioNode->audioClipPath;
+            aObj["busName"] = audioNode->busName;
+            aObj["is3DSpatial"] = audioNode->is3DSpatial;
+            aObj["volume"] = audioNode->volume;
+            aObj["pitch"] = audioNode->pitch;
+            aObj["loop"] = audioNode->loop;
+            aObj["playOnAwake"] = audioNode->playOnAwake;
+            aObj["attenuationModel"] = static_cast<int>(audioNode->attenuationModel);
+            aObj["minDistance"] = audioNode->minDistance;
+            aObj["maxDistance"] = audioNode->maxDistance;
+            aObj["rolloffFactor"] = audioNode->rolloffFactor;
+            aObj["isReverbZone"] = audioNode->isReverbZone;
+            aObj["reverbInnerRadius"] = audioNode->reverbInnerRadius;
+            aObj["reverbOuterRadius"] = audioNode->reverbOuterRadius;
+            aObj["reverbRoomSize"] = audioNode->reverbRoomSize;
+            aObj["reverbDecayTime"] = audioNode->reverbDecayTime;
+            aObj["reverbDamping"] = audioNode->reverbDamping;
+            aObj["reverbWetMix"] = audioNode->reverbWetMix;
+            n["audio"] = aObj;
+        }
+    } else if (node->nodeType == NodeType::Terrain) {
+        auto tNode = std::dynamic_pointer_cast<TerrainNode>(node);
+        if (tNode) {
+            JsonValue tObj = JsonValue::Object();
+            tObj["gridResolution"] = tNode->gridResolution;
+            tObj["sizeX"] = tNode->terrainSize.x;
+            tObj["sizeZ"] = tNode->terrainSize.y;
+            tObj["heightScale"] = tNode->heightScale;
+            tObj["uvTiling"] = tNode->uvTiling;
+            tObj["heightmapPath"] = tNode->heightmapPath;
+            JsonValue hArr = JsonValue::Array();
+            for (float h : tNode->heightData) {
+                hArr.Push(h);
+            }
+            tObj["heightData"] = hArr;
+            // Paint layers and the splat map (RGBA weights, base64)
+            JsonValue layersArr = JsonValue::Array();
+            for (const TerrainLayer& layer : tNode->layers) {
+                JsonValue l = JsonValue::Object();
+                l["name"] = layer.name;
+                l["texture"] = layer.texturePath;
+                JsonValue tint = JsonValue::Array();
+                tint.Push(layer.tint.r); tint.Push(layer.tint.g); tint.Push(layer.tint.b);
+                l["tint"] = tint;
+                l["tiling"] = layer.tiling;
+                l["roughness"] = layer.roughness;
+                layersArr.Push(l);
+            }
+            tObj["layers"] = layersArr;
+            tObj["splatResolution"] = tNode->splatResolution;
+            tObj["splat"] = TerrainBase64Encode(tNode->splatData);
+            // Foliage types and instances (x, z, rotation, scale, type for each)
+            JsonValue typesArr = JsonValue::Array();
+            for (const FoliageType& type : tNode->foliageTypes) {
+                JsonValue t = JsonValue::Object();
+                t["name"] = type.name;
+                t["builtIn"] = type.builtIn;
+                t["model"] = type.modelMesh;
+                JsonValue c = JsonValue::Array();
+                c.Push(type.color.r); c.Push(type.color.g); c.Push(type.color.b); c.Push(type.color.a);
+                t["color"] = c;
+                t["minScale"] = type.minScale;
+                t["maxScale"] = type.maxScale;
+                t["density"] = type.density;
+                t["maxSlope"] = type.maxSlope;
+                t["alignToSlope"] = type.alignToSlope;
+                t["castShadows"] = type.castShadows;
+                t["wind"] = type.wind;
+                t["collision"] = type.collision;
+                t["drawDistance"] = type.drawDistance;
+                typesArr.Push(t);
+            }
+            tObj["foliageTypes"] = typesArr;
+            JsonValue foliageArr = JsonValue::Array();
+            for (const FoliageInstance& f : tNode->foliage) {
+                foliageArr.Push(f.local.x); foliageArr.Push(f.local.y); foliageArr.Push(f.rotation);
+                foliageArr.Push(f.scale); foliageArr.Push(static_cast<double>(f.type));
+            }
+            tObj["foliage"] = foliageArr;
+            n["terrain"] = tObj;
+        }
+    } else if (node->IsUINode()) {
+        JsonValue uiObj = JsonValue::Object();
+        JsonValue uipos = JsonValue::Array();
+        uipos.Push(node->uiPosition.x); uipos.Push(node->uiPosition.y);
+        uiObj["position"] = uipos;
+        JsonValue uisz = JsonValue::Array();
+        uisz.Push(node->uiSize.x); uisz.Push(node->uiSize.y);
+        uiObj["size"] = uisz;
+        uiObj["anchor"] = UIAnchorToString(node->uiAnchor);
+        uiObj["text"] = node->uiText;
+        if (!node->uiLocKey.empty()) uiObj["locKey"] = node->uiLocKey;
+        uiObj["placeholder"] = node->uiPlaceholder;
+        uiObj["fontSize"] = node->uiFontSize;
+        uiObj["fontPath"] = node->uiFontPath;
+        JsonValue uic = JsonValue::Array();
+        uic.Push(node->uiColor.r); uic.Push(node->uiColor.g); uic.Push(node->uiColor.b); uic.Push(node->uiColor.a);
+        uiObj["color"] = uic;
+        JsonValue uitc = JsonValue::Array();
+        uitc.Push(node->uiTextColor.r); uitc.Push(node->uiTextColor.g); uitc.Push(node->uiTextColor.b); uitc.Push(node->uiTextColor.a);
+        uiObj["textColor"] = uitc;
+        JsonValue uihc = JsonValue::Array();
+        uihc.Push(node->uiHoverColor.r); uihc.Push(node->uiHoverColor.g); uihc.Push(node->uiHoverColor.b); uihc.Push(node->uiHoverColor.a);
+        uiObj["hoverColor"] = uihc;
+        JsonValue uipc = JsonValue::Array();
+        uipc.Push(node->uiPressColor.r); uipc.Push(node->uiPressColor.g); uipc.Push(node->uiPressColor.b); uipc.Push(node->uiPressColor.a);
+        uiObj["pressColor"] = uipc;
+        JsonValue uibc = JsonValue::Array();
+        uibc.Push(node->uiBorderColor.r); uibc.Push(node->uiBorderColor.g); uibc.Push(node->uiBorderColor.b); uibc.Push(node->uiBorderColor.a);
+        uiObj["borderColor"] = uibc;
+        uiObj["borderThickness"] = node->uiBorderThickness;
+        uiObj["rounding"] = node->uiRounding;
+        uiObj["progress"] = node->uiProgress;
+        uiObj["value"] = node->uiValue;
+        uiObj["minVal"] = node->uiMinVal;
+        uiObj["maxVal"] = node->uiMaxVal;
+        uiObj["checked"] = node->uiChecked;
+        uiObj["radioGroup"] = node->uiRadioGroup;
+        uiObj["selectedIndex"] = node->uiSelectedIndex;
+        JsonValue itemsArr = JsonValue::Array();
+        for (const auto& item : node->uiItems) itemsArr.Push(item);
+        uiObj["items"] = itemsArr;
+        uiObj["windowMovable"] = node->uiWindowMovable;
+        uiObj["windowClosable"] = node->uiWindowClosable;
+        uiObj["windowIsOpen"] = node->uiWindowIsOpen;
+        uiObj["shapeType"] = UIShapeTypeToString(node->uiShapeType);
+        uiObj["visible"] = node->uiVisible;
+        uiObj["enabled"] = node->uiEnabled;
+        uiObj["action"] = node->uiOnClickAction;
 
-                JsonValue wpArr = JsonValue::Array();
-                for (const auto& wp : charNode->waypoints) {
-                    JsonValue p = JsonValue::Array();
-                    p.Push(wp.x); p.Push(wp.y); p.Push(wp.z);
-                    wpArr.Push(p);
-                }
-                charObj["waypoints"] = wpArr;
-                n["character"] = charObj;
+        if (node->nodeType == NodeType::UI_BoxContainer) {
+            auto boxNode = std::dynamic_pointer_cast<UIBoxContainerNode>(node);
+            if (boxNode) {
+                uiObj["boxOrientation"] = BoxOrientationToString(boxNode->orientation);
+                uiObj["spacing"] = boxNode->spacing;
+                uiObj["padding"] = boxNode->padding;
+                uiObj["autoResize"] = boxNode->autoResize;
             }
-        } else if (node->nodeType == NodeType::Spline) {
-            auto splineNode = std::dynamic_pointer_cast<SplineNode>(node);
-            if (splineNode) {
-                JsonValue spObj = JsonValue::Object();
-                spObj["mode"] = SplineModeToString(splineNode->splineMode);
-                spObj["closedLoop"] = splineNode->closedLoop;
-                spObj["tension"] = splineNode->tension;
-                spObj["subdivisions"] = splineNode->subdivisions;
-                JsonValue ptsArr = JsonValue::Array();
-                for (const auto& pt : splineNode->controlPoints) {
-                    JsonValue p = JsonValue::Array();
-                    p.Push(pt.x); p.Push(pt.y); p.Push(pt.z);
-                    ptsArr.Push(p);
-                }
-                spObj["controlPoints"] = ptsArr;
-                n["spline"] = spObj;
+        } else if (node->nodeType == NodeType::UI_GridContainer) {
+            auto gridNode = std::dynamic_pointer_cast<UIGridContainerNode>(node);
+            if (gridNode) {
+                uiObj["gridColumns"] = gridNode->columns;
+                uiObj["cellWidth"] = gridNode->cellWidth;
+                uiObj["cellHeight"] = gridNode->cellHeight;
+                uiObj["horizontalSpacing"] = gridNode->horizontalSpacing;
+                uiObj["verticalSpacing"] = gridNode->verticalSpacing;
+                uiObj["padding"] = gridNode->padding;
+                uiObj["autoResize"] = gridNode->autoResize;
             }
-        } else if (node->nodeType == NodeType::Decal) {
-            auto decalNode = std::dynamic_pointer_cast<DecalNode>(node);
-            if (decalNode) {
-                JsonValue decObj = JsonValue::Object();
-                JsonValue sz = JsonValue::Array();
-                sz.Push(decalNode->decalSize.x); sz.Push(decalNode->decalSize.y); sz.Push(decalNode->decalSize.z);
-                decObj["size"] = sz;
-                decObj["opacity"] = decalNode->opacity;
-                decObj["fadeDistance"] = decalNode->fadeDistance;
-                decObj["normalAngleThreshold"] = decalNode->normalAngleThreshold;
-                decObj["blendMode"] = static_cast<int>(decalNode->blendMode);
-                decObj["sortOrder"] = decalNode->sortOrder;
-                n["decal"] = decObj;
-            }
-        } else if (node->nodeType == NodeType::ParticleEmitter) {
-            auto partNode = std::dynamic_pointer_cast<ParticleNode>(node);
-            if (partNode) {
-                JsonValue pObj = JsonValue::Object();
-                pObj["simulationMode"] = static_cast<int>(partNode->simulationMode);
-                pObj["emitterShape"] = static_cast<int>(partNode->emitterShape);
-                pObj["maxParticles"] = partNode->maxParticles;
-                pObj["spawnRate"] = partNode->spawnRate;
-                pObj["lifetimeMin"] = partNode->lifetimeMin;
-                pObj["lifetimeMax"] = partNode->lifetimeMax;
-                pObj["startSpeed"] = partNode->startSpeed;
-                pObj["startSize"] = partNode->startSize;
-                pObj["endSize"] = partNode->endSize;
-                JsonValue scArr = JsonValue::Array();
-                scArr.Push(partNode->startColor.r); scArr.Push(partNode->startColor.g); scArr.Push(partNode->startColor.b); scArr.Push(partNode->startColor.a);
-                pObj["startColor"] = scArr;
-                JsonValue ecArr = JsonValue::Array();
-                ecArr.Push(partNode->endColor.r); ecArr.Push(partNode->endColor.g); ecArr.Push(partNode->endColor.b); ecArr.Push(partNode->endColor.a);
-                pObj["endColor"] = ecArr;
-                pObj["gravityMultiplier"] = partNode->gravityMultiplier;
-                pObj["emitterRadius"] = partNode->emitterRadius;
-                pObj["coneAngle"] = partNode->coneAngle;
-                pObj["isEmitting"] = partNode->isEmitting;
-                pObj["looping"] = partNode->looping;
-                pObj["worldSpace"] = partNode->worldSpace;
-                pObj["enableVortex"] = partNode->enableVortexModule;
-                pObj["vortexStrength"] = partNode->vortexStrength;
-                pObj["enableAttractor"] = partNode->enableAttractorModule;
-                pObj["attractorStrength"] = partNode->attractorStrength;
-                pObj["enableCurlNoise"] = partNode->enableCurlNoiseModule;
-                pObj["curlNoiseStrength"] = partNode->curlNoiseStrength;
-                pObj["curlNoiseFrequency"] = partNode->curlNoiseFrequency;
-                pObj["renderMode"] = static_cast<int>(partNode->renderMode);
-                JsonValue boxExtArr = JsonValue::Array();
-                boxExtArr.Push(partNode->emitterBoxExtents.x); boxExtArr.Push(partNode->emitterBoxExtents.y); boxExtArr.Push(partNode->emitterBoxExtents.z);
-                pObj["emitterBoxExtents"] = boxExtArr;
-                JsonValue vortexArr = JsonValue::Array();
-                vortexArr.Push(partNode->vortexAxis.x); vortexArr.Push(partNode->vortexAxis.y); vortexArr.Push(partNode->vortexAxis.z);
-                pObj["vortexAxis"] = vortexArr;
-                JsonValue attractArr = JsonValue::Array();
-                attractArr.Push(partNode->attractorOffset.x); attractArr.Push(partNode->attractorOffset.y); attractArr.Push(partNode->attractorOffset.z);
-                pObj["attractorOffset"] = attractArr;
-                pObj["drag"] = partNode->drag;
-                pObj["startRotationMin"] = partNode->startRotationMin;
-                pObj["startRotationMax"] = partNode->startRotationMax;
-                pObj["angularVelocityMin"] = partNode->angularVelocityMin;
-                pObj["angularVelocityMax"] = partNode->angularVelocityMax;
-                pObj["builtinSheet"] = static_cast<int>(partNode->builtinSheet);
-                pObj["flipbookColumns"] = partNode->flipbookColumns;
-                pObj["flipbookRows"] = partNode->flipbookRows;
-                pObj["flipbookFrames"] = partNode->flipbookFrames;
-                pObj["flipbookMode"] = static_cast<int>(partNode->flipbookMode);
-                pObj["flipbookFps"] = partNode->flipbookFps;
-                pObj["flipbookCycles"] = partNode->flipbookCycles;
-                pObj["flipbookRandomStart"] = partNode->flipbookRandomStart;
-                pObj["flipbookBlend"] = partNode->flipbookBlend;
-                pObj["softness"] = partNode->softness;
-                pObj["cameraFade"] = partNode->cameraFade;
-                pObj["lit"] = partNode->lit;
-                pObj["glowIntensity"] = partNode->glowIntensity;
-                pObj["selfGlow"] = partNode->selfGlow;
-                pObj["velocityStretch"] = partNode->velocityStretch;
-                pObj["distortionStrength"] = partNode->distortionStrength;
-                pObj["trailMode"] = static_cast<int>(partNode->trailMode);
-                pObj["trailLength"] = partNode->trailLength;
-                pObj["trailInterval"] = partNode->trailInterval;
-                pObj["trailWidth"] = partNode->trailWidth;
-                pObj["trailTaper"] = partNode->trailTaper;
-                pObj["trailDrawParticles"] = partNode->trailDrawParticles;
-                pObj["trailTextureTiling"] = partNode->trailTextureTiling;
-                pObj["collisionMode"] = static_cast<int>(partNode->collisionMode);
-                pObj["collisionPlaneHeight"] = partNode->collisionPlaneHeight;
-                pObj["collideWithWater"] = partNode->collideWithWater;
-                pObj["collisionRadiusScale"] = partNode->collisionRadiusScale;
-                pObj["bounce"] = partNode->bounce;
-                pObj["friction"] = partNode->friction;
-                pObj["killOnCollision"] = partNode->killOnCollision;
-                pObj["lifetimeLossOnHit"] = partNode->lifetimeLossOnHit;
-                pObj["hitSpawnCount"] = partNode->hitSpawnCount;
-                pObj["hitSpawnSpeed"] = partNode->hitSpawnSpeed;
-                pObj["hitSpawnSize"] = partNode->hitSpawnSize;
-                n["particle"] = pObj;
-            }
-        } else if (node->nodeType == NodeType::AudioSource) {
-            auto audioNode = std::dynamic_pointer_cast<AudioNode>(node);
-            if (audioNode) {
-                JsonValue aObj = JsonValue::Object();
-                aObj["clipPath"] = audioNode->audioClipPath;
-                aObj["busName"] = audioNode->busName;
-                aObj["is3DSpatial"] = audioNode->is3DSpatial;
-                aObj["volume"] = audioNode->volume;
-                aObj["pitch"] = audioNode->pitch;
-                aObj["loop"] = audioNode->loop;
-                aObj["playOnAwake"] = audioNode->playOnAwake;
-                aObj["attenuationModel"] = static_cast<int>(audioNode->attenuationModel);
-                aObj["minDistance"] = audioNode->minDistance;
-                aObj["maxDistance"] = audioNode->maxDistance;
-                aObj["rolloffFactor"] = audioNode->rolloffFactor;
-                aObj["isReverbZone"] = audioNode->isReverbZone;
-                aObj["reverbInnerRadius"] = audioNode->reverbInnerRadius;
-                aObj["reverbOuterRadius"] = audioNode->reverbOuterRadius;
-                aObj["reverbRoomSize"] = audioNode->reverbRoomSize;
-                aObj["reverbDecayTime"] = audioNode->reverbDecayTime;
-                aObj["reverbDamping"] = audioNode->reverbDamping;
-                aObj["reverbWetMix"] = audioNode->reverbWetMix;
-                n["audio"] = aObj;
-            }
-        } else if (node->nodeType == NodeType::Terrain) {
-            auto tNode = std::dynamic_pointer_cast<TerrainNode>(node);
-            if (tNode) {
-                JsonValue tObj = JsonValue::Object();
-                tObj["gridResolution"] = tNode->gridResolution;
-                tObj["sizeX"] = tNode->terrainSize.x;
-                tObj["sizeZ"] = tNode->terrainSize.y;
-                tObj["heightScale"] = tNode->heightScale;
-                tObj["uvTiling"] = tNode->uvTiling;
-                tObj["heightmapPath"] = tNode->heightmapPath;
-                JsonValue hArr = JsonValue::Array();
-                for (float h : tNode->heightData) {
-                    hArr.Push(h);
-                }
-                tObj["heightData"] = hArr;
-                // Paint layers and the splat map (RGBA weights, base64)
-                JsonValue layersArr = JsonValue::Array();
-                for (const TerrainLayer& layer : tNode->layers) {
-                    JsonValue l = JsonValue::Object();
-                    l["name"] = layer.name;
-                    l["texture"] = layer.texturePath;
-                    JsonValue tint = JsonValue::Array();
-                    tint.Push(layer.tint.r); tint.Push(layer.tint.g); tint.Push(layer.tint.b);
-                    l["tint"] = tint;
-                    l["tiling"] = layer.tiling;
-                    l["roughness"] = layer.roughness;
-                    layersArr.Push(l);
-                }
-                tObj["layers"] = layersArr;
-                tObj["splatResolution"] = tNode->splatResolution;
-                tObj["splat"] = TerrainBase64Encode(tNode->splatData);
-                // Foliage types and instances (x, z, rotation, scale, type for each)
-                JsonValue typesArr = JsonValue::Array();
-                for (const FoliageType& type : tNode->foliageTypes) {
-                    JsonValue t = JsonValue::Object();
-                    t["name"] = type.name;
-                    t["builtIn"] = type.builtIn;
-                    t["model"] = type.modelMesh;
-                    JsonValue c = JsonValue::Array();
-                    c.Push(type.color.r); c.Push(type.color.g); c.Push(type.color.b); c.Push(type.color.a);
-                    t["color"] = c;
-                    t["minScale"] = type.minScale;
-                    t["maxScale"] = type.maxScale;
-                    t["density"] = type.density;
-                    t["maxSlope"] = type.maxSlope;
-                    t["alignToSlope"] = type.alignToSlope;
-                    t["castShadows"] = type.castShadows;
-                    t["wind"] = type.wind;
-                    t["collision"] = type.collision;
-                    t["drawDistance"] = type.drawDistance;
-                    typesArr.Push(t);
-                }
-                tObj["foliageTypes"] = typesArr;
-                JsonValue foliageArr = JsonValue::Array();
-                for (const FoliageInstance& f : tNode->foliage) {
-                    foliageArr.Push(f.local.x); foliageArr.Push(f.local.y); foliageArr.Push(f.rotation);
-                    foliageArr.Push(f.scale); foliageArr.Push(static_cast<double>(f.type));
-                }
-                tObj["foliage"] = foliageArr;
-                n["terrain"] = tObj;
-            }
-        } else if (node->IsUINode()) {
-            JsonValue uiObj = JsonValue::Object();
-            JsonValue uipos = JsonValue::Array();
-            uipos.Push(node->uiPosition.x); uipos.Push(node->uiPosition.y);
-            uiObj["position"] = uipos;
-            JsonValue uisz = JsonValue::Array();
-            uisz.Push(node->uiSize.x); uisz.Push(node->uiSize.y);
-            uiObj["size"] = uisz;
-            uiObj["anchor"] = UIAnchorToString(node->uiAnchor);
-            uiObj["text"] = node->uiText;
-            if (!node->uiLocKey.empty()) uiObj["locKey"] = node->uiLocKey;
-            uiObj["placeholder"] = node->uiPlaceholder;
-            uiObj["fontSize"] = node->uiFontSize;
-            uiObj["fontPath"] = node->uiFontPath;
-            JsonValue uic = JsonValue::Array();
-            uic.Push(node->uiColor.r); uic.Push(node->uiColor.g); uic.Push(node->uiColor.b); uic.Push(node->uiColor.a);
-            uiObj["color"] = uic;
-            JsonValue uitc = JsonValue::Array();
-            uitc.Push(node->uiTextColor.r); uitc.Push(node->uiTextColor.g); uitc.Push(node->uiTextColor.b); uitc.Push(node->uiTextColor.a);
-            uiObj["textColor"] = uitc;
-            JsonValue uihc = JsonValue::Array();
-            uihc.Push(node->uiHoverColor.r); uihc.Push(node->uiHoverColor.g); uihc.Push(node->uiHoverColor.b); uihc.Push(node->uiHoverColor.a);
-            uiObj["hoverColor"] = uihc;
-            JsonValue uipc = JsonValue::Array();
-            uipc.Push(node->uiPressColor.r); uipc.Push(node->uiPressColor.g); uipc.Push(node->uiPressColor.b); uipc.Push(node->uiPressColor.a);
-            uiObj["pressColor"] = uipc;
-            JsonValue uibc = JsonValue::Array();
-            uibc.Push(node->uiBorderColor.r); uibc.Push(node->uiBorderColor.g); uibc.Push(node->uiBorderColor.b); uibc.Push(node->uiBorderColor.a);
-            uiObj["borderColor"] = uibc;
-            uiObj["borderThickness"] = node->uiBorderThickness;
-            uiObj["rounding"] = node->uiRounding;
-            uiObj["progress"] = node->uiProgress;
-            uiObj["value"] = node->uiValue;
-            uiObj["minVal"] = node->uiMinVal;
-            uiObj["maxVal"] = node->uiMaxVal;
-            uiObj["checked"] = node->uiChecked;
-            uiObj["radioGroup"] = node->uiRadioGroup;
-            uiObj["selectedIndex"] = node->uiSelectedIndex;
-            JsonValue itemsArr = JsonValue::Array();
-            for (const auto& item : node->uiItems) itemsArr.Push(item);
-            uiObj["items"] = itemsArr;
-            uiObj["windowMovable"] = node->uiWindowMovable;
-            uiObj["windowClosable"] = node->uiWindowClosable;
-            uiObj["windowIsOpen"] = node->uiWindowIsOpen;
-            uiObj["shapeType"] = UIShapeTypeToString(node->uiShapeType);
-            uiObj["visible"] = node->uiVisible;
-            uiObj["enabled"] = node->uiEnabled;
-            uiObj["action"] = node->uiOnClickAction;
-
-            if (node->nodeType == NodeType::UI_BoxContainer) {
-                auto boxNode = std::dynamic_pointer_cast<UIBoxContainerNode>(node);
-                if (boxNode) {
-                    uiObj["boxOrientation"] = BoxOrientationToString(boxNode->orientation);
-                    uiObj["spacing"] = boxNode->spacing;
-                    uiObj["padding"] = boxNode->padding;
-                    uiObj["autoResize"] = boxNode->autoResize;
-                }
-            } else if (node->nodeType == NodeType::UI_GridContainer) {
-                auto gridNode = std::dynamic_pointer_cast<UIGridContainerNode>(node);
-                if (gridNode) {
-                    uiObj["gridColumns"] = gridNode->columns;
-                    uiObj["cellWidth"] = gridNode->cellWidth;
-                    uiObj["cellHeight"] = gridNode->cellHeight;
-                    uiObj["horizontalSpacing"] = gridNode->horizontalSpacing;
-                    uiObj["verticalSpacing"] = gridNode->verticalSpacing;
-                    uiObj["padding"] = gridNode->padding;
-                    uiObj["autoResize"] = gridNode->autoResize;
-                }
-            }
-
-            n["ui"] = uiObj;
         }
 
-        if (node->type == ShapeType::Custom) {
-            JsonValue bMin = JsonValue::Array();
-            bMin.Push(node->boundsMin.x); bMin.Push(node->boundsMin.y); bMin.Push(node->boundsMin.z);
-            n["boundsMin"] = bMin;
-
-            JsonValue bMax = JsonValue::Array();
-            bMax.Push(node->boundsMax.x); bMax.Push(node->boundsMax.y); bMax.Push(node->boundsMax.z);
-            n["boundsMax"] = bMax;
-
-            n["vertexCount"] = node->vertexCount;
-            n["triangleCount"] = node->triangleCount;
-        }
-
-        nodesArr.Push(n);
+        n["ui"] = uiObj;
     }
-    sceneObj["nodes"] = nodesArr;
-    if (!m_cutscenes.empty()) {
-        JsonValue cutscenesArr = JsonValue::Array();
-        for (const auto& cs : m_cutscenes) {
-            cutscenesArr.Push(cs.Serialize());
-        }
-        sceneObj["cutscenes"] = cutscenesArr;
+
+    if (node->type == ShapeType::Custom) {
+        JsonValue bMin = JsonValue::Array();
+        bMin.Push(node->boundsMin.x); bMin.Push(node->boundsMin.y); bMin.Push(node->boundsMin.z);
+        n["boundsMin"] = bMin;
+
+        JsonValue bMax = JsonValue::Array();
+        bMax.Push(node->boundsMax.x); bMax.Push(node->boundsMax.y); bMax.Push(node->boundsMax.z);
+        n["boundsMax"] = bMax;
+
+        n["vertexCount"] = node->vertexCount;
+        n["triangleCount"] = node->triangleCount;
     }
-    return sceneObj;
+
+    return n;
 }
 
 bool Scene::Deserialize(const JsonValue& json, std::function<bool(const std::string&, const std::string&)> loadMeshCallback) {

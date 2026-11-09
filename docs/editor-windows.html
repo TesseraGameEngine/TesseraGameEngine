@@ -244,7 +244,20 @@
       </li>
       <li><strong>Transform Gizmos (ImGuizmo)</strong>: Translate (<kbd>W</kbd>), Rotate (<kbd>E</kbd>), Scale (<kbd>R</kbd>).</li>
       <li><strong>View Display Toggles</strong>: Grid toggle, Pivot marker, Polygon mode (Solid vs Wireframe), Preset orthographic views (Front, Top, Side, Iso).</li>
-      <li><strong>Real-size rendering</strong>: the viewport renders at its on-screen pixel size. After you resize or redock it, the image follows once the size has been steady for a few frames.</li>
+      <li><strong>Real-size rendering</strong>: the viewport renders at its on-screen pixel size (times the viewport's resolution scale, below). After you resize or redock it, the image follows once the size has been steady for a few frames.</li>
+      <li><strong>Realtime: ON / OFF</strong> (toolbar): like Unreal's viewport <em>Realtime</em> toggle. Off freezes the water, wind, weather, sky clock and ocean spray while you edit, so the editor does less work each frame. Play always animates.</li>
+      <li><strong>Quality: Full / Balanced / Fast</strong> (toolbar): lighter rendering for the editor viewport only. The Game view, the exported game and the scene's saved settings are never changed. Choose a preset, or change any option (the preset then shows <em>Custom</em>). The choice is saved in <code>editor_settings.json</code>.
+        <table>
+          <tr><th>Option</th><th>Full</th><th>Balanced</th><th>Fast</th></tr>
+          <tr><td>Resolution (Unreal's Screen Percentage)</td><td>100%</td><td>75%</td><td>50%</td></tr>
+          <tr><td>Ray tracing (where the GPU has it)</td><td>on</td><td>on</td><td>on</td></tr>
+          <tr><td>Ambient occlusion, screen-space reflections, TAA</td><td>on</td><td>on</td><td>off (FXAA)</td></tr>
+          <tr><td>Volumetric clouds &amp; fog, cinematic effects (DOF, motion blur, grain, flare, chromatic aberration)</td><td>on</td><td>off</td><td>off</td></tr>
+          <tr><td>Shadow maps reach 60 m (only used when ray tracing is off)</td><td>no</td><td>no</td><td>yes</td></tr>
+        </table>
+        Ray tracing stays on in every preset because on RT hardware its shadows cost less than shadow-map cascades in a big scene (in Headland: about 0.03 ms of GPU time against 2&ndash;5 ms). Untick <em>Ray tracing</em> to compare. With it off, no ray tracing scene is built while the Game view isn't showing.</li>
+      <li><strong>Show frame stats</strong> (Quality menu): an overlay in the viewport's corner with FPS, CPU and GPU frame time, the render size, and whether the CPU or the GPU is the limit. Unreal's <code>stat fps</code> and Godot's <em>View Frame Time</em> do the same job.</li>
+      <li><strong>Use less CPU when in background</strong> (Quality menu, on by default): the editor drops to about 10 fps while its window isn't focused, and further while minimised. Never applies in Play or in exported games.</li>
       <li><strong>Grid overlay</strong>: the grid and axes are drawn after post-processing, so they stay sharp under TAA and never receive shadows.</li>
     </ul>
 

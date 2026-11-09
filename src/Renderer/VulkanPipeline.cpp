@@ -3550,6 +3550,93 @@ void VulkanPipeline::RenderShadowPass(VkCommandBuffer cmd, const Scene& scene,
         return (std::abs(dir.y) > 0.99f) ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
     };
 
+    // Shadow casters, gathered once for every map this pass draws (sun cascades, local light
+    // faces, the weather shelter): transforms, LOD meshes and materials are the same for all of
+    // them, so each map only frustum-tests the cached bounds
+    struct CasterInfo {
+        glm::mat4 world;
+        glm::vec3 localMin, localMax;
+        bool cullable;     // terrain bounds don't describe its grid: never culled
+        bool castsShadow;  // false: drawn into the weather shelter map only (glass, non-casters)
+        uint32_t group;    // casters with the same mesh, material set and push values draw instanced
+    };
+    struct CasterGroup {
+        const GPUMesh* mesh;
+        bool cutout;
+        VkDescriptorSet set; // material set (cutout) or the view's set (instance buffer only)
+        ShadowPushConstants push;
+    };
+    std::vector<CasterInfo> casters;
+    std::vector<CasterGroup> casterGroups;
+    bool castersGathered = false;
+    auto gatherCasters = [&]() {
+        if (castersGathered) return;
+        castersGathered = true;
+        std::unordered_map<std::string, uint32_t> groupIndex;
+        casters.reserve(scene.GetNodes().size());
+        for (const auto& node : scene.GetNodes()) {
+            if (!node || node->IsUINode() || node->isOcean || node->isLiquid) continue;
+            switch (node->nodeType) {
+                case NodeType::Empty: case NodeType::AudioSource: case NodeType::Spline:
+                case NodeType::ParticleEmitter: case NodeType::Camera: case NodeType::Light:
+                case NodeType::Collider: case NodeType::Decal:
+                    continue;
+                default:
+                    break;
+            }
+            // Alpha-blended surfaces (glass) would cast solid black shadows: shelter map only
+            const bool glass = node->color.a < 0.99f && node->alphaCutoff <= 0.0f;
+            const glm::mat4 world = node->GetWorldTransformMatrix(scene);
+            const float distToCam = glm::distance(cameraPos, glm::vec3(world[3]));
+            if (node->IsCulledByDistance(distToCam)) continue;
+            const GPUMesh* mesh = ResolveNodeMesh(*node, meshes, customMeshes, distToCam);
+            if (!mesh || mesh->indexCount == 0) continue;
+
+            // Cutout casters run the discard shader with their material set (albedo alpha)
+            const bool cutout = node->alphaCutoff > 0.0f && m_shadowCutoutPipeline != VK_NULL_HANDLE;
+            ShadowPushConstants spc{};
+            VkDescriptorSet descSet = m_descriptorSets[uboIdx];
+            if (cutout) {
+                descSet = GetOrCreateDescriptorSet(uboIdx, node->texturePath, node->normalMapPath,
+                                                   node->metallicMapPath, node->roughnessMapPath,
+                                                   node->aoMapPath, node->emissiveMapPath);
+                spc.color = node->color;
+                spc.alphaCutoff = node->alphaCutoff;
+                spc.textureFlags = node->texturePath.empty() ? 0 : TEX_ALBEDO;
+            }
+            std::string groupKey(reinterpret_cast<const char*>(&mesh), sizeof(mesh));
+            groupKey.append(reinterpret_cast<const char*>(&descSet), sizeof(descSet));
+            groupKey.append(reinterpret_cast<const char*>(&spc), sizeof(spc));
+            auto [it, inserted] = groupIndex.try_emplace(groupKey, static_cast<uint32_t>(casterGroups.size()));
+            if (inserted) casterGroups.push_back(CasterGroup{ mesh, cutout, descSet, spc });
+
+            CasterInfo info{};
+            info.world = world;
+            GetLocalBounds(*node, info.localMin, info.localMax);
+            info.cullable = node->nodeType != NodeType::Terrain;
+            info.castsShadow = node->castShadows && !glass;
+            info.group = it->second;
+            casters.push_back(info);
+        }
+    };
+    // Outside only if all 8 corners lie beyond the same clip plane (as IsOutsideFrustum)
+    auto boxOutside = [](const glm::mat4& mvp, const glm::vec3& lo, const glm::vec3& hi) {
+        int outside[6] = {0, 0, 0, 0, 0, 0};
+        for (int c = 0; c < 8; ++c) {
+            const glm::vec4 clip = mvp * glm::vec4((c & 1) ? hi.x : lo.x, (c & 2) ? hi.y : lo.y, (c & 4) ? hi.z : lo.z, 1.0f);
+            if (clip.x < -clip.w) ++outside[0];
+            if (clip.x >  clip.w) ++outside[1];
+            if (clip.y < -clip.w) ++outside[2];
+            if (clip.y >  clip.w) ++outside[3];
+            if (clip.z < -clip.w) ++outside[4];
+            if (clip.z >  clip.w) ++outside[5];
+        }
+        for (int p = 0; p < 6; ++p) {
+            if (outside[p] == 8) return true;
+        }
+        return false;
+    };
+
     // Draws every shadow caster into one layer of a shadow map, as seen from lightViewProj.
     // shelter: every solid surface instead (glass and non-casters too), for the weather shelter map.
     auto drawCasters = [&](VulkanShadowMap& shadowMap, uint32_t layer, const glm::mat4& lightViewProj, bool shelter = false) {
@@ -3564,48 +3651,22 @@ void VulkanPipeline::RenderShadowPass(VkCommandBuffer cmd, const Scene& scene,
             std::vector<InstanceData> instances;
         };
         std::vector<ShadowBatch> batches;
-        std::unordered_map<std::string, size_t> batchIndex;
+        std::unordered_map<std::string, size_t> batchIndex; // foliage batches
 
-        for (const auto& node : scene.GetNodes()) {
-            if (!node || node->IsUINode() || (!node->castShadows && !shelter) || node->isOcean || node->isLiquid) continue;
-            switch (node->nodeType) {
-                case NodeType::Empty: case NodeType::AudioSource: case NodeType::Spline:
-                case NodeType::ParticleEmitter: case NodeType::Camera: case NodeType::Light:
-                case NodeType::Collider: case NodeType::Decal:
-                    continue;
-                default:
-                    break;
+        gatherCasters();
+        std::vector<int> groupBatch(casterGroups.size(), -1);
+        for (const CasterInfo& caster : casters) {
+            if (!shelter && !caster.castsShadow) continue;
+            if (caster.cullable && boxOutside(lightViewProj * caster.world, caster.localMin, caster.localMax)) continue;
+            int& batch = groupBatch[caster.group];
+            if (batch < 0) {
+                const CasterGroup& group = casterGroups[caster.group];
+                ShadowPushConstants push = group.push;
+                push.lightModelViewProj = lightViewProj;
+                batch = static_cast<int>(batches.size());
+                batches.push_back(ShadowBatch{ group.mesh, group.cutout, group.set, push, {} });
             }
-            // Alpha-blended surfaces (glass) would cast solid black shadows; leave them out
-            if (node->color.a < 0.99f && node->alphaCutoff <= 0.0f && !shelter) continue;
-
-            float distToCam = glm::distance(cameraPos, node->GetWorldPosition(scene));
-            if (node->IsCulledByDistance(distToCam)) continue;
-            if (IsOutsideFrustum(*node, scene, lightViewProj)) continue;
-
-            const GPUMesh* mesh = ResolveNodeMesh(*node, meshes, customMeshes, distToCam);
-            if (!mesh || mesh->indexCount == 0) continue;
-
-            // Cutout casters run the discard shader with their material set (albedo alpha)
-            const bool cutout = node->alphaCutoff > 0.0f && m_shadowCutoutPipeline != VK_NULL_HANDLE;
-            ShadowPushConstants spc{};
-            spc.lightModelViewProj = lightViewProj;
-            VkDescriptorSet descSet = m_descriptorSets[uboIdx];
-            if (cutout) {
-                descSet = GetOrCreateDescriptorSet(uboIdx, node->texturePath, node->normalMapPath,
-                                                   node->metallicMapPath, node->roughnessMapPath,
-                                                   node->aoMapPath, node->emissiveMapPath);
-                spc.color = node->color;
-                spc.alphaCutoff = node->alphaCutoff;
-                spc.textureFlags = node->texturePath.empty() ? 0 : TEX_ALBEDO;
-            }
-            std::string batchKey(reinterpret_cast<const char*>(&mesh), sizeof(mesh));
-            batchKey.append(reinterpret_cast<const char*>(&descSet), sizeof(descSet));
-            batchKey.append(reinterpret_cast<const char*>(&spc), sizeof(spc));
-            auto [it, inserted] = batchIndex.try_emplace(batchKey, batches.size());
-            if (inserted) batches.push_back(ShadowBatch{ mesh, cutout, descSet, spc, {} });
-            const glm::mat4 model = node->GetWorldTransformMatrix(scene);
-            batches[it->second].instances.push_back(InstanceData{ model, model });
+            batches[batch].instances.push_back(InstanceData{ caster.world, caster.world });
         }
 
         // Terrain foliage that casts shadows (not into the weather shelter map: roofs only)

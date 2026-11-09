@@ -154,6 +154,7 @@ cmake --build build-linux --target linux_export_template
 | `--scene=<file>` (editor) | Open `<file>` in the editor at startup without modifying the active project |
 | `--select=<node name>` | Select the named node at startup; an editor `--screenshot` also saves its studio material preview as `<name>_material.png` |
 | `--gpu-profile` | Log averaged GPU timestamp pass timings on exit |
+| `--cpu-profile` | Log the average CPU time of each part of the frame on exit (after 120 warm-up frames), plus the slowest frame |
 | `--project=<file.tess>` | Open a project directly at startup (bypassing the launcher hub into the editor) |
 | `--scene=<file>.world` (with `--game`) | Play a streamed open world: its base scene loads, sectors stream in around the player |
 | `--start-at=<node name>` | (`--game`) The camera starts at that node's position and rotation (e.g. `"View: Overview"`) |

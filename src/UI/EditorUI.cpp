@@ -49,6 +49,7 @@
 #endif
 
 void EditorUI::Init() {
+    LoadViewportPerformance();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigWindowsMoveFromTitleBarOnly = true;
 
@@ -288,48 +289,7 @@ void EditorUI::Render(Scene& scene, Camera& camera, Graphics::IRenderTarget& off
     if (io.KeyCtrl && !io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_N)) {
         OpenNewProjectDialog();
     }
-    // Universal Automatic Undo/Redo Tracker: records any finished slider drag, color edit, checkbox,
-    // combo selection, text input, button action, 3D gizmo transform, or hierarchy edit.
-    if (gameLoop.IsPlaying() || gameLoop.GetAnimationPlayer().IsPlaying() || gameLoop.GetCutscenePlayer().IsPlaying()) {
-        m_undoBaselineInitialized = false;
-    } else {
-        uint64_t curVer = Core::UndoRedoManager::Get().GetVersion();
-        if (curVer != m_lastSeenUndoVersion) {
-            m_lastCommittedSceneState = scene.Serialize();
-            m_lastCommittedSceneJson = m_lastCommittedSceneState.Serialize(0);
-            m_lastCommittedSelectedId = scene.GetSelectedId();
-            m_lastSeenUndoVersion = curVer;
-            m_undoBaselineInitialized = true;
-        } else if (!ImGui::IsAnyItemActive() && !ImGuizmo::IsUsing()) {
-            JsonValue currentSceneState = scene.Serialize();
-            std::string currentSceneJson = currentSceneState.Serialize(0);
-            if (!m_undoBaselineInitialized) {
-                m_lastCommittedSceneState = currentSceneState;
-                m_lastCommittedSceneJson = currentSceneJson;
-                m_lastCommittedSelectedId = scene.GetSelectedId();
-                m_lastSeenUndoVersion = curVer;
-                m_undoBaselineInitialized = true;
-            } else if (currentSceneJson != m_lastCommittedSceneJson) {
-                std::string desc = "Edit Scene";
-                if (auto sel = scene.GetSelectedNode()) {
-                    desc = "Edit " + sel->name;
-                }
-                Core::UndoRedoManager::Get().RecordSnapshot(
-                    m_lastCommittedSceneState,
-                    currentSceneState,
-                    m_lastCommittedSelectedId,
-                    scene.GetSelectedId(),
-                    desc
-                );
-                m_lastCommittedSceneState = currentSceneState;
-                m_lastCommittedSceneJson = currentSceneJson;
-                m_lastCommittedSelectedId = scene.GetSelectedId();
-                m_lastSeenUndoVersion = Core::UndoRedoManager::Get().GetVersion();
-            } else {
-                m_lastCommittedSelectedId = scene.GetSelectedId();
-            }
-        }
-    }
+    UpdateUndoTracker(scene, gameLoop);
 
     if (io.KeyShift && !io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_C)) {
         m_showCutsceneWindow = !m_showCutsceneWindow;
@@ -3489,7 +3449,9 @@ void EditorUI::RenderViewport(Scene& scene, Camera& camera, Graphics::IRenderTar
     // Render Vulkan Offscreen image into Viewport
     ImTextureID viewportTexture = (ImTextureID)(intptr_t)offscreen.GetTextureId();
     if (viewportTexture != 0 && viewportPanelSize.x > 0 && viewportPanelSize.y > 0) {
+        const ImVec2 imageMin = ImGui::GetCursorScreenPos();
         ImGui::Image(viewportTexture, viewportPanelSize);
+        if (m_viewportPerf.showFrameStats) RenderViewportFrameStats(imageMin, viewportPanelSize);
     }
 
     // Drag-and-drop 3D models or textures directly onto Viewport
@@ -4262,6 +4224,9 @@ void EditorUI::RenderViewport(Scene& scene, Camera& camera, Graphics::IRenderTar
     if (ImGui::Button(m_showGrid ? TR("Grid: ON") : TR("Grid: OFF"))) {
         m_showGrid = !m_showGrid;
     }
+
+    ImGui::SameLine();
+    RenderViewportPerformanceMenu();
 
     ImGui::SameLine();
     bool isRulerActive = m_rulerToolState.active;
@@ -7491,6 +7456,304 @@ void EditorUI::RenderEngineEmblem(ImDrawList* drawList, ImVec2 center, float rad
     float coreRadius = std::max(1.5f, radius * 0.14f);
     drawList->AddCircleFilled(vCenter, coreRadius, IM_COL32(255, 210, 60, (int)(250 * alpha)));
     drawList->AddCircleFilled(vCenter, std::max(1.0f, coreRadius * 0.45f), IM_COL32(255, 255, 255, (int)(255 * alpha)));
+}
+
+// ---- Viewport performance ----
+// What Unreal (Realtime, Scalability, Screen Percentage, stat fps), Godot (half-resolution
+// viewport, View Frame Time, low-processor mode) and Unity (scene view effects toggle, Always
+// Refresh, Stats) give the editor viewport: lighter rendering while editing, without touching the
+// scene's own settings or the Game view.
+void EditorUI::ApplyViewportPreset(int preset) {
+    ViewportPerformance& p = m_viewportPerf;
+    p.preset = preset;
+    switch (preset) {
+        case ViewportPerformance::Full:
+            p.resolutionScale = 1.0f;
+            p.rayTracing = p.ambientOcclusion = p.screenReflections = p.volumetrics = p.cinematicEffects = p.temporalAA = true;
+            p.shortShadows = false;
+            break;
+        case ViewportPerformance::Balanced:
+            // Ray tracing stays: on RT hardware its shadows cost less than shadow-map cascades
+            p.resolutionScale = 0.75f;
+            p.rayTracing = p.ambientOcclusion = p.screenReflections = p.temporalAA = true;
+            p.volumetrics = p.cinematicEffects = p.shortShadows = false;
+            break;
+        case ViewportPerformance::Fast:
+            // Ray tracing stays on where the GPU has it: shadow maps for a big scene cost more.
+            // Without it, shadow maps only reach 60 m.
+            p.resolutionScale = 0.5f;
+            p.rayTracing = true;
+            p.ambientOcclusion = p.screenReflections = p.volumetrics = p.cinematicEffects = p.temporalAA = false;
+            p.shortShadows = true;
+            break;
+        default: break;
+    }
+}
+
+void EditorUI::RenderViewportPerformanceMenu() {
+    ViewportPerformance& p = m_viewportPerf;
+    static const char* kPresetNames[] = { "Full", "Balanced", "Fast", "Custom" };
+
+    // Realtime: like Unreal's viewport toggle; off freezes water, wind, weather and the sky clock
+    if (!p.realtime) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.75f, 0.45f, 0.15f, 1.0f));
+    if (ImGui::Button(p.realtime ? TR("Realtime: ON") : TR("Realtime: OFF"))) {
+        p.realtime = !p.realtime;
+        SaveViewportPerformance();
+    }
+    if (!p.realtime) ImGui::PopStyleColor();
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Animate water, wind, weather and the sky clock while editing.\nOff: the viewport stands still (Play always animates).");
+
+    ImGui::SameLine();
+    char label[64];
+    std::snprintf(label, sizeof(label), "Quality: %s (%d%%)###ViewportQuality", kPresetNames[std::clamp(p.preset, 0, 3)],
+                  static_cast<int>(std::lround(p.resolutionScale * 100.0f)));
+    if (p.preset != ViewportPerformance::Full) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.25f, 0.55f, 0.35f, 1.0f));
+    if (ImGui::Button(label)) ImGui::OpenPopup("ViewportPerformancePopup");
+    if (p.preset != ViewportPerformance::Full) ImGui::PopStyleColor();
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Viewport quality and performance (this view only: the Game view and\nthe exported game always use the scene's settings)");
+
+    if (ImGui::BeginPopup("ViewportPerformancePopup")) {
+        bool changed = false;
+        ImGui::TextDisabled("Viewport quality (editor view only)");
+        for (int i = 0; i < 3; ++i) {
+            if (i > 0) ImGui::SameLine();
+            if (ImGui::RadioButton(kPresetNames[i], p.preset == i)) { ApplyViewportPreset(i); changed = true; }
+        }
+        if (p.preset == ViewportPerformance::Custom) { ImGui::SameLine(); ImGui::TextDisabled("(Custom)"); }
+        ImGui::Separator();
+
+        bool custom = false;
+        int percent = static_cast<int>(std::lround(p.resolutionScale * 100.0f));
+        ImGui::SetNextItemWidth(180.0f);
+        if (ImGui::SliderInt("Resolution", &percent, 25, 100, "%d%%")) { p.resolutionScale = percent / 100.0f; custom = true; }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Render the viewport at a fraction of its size and scale it up\n(Unreal's Screen Percentage). 50%% draws a quarter of the pixels.");
+        const bool rtSupported = Graphics::RayTracing::RayTracingManager::Get().IsHardwareRayTracingSupported();
+        ImGui::BeginDisabled(!rtSupported);
+        custom |= ImGui::Checkbox("Ray tracing", &p.rayTracing);
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip(rtSupported ? "Hardware ray-traced shadows and reflections in the viewport.\nOff: shadow maps instead (these can cost more in big scenes), and\nno ray tracing scene is built while the Game view isn't showing." : "This GPU doesn't support hardware ray tracing");
+        custom |= ImGui::Checkbox("Ambient occlusion (SSAO)", &p.ambientOcclusion);
+        custom |= ImGui::Checkbox("Screen-space reflections", &p.screenReflections);
+        custom |= ImGui::Checkbox("Volumetric clouds & fog", &p.volumetrics);
+        custom |= ImGui::Checkbox("Cinematic effects", &p.cinematicEffects);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Depth of field, motion blur, film grain, lens flare, chromatic aberration");
+        custom |= ImGui::Checkbox("Temporal anti-aliasing", &p.temporalAA);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Off: FXAA instead (cheaper, no ghosting while the camera moves)");
+        custom |= ImGui::Checkbox("Short shadow distance (60 m)", &p.shortShadows);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Shadow maps (used when ray tracing is off) only reach 60 m,\nso far fewer objects are drawn into them");
+        if (custom) { p.preset = ViewportPerformance::Custom; changed = true; }
+
+        ImGui::Separator();
+        changed |= ImGui::Checkbox("Realtime (animate water, wind, weather)", &p.realtime);
+        changed |= ImGui::Checkbox("Show frame stats", &p.showFrameStats);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("FPS, CPU and GPU frame time and render size in the viewport corner");
+        changed |= ImGui::Checkbox("Use less CPU when in background", &p.lessCpuInBackground);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Drop to about 10 fps while the editor window isn't focused");
+        if (changed) SaveViewportPerformance();
+        ImGui::EndPopup();
+    }
+}
+
+void EditorUI::RenderViewportFrameStats(const ImVec2& imageMin, const ImVec2& imageSize) {
+    const float fps = ImGui::GetIO().Framerate;
+    char lines[4][96];
+    std::snprintf(lines[0], sizeof(lines[0]), "%.0f FPS  (%.1f ms)", fps, fps > 0.0f ? 1000.0f / fps : 0.0f);
+    std::snprintf(lines[1], sizeof(lines[1]), "CPU %.1f ms   GPU %.1f ms", m_statCpuMs, m_statGpuMs);
+    std::snprintf(lines[2], sizeof(lines[2]), "Render %ux%u (%d%%)", m_statRenderSize.x, m_statRenderSize.y,
+                  static_cast<int>(std::lround(m_viewportPerf.resolutionScale * 100.0f)));
+    // Which side limits the frame rate: the GPU when it takes longer than the CPU's work
+    std::snprintf(lines[3], sizeof(lines[3]), "%s%s", m_statGpuMs > m_statCpuMs ? "GPU bound" : "CPU bound",
+                  m_viewportPerf.realtime ? "" : "   [Realtime off]");
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const float lineH = ImGui::GetTextLineHeight();
+    float width = 0.0f;
+    for (auto& l : lines) width = std::max(width, ImGui::CalcTextSize(l).x);
+    const ImVec2 pos(imageMin.x + 8.0f, imageMin.y + imageSize.y - 8.0f - 4 * lineH - 8.0f);
+    dl->AddRectFilled(pos, ImVec2(pos.x + width + 12.0f, pos.y + 4 * lineH + 8.0f), IM_COL32(10, 12, 16, 170), 4.0f);
+    const ImU32 colors[4] = { IM_COL32(120, 230, 140, 255), IM_COL32(220, 225, 235, 255), IM_COL32(170, 180, 195, 255), IM_COL32(240, 200, 120, 255) };
+    for (int i = 0; i < 4; ++i) dl->AddText(ImVec2(pos.x + 6.0f, pos.y + 4.0f + i * lineH), colors[i], lines[i]);
+}
+
+void EditorUI::LoadViewportPerformance() {
+    std::ifstream file("editor_settings.json");
+    if (!file.is_open()) return;
+    const std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    JsonValue root = JsonValue::Parse(content);
+    if (!root.IsObject() || !root.HasKey("viewportPerformance")) return;
+    JsonValue& v = root["viewportPerformance"];
+    ViewportPerformance& p = m_viewportPerf;
+    auto flag = [&](const char* key, bool& out) { if (v.HasKey(key)) out = v[key].AsBool(out); };
+    if (v.HasKey("preset")) p.preset = std::clamp(v["preset"].AsInt(0), 0, 3);
+    if (v.HasKey("resolutionScale")) p.resolutionScale = std::clamp(v["resolutionScale"].AsFloat(1.0f), 0.25f, 1.0f);
+    flag("rayTracing", p.rayTracing);
+    flag("ambientOcclusion", p.ambientOcclusion);
+    flag("screenReflections", p.screenReflections);
+    flag("volumetrics", p.volumetrics);
+    flag("cinematicEffects", p.cinematicEffects);
+    flag("temporalAA", p.temporalAA);
+    flag("shortShadows", p.shortShadows);
+    flag("realtime", p.realtime);
+    flag("showFrameStats", p.showFrameStats);
+    flag("lessCpuInBackground", p.lessCpuInBackground);
+}
+
+void EditorUI::SaveViewportPerformance() const {
+    // Other editor settings (language, ...) share the file: keep them
+    JsonValue root = JsonValue::Object();
+    {
+        std::ifstream in("editor_settings.json");
+        if (in.is_open()) {
+            const std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+            root = JsonValue::Parse(content);
+            if (!root.IsObject()) root = JsonValue::Object();
+        }
+    }
+    const ViewportPerformance& p = m_viewportPerf;
+    JsonValue v = JsonValue::Object();
+    v["preset"] = p.preset;
+    v["resolutionScale"] = p.resolutionScale;
+    v["rayTracing"] = p.rayTracing;
+    v["ambientOcclusion"] = p.ambientOcclusion;
+    v["screenReflections"] = p.screenReflections;
+    v["volumetrics"] = p.volumetrics;
+    v["cinematicEffects"] = p.cinematicEffects;
+    v["temporalAA"] = p.temporalAA;
+    v["shortShadows"] = p.shortShadows;
+    v["realtime"] = p.realtime;
+    v["showFrameStats"] = p.showFrameStats;
+    v["lessCpuInBackground"] = p.lessCpuInBackground;
+    root["viewportPerformance"] = v;
+    std::ofstream out("editor_settings.json");
+    if (out.is_open()) out << root.Serialize(2);
+}
+
+// ---- Automatic undo ----
+// Every finished slider drag, colour edit, checkbox, combo, text input, button, gizmo move or
+// hierarchy edit becomes an undo step. Like Unity, Unreal and Godot, the work happens when an edit
+// is committed, not every frame: an interaction ending (mouse button or key released, a widget or
+// the gizmo let go) queues a check, which compares cheap fingerprints; only a real change pays for
+// serializing the whole scene.
+namespace {
+struct Fnv64 {
+    uint64_t h{1469598103934665603ull};
+    void Bytes(const void* data, size_t size) {
+        const auto* p = static_cast<const unsigned char*>(data);
+        for (size_t i = 0; i < size; ++i) { h ^= p[i]; h *= 1099511628211ull; }
+    }
+    template <typename T> void Value(const T& v) { Bytes(&v, sizeof(T)); }
+    void Str(const std::string& s) { Value(s.size()); Bytes(s.data(), s.size()); }
+    void Json(const JsonValue& v) {
+        Value(static_cast<int>(v.type));
+        switch (v.type) {
+            case JsonValue::Type::Bool: Value(v.boolVal); break;
+            case JsonValue::Type::Number: Value(v.numVal); break;
+            case JsonValue::Type::String: Str(v.strVal); break;
+            case JsonValue::Type::Array: Value(v.arrVal.size()); for (const auto& e : v.arrVal) Json(e); break;
+            case JsonValue::Type::Object: Value(v.objVal.size()); for (const auto& [k, e] : v.objVal) { Str(k); Json(e); } break;
+            default: break;
+        }
+    }
+};
+} // namespace
+
+EditorUI::UndoFingerprint EditorUI::ComputeUndoFingerprint(const Scene& scene, const UndoFingerprint& watched) const {
+    UndoFingerprint fp;
+    Fnv64 structure;
+    structure.Str(scene.GetName());
+    structure.Value(scene.PeekNextId());
+    for (const auto& node : scene.GetNodes()) {
+        if (!node || !node->streamSector.empty()) continue; // streamed nodes aren't saved with the scene
+        structure.Value(node->id);
+        structure.Value(node->parentId);
+        structure.Value(static_cast<int>(node->nodeType));
+        structure.Str(node->name);
+        structure.Value(node->childrenIds.size());
+        for (uint32_t c : node->childrenIds) structure.Value(c);
+        structure.Value(node->position);
+        structure.Value(node->rotation);
+        structure.Value(node->scale);
+    }
+    fp.structure = structure.h;
+    Fnv64 env;
+    env.Json(scene.SerializeEnvironment());
+    fp.environment = env.h;
+    // Full settings of the selected node, and of every node watched so far (edits land on them)
+    auto hashNode = [&](uint32_t id) {
+        auto node = scene.GetNodeById(id);
+        if (!node || !node->streamSector.empty()) return;
+        Fnv64 h;
+        h.Json(scene.SerializeNode(node));
+        fp.nodes[id] = h.h;
+    };
+    for (const auto& [id, hash] : watched.nodes) hashNode(id);
+    if (scene.GetSelectedId() > 0) hashNode(static_cast<uint32_t>(scene.GetSelectedId()));
+    return fp;
+}
+
+void EditorUI::UpdateUndoTracker(Scene& scene, Gameplay::GameLoop& gameLoop) {
+    if (gameLoop.IsPlaying() || gameLoop.GetAnimationPlayer().IsPlaying() || gameLoop.GetCutscenePlayer().IsPlaying()) {
+        m_undoBaselineInitialized = false;
+        return;
+    }
+    auto takeBaseline = [&]() {
+        m_lastCommittedSceneState = scene.Serialize();
+        m_lastCommittedFingerprint = ComputeUndoFingerprint(scene, {});
+        m_lastCommittedSelectedId = scene.GetSelectedId();
+        m_lastSeenUndoVersion = Core::UndoRedoManager::Get().GetVersion();
+        m_undoBaselineInitialized = true;
+        m_undoCheckPending = false;
+    };
+    // Undo / redo, or a snapshot recorded elsewhere: the scene now matches that state
+    if (!m_undoBaselineInitialized || Core::UndoRedoManager::Get().GetVersion() != m_lastSeenUndoVersion) {
+        if (!ImGui::IsAnyItemActive() && !ImGuizmo::IsUsing()) takeBaseline();
+        return;
+    }
+
+    // Did an interaction end this frame?
+    ImGuiIO& io = ImGui::GetIO();
+    for (int b = 0; b < ImGuiMouseButton_COUNT; ++b) {
+        if (ImGui::IsMouseReleased(b)) m_undoCheckPending = true;
+    }
+    for (int k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_NamedKey_END && !m_undoCheckPending; ++k) {
+        if (ImGui::IsKeyReleased(static_cast<ImGuiKey>(k))) m_undoCheckPending = true;
+    }
+    if (io.InputQueueCharacters.Size > 0 || ImGuizmo::IsUsing() || ImGui::IsAnyItemActive()) m_undoCheckPending = true;
+    if (!m_undoCheckPending || ImGui::IsAnyItemActive() || ImGuizmo::IsUsing()) return;
+    m_undoCheckPending = false;
+
+    // A newly selected node: remember its settings as they are before any edit
+    const int32_t sel = scene.GetSelectedId();
+    if (sel > 0 && !m_lastCommittedFingerprint.nodes.count(static_cast<uint32_t>(sel))) {
+        UndoFingerprint selectedOnly;
+        selectedOnly.nodes[static_cast<uint32_t>(sel)] = 0;
+        const UndoFingerprint fp = ComputeUndoFingerprint(scene, selectedOnly);
+        auto it = fp.nodes.find(static_cast<uint32_t>(sel));
+        if (it != fp.nodes.end()) m_lastCommittedFingerprint.nodes[it->first] = it->second;
+    }
+
+    UndoFingerprint current = ComputeUndoFingerprint(scene, m_lastCommittedFingerprint);
+    // Only the selection needs watching from here on (earlier ones are settled)
+    auto keepSelectionOnly = [sel](UndoFingerprint& fp) {
+        for (auto it = fp.nodes.begin(); it != fp.nodes.end();) {
+            if (static_cast<int32_t>(it->first) == sel) ++it; else it = fp.nodes.erase(it);
+        }
+    };
+    if (current == m_lastCommittedFingerprint) {
+        keepSelectionOnly(m_lastCommittedFingerprint);
+        m_lastCommittedSelectedId = sel;
+        return;
+    }
+    keepSelectionOnly(current);
+    // Something changed: record the step (the whole scene, as before / after)
+    JsonValue currentSceneState = scene.Serialize();
+    std::string desc = "Edit Scene";
+    if (auto selNode = scene.GetSelectedNode()) desc = "Edit " + selNode->name;
+    Core::UndoRedoManager::Get().RecordSnapshot(m_lastCommittedSceneState, currentSceneState,
+                                               m_lastCommittedSelectedId, sel, desc);
+    m_lastCommittedSceneState = std::move(currentSceneState);
+    m_lastCommittedFingerprint = current;
+    m_lastCommittedSelectedId = sel;
+    m_lastSeenUndoVersion = Core::UndoRedoManager::Get().GetVersion();
 }
 
 void EditorUI::RenderAboutModal() {

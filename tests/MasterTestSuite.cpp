@@ -5085,6 +5085,45 @@ TEST_CASE(RoadmapCharacterPhysics, XPBDClothSimulationAndDynamicHair) {
 // ============================================================================
 #include "Audio/AcousticRayTracer.h"
 
+// Scene::GetNodeById is indexed: it must stay right as nodes are added, removed, detached,
+// re-attached and given new ids
+TEST_CASE(SceneGraph, NodeLookupIndexStaysCorrect) {
+    Scene scene;
+    std::vector<std::shared_ptr<Node>> nodes;
+    for (int i = 0; i < 50; ++i) nodes.push_back(scene.AddNode(ShapeType::Cube, "N" + std::to_string(i)));
+    for (const auto& n : nodes) ASSERT_TRUE(scene.GetNodeById(n->id) == n);
+
+    // Detach and re-attach (streaming does this): same count again, different order
+    const uint32_t movedId = nodes[3]->id;
+    ASSERT_TRUE(scene.DetachNode(movedId));
+    ASSERT_TRUE(scene.GetNodeById(movedId) == nullptr);
+    scene.AttachNode(nodes[3]);
+    for (const auto& n : nodes) ASSERT_TRUE(scene.GetNodeById(n->id) == n);
+
+    // A node given a new id after it was indexed
+    const uint32_t oldId = nodes[10]->id;
+    nodes[10]->id = 90000;
+    ASSERT_TRUE(scene.GetNodeById(90000) == nodes[10]);
+    ASSERT_TRUE(scene.GetNodeById(oldId) == nullptr);
+
+    // Detach then attach a different node in the same slot count
+    const uint32_t goneId = nodes[20]->id;
+    ASSERT_TRUE(scene.DetachNode(goneId));
+    auto stranger = std::make_shared<Node>();
+    stranger->id = 91000;
+    scene.AttachNode(stranger);
+    ASSERT_TRUE(scene.GetNodeById(goneId) == nullptr);
+    ASSERT_TRUE(scene.GetNodeById(91000) == stranger);
+
+    // Parent / child world transforms still resolve through the index
+    auto parent = scene.AddNode(ShapeType::Cube, "Parent");
+    parent->position = glm::vec3(10.0f, 0.0f, 0.0f);
+    auto child = scene.AddNode(ShapeType::Sphere, "Child", parent->id);
+    child->position = glm::vec3(0.0f, 2.0f, 0.0f);
+    ASSERT_FLOAT_NEAR(child->GetWorldPosition(scene).x, 10.0f, 1e-4f);
+    ASSERT_FLOAT_NEAR(child->GetWorldPosition(scene).y, 2.0f, 1e-4f);
+}
+
 // The version string (from the VERSION file) is well-formed semver and matches its parts
 TEST_CASE(EngineVersion, SemanticVersionMatchesParts) {
     const std::string full = Tessera::Version::String;

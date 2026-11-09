@@ -468,6 +468,7 @@ Cross-platform cluster-based geometry virtualization. Geometry meshes are partit
 
     <ul>
 
+      <li><strong>CPU frame profile</strong> (<code>--cpu-profile</code>): logs the average CPU time of each part of the frame on exit (editor UI, ocean spray, ray tracing scene sync, each view's recording, waiting for the GPU, ...). The first 120 frames (loading) are left out, and the slowest frame is reported. Use it alongside <code>--gpu-profile</code> to see which side limits the frame rate.</li>
       <li><strong>GPU Profiler</strong> (<code>VulkanGpuProfiler</code>): timestamp queries around every pass, nested (per view: shadows, probes, mirrors, prepass and SSAO, opaque, transparents and VFX, and each post effect), read back two frames later so it never stalls. Shown in Window &rarr; GPU Profiler and the Profiler's GPU tab; <code>--gpu-profile</code> logs it on exit. Renderer code times a block with <code>GpuProfileScope scope(cmd, "Name")</code>.</li>
 
       <li><strong>Material previews</strong>: the object with a node's material rendered in a small studio scene (sky, key and rim lights) on its own view slot into a shared 256&times;256 target, then copied into a cached image per material for the Inspector and file browser.</li>

@@ -58,7 +58,8 @@ public:
         float strength; // 0..1.5
     };
 
-    void Update(const Scene& scene, float dt);
+    // Only objects within range of the focus (the camera) throw spray: it can't be seen further
+    void Update(const Scene& scene, float dt, const glm::vec3& focus = glm::vec3(0.0f), float range = 1e9f);
     void Clear();
     const std::vector<Sprite>& Sprites() const { return m_sprites; }
     const std::vector<Burst>& Bursts() const { return m_bursts; }
@@ -74,6 +75,14 @@ private:
     std::vector<Sprite> m_sprites;
     std::vector<Burst> m_bursts;
     std::unordered_map<uint64_t, Watch> m_watches; // by object id and point
+    // Fixed objects small enough to throw spray, with their world bounds: found by walking every
+    // node, so kept, and refreshed when the scene changes or once a second (an object moved in
+    // the editor)
+    struct Candidate { uint32_t id; glm::vec3 lo, hi; };
+    std::vector<Candidate> m_candidates;
+    const Scene* m_candidateScene{nullptr};
+    size_t m_candidateNodeCount{0};
+    float m_candidateAge{1e9f};
     uint32_t m_seed{12345u};
     float Random();
 };

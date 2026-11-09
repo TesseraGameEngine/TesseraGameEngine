@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <unordered_map>
 #include <functional>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -290,6 +291,9 @@ public:
 
     // Serialization & Multi-Scene management
     JsonValue Serialize() const;
+    // Parts of Serialize(): the environment settings, and one node (as stored in "nodes")
+    JsonValue SerializeEnvironment() const;
+    JsonValue SerializeNode(const std::shared_ptr<Node>& node) const;
     bool Deserialize(const JsonValue& json, std::function<bool(const std::string&, const std::string&)> loadMeshCallback = nullptr);
     bool SaveToFile(const std::string& filePath) const;
     bool LoadFromFile(const std::string& filePath, std::function<bool(const std::string&, const std::string&)> loadMeshCallback = nullptr);
@@ -304,6 +308,11 @@ private:
     std::string m_name{"Main Scene"};
     std::string m_filePath{""};
     std::vector<std::shared_ptr<Node>> m_nodes;
+    // GetNodeById's index (id -> position in m_nodes). Every hit is checked against m_nodes, so
+    // it can be out of date: it is rebuilt when the node count changes or a lookup misses.
+    mutable std::unordered_map<uint32_t, size_t> m_nodeIndex;
+    mutable size_t m_nodeIndexCount{static_cast<size_t>(-1)};
+    mutable bool m_nodeIndexStale{true};
     std::vector<std::shared_ptr<Node>> m_clipboardNodes;
     int32_t m_selectedId{-1};
     uint32_t m_nextId{1};

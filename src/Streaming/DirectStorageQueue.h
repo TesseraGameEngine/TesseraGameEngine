@@ -61,7 +61,9 @@ private:
     };
 
     std::atomic<bool> m_running{false};
-    std::atomic<bool> m_unbufferedEnabled{true};
+    // Off by default: unbuffered reads bypass the OS file cache, so a sector streamed back in is
+    // read from disk again instead of from memory
+    std::atomic<bool> m_unbufferedEnabled{false};
     std::atomic<uint64_t> m_nextRequestId{1};
     std::vector<std::thread> m_workers;
 

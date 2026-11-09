@@ -2229,7 +2229,9 @@ std::shared_ptr<Scene> Scene::Clone() const {
 
     cloneScene->m_nodes.clear();
     for (const auto& node : m_nodes) {
-        cloneScene->m_nodes.push_back(node->Clone());
+        auto clonedNode = node->Clone();
+        clonedNode->clothSim.reset(); // simulated afresh in the clone (never shared between scenes)
+        cloneScene->m_nodes.push_back(clonedNode);
     }
     return cloneScene;
 }

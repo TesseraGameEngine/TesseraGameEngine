@@ -2589,8 +2589,7 @@ void VulkanPipeline::RenderScene(VkCommandBuffer cmd, const Scene& scene,
                 continue;
             }
             const bool batchable = pipeline != m_graphicsPipelineTransparent && !node->isMirror &&
-                                   node->nodeType != NodeType::Collider && node->nodeType != NodeType::Decal &&
-                                   !Graphics::Meshlet::MeshletManager::Get().GetSettings().enableMeshletPipeline;
+                                   node->nodeType != NodeType::Collider && node->nodeType != NodeType::Decal;
             if (batchable) {
                 AddToBatch(meshPtr, descSet, pc);
                 continue;
@@ -2603,24 +2602,6 @@ void VulkanPipeline::RenderScene(VkCommandBuffer cmd, const Scene& scene,
             VkDeviceSize offsets[] = { 0 };
             vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
             vkCmdBindIndexBuffer(cmd, mesh.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-
-            auto& meshletMgr = Graphics::Meshlet::MeshletManager::Get();
-            if (meshletMgr.GetSettings().enableMeshletPipeline) {
-                std::string key = (node->type == ShapeType::Custom) ? node->customMeshName : ("shape_" + std::to_string(static_cast<int>(node->type)));
-                const auto* mModel = meshletMgr.GetMeshletModel(key);
-                if (mModel && !mModel->meshlets.empty()) {
-                    auto cullRes = Graphics::Meshlet::MeshletBuilder::CullMeshlets(*mModel, pc.model, cameraPos, viewProj, meshletMgr.GetSettings());
-                    for (uint32_t clusterIdx : cullRes.visibleMeshletIndices) {
-                        const auto& cluster = mModel->meshlets[clusterIdx];
-                        uint32_t triCount = cluster.triangleCount;
-                        uint32_t triOffset = cluster.triangleOffset;
-                        if ((triOffset + triCount) * 3 <= mesh.indexCount) {
-                            vkCmdDrawIndexed(cmd, triCount * 3, 1, triOffset * 3, 0, 0);
-                        }
-                    }
-                    continue;
-                }
-            }
 
             vkCmdDrawIndexed(cmd, mesh.indexCount, 1, 0, 0, 0);
         }
@@ -3122,6 +3103,11 @@ const GPUMesh* VulkanPipeline::ResolveNodeMesh(const Node& node,
         return (it != customMeshes.end()) ? &it->second : nullptr;
     };
 
+    // Simulated cloth draws its deformed surface (uploaded each frame by the engine)
+    if (node.isCloth) {
+        auto cloth = customMeshes.find(node.ClothMeshKey());
+        if (cloth != customMeshes.end()) return &cloth->second;
+    }
     // Animated characters draw their own GPU-skinned copy of the mesh
     if (node.hasSkeleton && m_skinning) {
         if (const GPUMesh* skinned = m_skinning->Find(&node)) return skinned;

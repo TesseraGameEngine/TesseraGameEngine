@@ -587,8 +587,8 @@ private:
         } else if (!std::filesystem::exists(actualPath)) {
             if (std::filesystem::exists(std::string("assets/models/") + filepath)) {
                 actualPath = std::string("assets/models/") + filepath;
-            } else if (std::filesystem::exists(std::string("projects/Headland/") + filepath)) {
-                actualPath = std::string("projects/Headland/") + filepath;
+            } else if (!m_contentRoot.empty() && std::filesystem::exists(std::filesystem::path(m_contentRoot) / filepath)) {
+                actualPath = (std::filesystem::path(m_contentRoot) / filepath).string();
             }
         }
 
@@ -789,11 +789,11 @@ private:
             title += " - [" + m_project->GetName() + " - " + m_project->GetActiveSceneFile() + "]";
             m_editorUI.SetProjectName(m_project->GetName());
             m_editorUI.SetProjectRoot(m_project->GetRootPath());
-            Scripting::LuaScriptSystem::Get().SetProjectRoot(m_project->GetRootPath());
+            SetContentRoot(m_project->GetRootPath());
         } else {
             title += " - [Untitled Project - " + m_scene.GetName() + "]";
             m_editorUI.SetProjectName("Untitled Project");
-            Scripting::LuaScriptSystem::Get().SetProjectRoot("");
+            Scripting::LuaScriptSystem::Get().SetProjectRoot(m_contentRoot);
         }
         glfwSetWindowTitle(m_window, title.c_str());
     }
@@ -1160,6 +1160,10 @@ private:
                     candidate = candidate.parent_path();
                 }
             }
+            // The content root: the loaded project's folder, or the nearest folder above the
+            // scene holding a project file or assets / scripts (paths in the scene are relative to it)
+            if (m_project && m_project->IsLoaded()) SetContentRoot(m_project->GetRootPath());
+            else SetContentRoot(FindContentRoot(sceneToLoad));
             if (!std::filesystem::exists(sceneToLoad)) {
                 if (std::filesystem::exists("scenes/" + sceneToLoad)) {
                     sceneToLoad = "scenes/" + sceneToLoad;
@@ -1177,8 +1181,9 @@ private:
                     if (!std::filesystem::exists(fullPath)) {
                         if (std::filesystem::exists("assets/models/" + rawPath)) fullPath = "assets/models/" + rawPath;
                         else if (std::filesystem::exists("assets/" + rawPath)) fullPath = "assets/" + rawPath;
-                        else if (std::filesystem::exists("projects/Headland/" + rawPath)) fullPath = "projects/Headland/" + rawPath;
-                        else if (std::filesystem::exists("projects/Headland/assets/" + rawPath)) fullPath = "projects/Headland/assets/" + rawPath;
+                        else if (!m_contentRoot.empty() && std::filesystem::exists(std::filesystem::path(m_contentRoot) / rawPath)) {
+                            fullPath = (std::filesystem::path(m_contentRoot) / rawPath).string();
+                        }
                     }
                     LoadedMesh loadedMesh;
                     std::string ext = std::filesystem::path(fullPath).extension().string();
@@ -3216,66 +3221,6 @@ private:
                     }
                     // The painted splat map: uploaded when it changes (at most 20 times a second
                     // while painting, as each upload waits for the GPU)
-                if (n->isCloth) {
-                    if (!n->clothSim) {
-                        n->clothSim = std::make_shared<Physics::XPBDClothSimulator>();
-                        n->clothSim->InitializeGridCloth(n->clothWidth, n->clothHeight, n->clothResX, n->clothResY, n->clothMass);
-                        if (n->clothPinTop) {
-                            for (uint32_t px = 0; px < n->clothResX; ++px) {
-                                n->clothSim->PinParticle(px);
-                            }
-                        }
-                    }
-                    if (!m_gameLoop.IsPlaying()) {
-                        Physics::XPBDClothSettings cSettings;
-                        cSettings.windVelocity = n->clothWind;
-                        cSettings.stretchCompliance = n->clothCompliance;
-                        n->clothSim->Step(0.016f, cSettings);
-                    }
-                    std::string clothKey = "cloth_node_" + std::to_string(n->id);
-                    n->customMeshName = clothKey;
-                    n->type = ShapeType::Custom;
-
-                    const auto& parts = n->clothSim->GetParticles();
-                    if (!parts.empty()) {
-                        uint32_t rx = std::max(2u, n->clothResX);
-                        uint32_t ry = std::max(2u, n->clothResY);
-                        std::vector<Vertex> clothVerts(parts.size());
-                        for (uint32_t y = 0; y < ry; ++y) {
-                            for (uint32_t x = 0; x < rx; ++x) {
-                                uint32_t idx = y * rx + x;
-                                if (idx >= clothVerts.size()) break;
-                                clothVerts[idx].pos = parts[idx].position;
-                                clothVerts[idx].texCoord = glm::vec2(static_cast<float>(x) / (rx - 1), static_cast<float>(y) / (ry - 1));
-                                glm::vec3 px1 = (x + 1 < rx) ? parts[y * rx + (x + 1)].position : parts[idx].position;
-                                glm::vec3 px0 = (x > 0) ? parts[y * rx + (x - 1)].position : parts[idx].position;
-                                glm::vec3 py1 = (y + 1 < ry) ? parts[(y + 1) * rx + x].position : parts[idx].position;
-                                glm::vec3 py0 = (y > 0) ? parts[(y - 1) * rx + x].position : parts[idx].position;
-                                glm::vec3 norm = glm::cross(px1 - px0, py1 - py0);
-                                clothVerts[idx].normal = (glm::length(norm) > 1e-4f) ? glm::normalize(norm) : glm::vec3(0.0f, 0.0f, 1.0f);
-                                clothVerts[idx].color = glm::vec4(1.0f);
-                            }
-                        }
-                        auto it = m_customMeshes.find(clothKey);
-                        if (it == m_customMeshes.end()) {
-                            MeshData md;
-                            md.vertices = clothVerts;
-                            for (uint32_t y = 0; y < ry - 1; ++y) {
-                                for (uint32_t x = 0; x < rx - 1; ++x) {
-                                    uint32_t p00 = y * rx + x;
-                                    uint32_t p10 = y * rx + (x + 1);
-                                    uint32_t p01 = (y + 1) * rx + x;
-                                    uint32_t p11 = (y + 1) * rx + (x + 1);
-                                    md.indices.push_back(p00); md.indices.push_back(p01); md.indices.push_back(p10);
-                                    md.indices.push_back(p10); md.indices.push_back(p01); md.indices.push_back(p11);
-                                }
-                            }
-                            m_customMeshes[clothKey] = VulkanBufferUtils::UploadMesh(md);
-                        } else {
-                            VulkanBufferUtils::UpdateVertexBuffer(it->second, clothVerts);
-                        }
-                    }
-                }
                     if (tNode) {
                         const std::string splatKey = tNode->GetSplatTextureKey();
                         auto uploaded = m_uploadedSplats.find(splatKey);
@@ -3293,6 +3238,22 @@ private:
         UpdateWorldStreaming();
         UpdateTerrainMeshes(activePlayScene);
         UpdateTerrainMeshes(m_scene);
+        // Cloth: the play scene's is stepped by the game loop; the edited scene's previews here
+        {
+            const bool playing = &activePlayScene != &m_scene;
+            std::unordered_set<std::string> liveCloth;
+            UpdateClothMeshes(activePlayScene, !playing, liveCloth);
+            if (playing) UpdateClothMeshes(m_scene, false, liveCloth);
+            for (auto it = m_clothMeshKeys.begin(); it != m_clothMeshKeys.end();) {
+                if (liveCloth.count(*it)) { ++it; continue; }
+                auto mesh = m_customMeshes.find(*it);
+                if (mesh != m_customMeshes.end()) {
+                    m_pendingMeshFrees.emplace_back(m_streamFrame, mesh->second);
+                    m_customMeshes.erase(mesh);
+                }
+                it = m_clothMeshKeys.erase(it);
+            }
+        }
 
         // Hardware ray tracing: acceleration structures of the scenes shown this frame, built on
         // the GPU before any view renders. The game view (and its mirror / probe views) trace the
@@ -4086,6 +4047,31 @@ private:
     // the game camera. Models are reference counted across both and freed a few frames after the
     // last sector using them leaves (the GPU may still be drawing them).
     // ------------------------------------------------------------------------------------------
+    // Folder that relative content paths (models, textures, scripts) resolve against: the
+    // project root, or for a scene / world opened directly, the folder found by FindContentRoot
+    std::string m_contentRoot;
+    void SetContentRoot(const std::string& root) {
+        m_contentRoot = root;
+        VulkanTexture::SetSearchRoots(root.empty() ? std::vector<std::string>{} : std::vector<std::string>{ root });
+        Scripting::LuaScriptSystem::Get().SetProjectRoot(root);
+        if (!root.empty()) LOG("[Content] Root: " << root);
+    }
+    static std::string FindContentRoot(const std::string& scenePath) {
+        namespace fs = std::filesystem;
+        std::error_code ec;
+        fs::path dir = fs::absolute(fs::path(scenePath), ec).parent_path();
+        for (int depth = 0; depth < 6 && !dir.empty() && dir != dir.root_path(); ++depth, dir = dir.parent_path()) {
+            bool hasProject = false;
+            for (const auto& entry : fs::directory_iterator(dir, ec)) {
+                if (entry.path().extension() == ".tess") { hasProject = true; break; }
+            }
+            if (hasProject || fs::exists(dir / "assets", ec) || fs::exists(dir / "scripts", ec)) {
+                return fs::relative(dir, fs::current_path(), ec).string();
+            }
+        }
+        return {};
+    }
+
     Streaming::WorldStreamer m_editorStreamer;
     std::unique_ptr<Streaming::WorldStreamer> m_playStreamer;
     const Scene* m_playStreamerScene{nullptr};
@@ -4113,8 +4099,7 @@ private:
             candidates.push_back(fs::path(worldRoot).parent_path() / name);
         }
         candidates.push_back(fs::path("assets/models") / name);
-        candidates.push_back(fs::path("projects/Headland") / name);
-        candidates.push_back(fs::path("projects/Headland/assets") / name);
+        if (!m_contentRoot.empty()) candidates.push_back(fs::path(m_contentRoot) / name);
         std::error_code ec;
         for (const auto& path : candidates) {
             if (!fs::exists(path, ec)) continue;
@@ -4297,6 +4282,60 @@ private:
         FlushPendingMeshFrees(false);
     }
 
+    // Simulated cloth (Node::isCloth): its surface mesh, uploaded each frame under a runtime key
+    std::unordered_set<std::string> m_clothMeshKeys;
+    void UpdateClothMeshes(Scene& sc, bool step, std::unordered_set<std::string>& live) {
+        for (const auto& n : sc.GetNodes()) {
+            if (!n || !n->isCloth) continue;
+            const uint32_t rx = std::max(2u, n->clothResX), ry = std::max(2u, n->clothResY);
+            if (!n->clothSim) {
+                n->clothSim = std::make_shared<Physics::XPBDClothSimulator>();
+                n->clothSim->InitializeGridCloth(n->clothWidth, n->clothHeight, rx, ry, n->clothMass);
+                if (n->clothPinTop) {
+                    for (uint32_t px = 0; px < rx; ++px) n->clothSim->PinParticle(px);
+                }
+            }
+            if (step) {
+                Physics::XPBDClothSettings settings;
+                settings.windVelocity = n->clothWind;
+                settings.stretchCompliance = n->clothCompliance;
+                n->clothSim->Step(1.0f / 60.0f, settings);
+            }
+            const auto& parts = n->clothSim->GetParticles();
+            if (parts.size() != static_cast<size_t>(rx) * ry) continue;
+            std::vector<Vertex> verts(parts.size());
+            for (uint32_t y = 0; y < ry; ++y) {
+                for (uint32_t x = 0; x < rx; ++x) {
+                    const uint32_t idx = y * rx + x;
+                    verts[idx].pos = parts[idx].position;
+                    verts[idx].texCoord = glm::vec2(static_cast<float>(x) / (rx - 1), static_cast<float>(y) / (ry - 1));
+                    const glm::vec3 px1 = parts[y * rx + std::min(x + 1, rx - 1)].position, px0 = parts[y * rx + (x > 0 ? x - 1 : 0)].position;
+                    const glm::vec3 py1 = parts[std::min(y + 1, ry - 1) * rx + x].position, py0 = parts[(y > 0 ? y - 1 : 0) * rx + x].position;
+                    const glm::vec3 nrm = glm::cross(px1 - px0, py1 - py0);
+                    verts[idx].normal = glm::length(nrm) > 1e-6f ? glm::normalize(nrm) : glm::vec3(0.0f, 0.0f, 1.0f);
+                    verts[idx].color = glm::vec4(1.0f);
+                }
+            }
+            const std::string key = n->ClothMeshKey();
+            live.insert(key);
+            auto it = m_customMeshes.find(key);
+            if (it == m_customMeshes.end()) {
+                MeshData md;
+                md.vertices = verts;
+                for (uint32_t y = 0; y + 1 < ry; ++y) {
+                    for (uint32_t x = 0; x + 1 < rx; ++x) {
+                        const uint32_t p00 = y * rx + x, p10 = p00 + 1, p01 = p00 + rx, p11 = p01 + 1;
+                        md.indices.insert(md.indices.end(), { p00, p01, p10, p10, p01, p11 });
+                    }
+                }
+                m_customMeshes[key] = VulkanBufferUtils::UploadMesh(md);
+                m_clothMeshKeys.insert(key);
+            } else {
+                VulkanBufferUtils::UpdateVertexBuffer(it->second, verts);
+            }
+        }
+    }
+
     // CPU copies for ray tracing BLAS builds: built-in primitives and generated terrain meshes
     std::map<ShapeType, MeshData> m_cpuPrimitives;
     std::map<std::string, MeshData> m_terrainCpuMeshes;
@@ -4304,6 +4343,8 @@ private:
     // Ray tracing geometry for a node: the mesh it draws at full detail (imported models, terrain
     // tiles, primitives). Skinned characters use their bind pose.
     bool ResolveRayTracingMesh(const Node& node, std::string& key, const MeshData*& data) {
+        // Cloth deforms every frame: its acceleration structure would need rebuilding each frame
+        if (node.isCloth) return false;
         if (node.nodeType == NodeType::Terrain) {
             auto it = m_terrainCpuMeshes.find(node.customMeshName);
             if (it == m_terrainCpuMeshes.end()) return false;

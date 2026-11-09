@@ -157,7 +157,11 @@ void DirectStorageQueue::RecordReadBytes(size_t bytes) {
 
 static bool ReadWin32Unbuffered(const std::string& filePath, uint64_t offset, uint64_t size, std::vector<uint8_t>& outData) {
     if (filePath.empty()) return false;
-    std::wstring wPath(filePath.begin(), filePath.end());
+    const int wideLen = MultiByteToWideChar(CP_UTF8, 0, filePath.c_str(), -1, nullptr, 0);
+    if (wideLen <= 0) return false;
+    std::wstring wPath(static_cast<size_t>(wideLen), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, filePath.c_str(), -1, wPath.data(), wideLen);
+    wPath.resize(static_cast<size_t>(wideLen - 1));
 
     // Open with FILE_FLAG_NO_BUFFERING | FILE_FLAG_OVERLAPPED | FILE_FLAG_SEQUENTIAL_SCAN for direct disk DMA
     HANDLE hFile = CreateFileW(wPath.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,

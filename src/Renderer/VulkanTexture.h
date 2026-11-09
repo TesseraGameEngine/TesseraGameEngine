@@ -35,6 +35,10 @@ public:
     static std::shared_ptr<VulkanTexture> LoadCompressedFromFile(const std::string& filepath,
                                                                  TextureUsage usage = TextureUsage::Color);
     static void SetCompressionQuality(CompressionQuality quality) { s_compressionQuality = quality; }
+    // Folders relative texture paths are also looked up in (the active project / world root),
+    // after the working directory
+    static void SetSearchRoots(const std::vector<std::string>& roots) { s_searchRoots = roots; }
+    static const std::vector<std::string>& GetSearchRoots() { return s_searchRoots; }
     static CompressionQuality GetCompressionQuality() { return s_compressionQuality; }
     // Radiance .hdr (or any float image stb can read) as a mipmapped RGBA16F texture, for HDRI
     // environments. Returns nullptr if the file can't be read.
@@ -73,6 +77,7 @@ private:
     uint32_t m_mipLevels{1};
 
     static inline CompressionQuality s_compressionQuality = CompressionQuality::Standard;
+    static inline std::vector<std::string> s_searchRoots;
 
     std::string m_filePath{""};
     uint32_t m_width{0};

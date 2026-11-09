@@ -4662,6 +4662,8 @@ TEST_CASE(RoadmapWorldStreaming, AsynchronousWorldPartitionAndDirectStorage) {
     ASSERT_TRUE(dsQueue.GetTotalBytesRead() >= 3072);
 
     // Test unbuffered direct disk read
+    ASSERT_TRUE(!dsQueue.IsDirectStorageUnbufferedActive()); // opt-in
+    dsQueue.SetDirectStorageUnbufferedEnabled(true);
     ASSERT_TRUE(dsQueue.IsDirectStorageUnbufferedActive());
     std::string testPath = "direct_storage_test.bin";
     std::vector<uint8_t> testBytes(8192, 0x5A);
@@ -4674,6 +4676,7 @@ TEST_CASE(RoadmapWorldStreaming, AsynchronousWorldPartitionAndDirectStorage) {
     ASSERT_EQ(readBytes.size(), testBytes.size());
     ASSERT_EQ(readBytes[0], 0x5A);
     ASSERT_EQ(readBytes[8191], 0x5A);
+    dsQueue.SetDirectStorageUnbufferedEnabled(false); // back to the default for later tests
 
     // 3. Test Scene Node Registration and Spatial Partitioning
     Scene testScene;
@@ -4727,6 +4730,29 @@ TEST_CASE(RoadmapWorldStreaming, AsynchronousWorldPartitionAndDirectStorage) {
 
     wpMgr.Shutdown();
     dsQueue.Shutdown();
+}
+
+// ============================================================================
+// Cloth: each scene simulates its own copy; the node's saved shape is untouched
+// ============================================================================
+#include "Physics/XPBDClothSim.h"
+
+TEST_CASE(RoadmapCloth, CloneGetsOwnSimulatorAndMesh) {
+    Scene scene;
+    scene.Clear();
+    auto flag = scene.AddNode(ShapeType::Plane, "Flag");
+    flag->isCloth = true;
+    flag->clothSim = std::make_shared<Physics::XPBDClothSimulator>();
+    flag->clothSim->InitializeGridCloth(1.0f, 1.0f, 4, 4, 1.0f);
+
+    auto clone = scene.Clone();
+    auto cloned = clone->GetNodeById(flag->id);
+    ASSERT_TRUE(cloned != nullptr);
+    ASSERT_TRUE(cloned->isCloth);
+    ASSERT_TRUE(cloned->clothSim == nullptr);                      // not shared with the editor scene
+    ASSERT_TRUE(cloned->ClothMeshKey() != flag->ClothMeshKey());   // its own surface mesh
+    ASSERT_TRUE(cloned->type == ShapeType::Plane);                  // saved shape unchanged
+    ASSERT_TRUE(cloned->customMeshName.empty());
 }
 
 // ============================================================================

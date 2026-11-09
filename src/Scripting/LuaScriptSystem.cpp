@@ -3014,8 +3014,6 @@ static std::string ResolveScriptPath(const std::string& path, const std::string&
         if (fs::exists(pRoot / "scripts" / path)) return (pRoot / "scripts" / path).string();
     }
     if (fs::exists("scripts/" + path)) return "scripts/" + path;
-    if (fs::exists("projects/Headland/" + path)) return "projects/Headland/" + path;
-    if (fs::exists("projects/Headland/scripts/" + path)) return "projects/Headland/scripts/" + path;
     return "";
 }
 

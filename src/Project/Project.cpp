@@ -179,6 +179,9 @@ bool Project::LoadScene(const std::string& sceneFileName, Scene& scene,
         fs::path localMeshPath = fs::path(m_rootPath) / "assets" / "models" / meshName;
         if (fs::exists(localMeshPath)) {
             return loadMeshCallback(localMeshPath.string(), meshName);
+        } else if (fs::exists(fs::path(m_rootPath) / meshName)) {
+            // Project-relative path (e.g. assets/external/...)
+            return loadMeshCallback((fs::path(m_rootPath) / meshName).string(), meshName);
         } else if (fs::exists(meshName)) {
             return loadMeshCallback(meshName, meshName);
         }

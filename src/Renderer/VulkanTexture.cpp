@@ -384,14 +384,10 @@ std::shared_ptr<VulkanTexture> VulkanTexture::LoadFromFile(const std::string& fi
         pixels = stbi_load(fallback.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
     }
 
-    if (!pixels) {
-        std::string fallback = "projects/Headland/" + clean;
-        pixels = stbi_load(fallback.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-    }
-
-    if (!pixels) {
-        std::string fallback = "projects/Headland/assets/" + clean;
-        pixels = stbi_load(fallback.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+    for (const std::string& searchRoot : s_searchRoots) {
+        if (pixels) break;
+        const std::string candidate = (std::filesystem::path(searchRoot) / clean).generic_string();
+        pixels = stbi_load(candidate.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
     }
 
     if (!pixels) {
@@ -422,8 +418,10 @@ std::string ResolveTextureFile(const std::string& filepath) {
     if (std::filesystem::exists(clean, ec)) return clean;
     if ((clean.rfind("/Users/", 0) == 0 || clean.rfind("/users/", 0) == 0) && std::filesystem::exists("C:" + clean, ec)) return "C:" + clean;
     if (std::filesystem::exists("../" + clean, ec)) return "../" + clean;
-    if (std::filesystem::exists("projects/Headland/" + clean, ec)) return "projects/Headland/" + clean;
-    if (std::filesystem::exists("projects/Headland/assets/" + clean, ec)) return "projects/Headland/assets/" + clean;
+    for (const std::string& searchRoot : VulkanTexture::GetSearchRoots()) {
+        const std::filesystem::path candidate = std::filesystem::path(searchRoot) / clean;
+        if (std::filesystem::exists(candidate, ec)) return candidate.generic_string();
+    }
     return {};
 }
 

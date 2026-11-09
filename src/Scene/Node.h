@@ -6,6 +6,7 @@
 #include <memory>
 #include <map>
 #include <functional>
+#include <cstdio>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include "Utils/SimpleJson.h"
@@ -517,7 +518,14 @@ struct Node {
     float clothMass{1.0f};
     float clothCompliance{0.00001f};
     bool clothPinTop{true};
-    std::shared_ptr<Physics::XPBDClothSimulator> clothSim{nullptr};
+    std::shared_ptr<Physics::XPBDClothSimulator> clothSim{nullptr}; // runtime only: each scene steps its own
+    // The simulated surface's GPU mesh (runtime only, one per node instance: the edited scene and
+    // its play clone have their own); the node's saved shape / model stay as they are
+    std::string ClothMeshKey() const {
+        char buf[48];
+        std::snprintf(buf, sizeof(buf), "@cloth:%p", static_cast<const void*>(this));
+        return buf;
+    }
 
     // Advanced material (see shaders/material_ext.glsl)
     int materialModel{0};                       // 0 standard, 1 skin, 2 hair, 3 eye
